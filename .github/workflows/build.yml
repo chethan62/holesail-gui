@@ -110,6 +110,9 @@ jobs:
         run: npx tauri android build --apk --debug
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          # single-use gradle: avoids daemon OOM crashes when the Rust
+          # cross-compile + kotlin daemon compete for memory on the runner
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
 
       - uses: actions/upload-artifact@v4
         with:
