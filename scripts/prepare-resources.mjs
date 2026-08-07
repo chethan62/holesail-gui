@@ -10,7 +10,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -71,5 +71,20 @@ walk(path.join(out, 'node_modules'))
 rmSync(path.join(out, 'package.json'), { force: true })
 rmSync(path.join(out, 'package-lock.json'), { force: true })
 
-const size = execSync('du -sh ' + JSON.stringify(out)).toString().trim()
-console.log('prepared', out, size)
+function dirSize(dir) {
+  let total = 0
+  const stack = [dir]
+  while (stack.length) {
+    const current = stack.pop()
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const p = path.join(current, entry.name)
+      if (entry.isDirectory()) stack.push(p)
+      else total += statSync(p).size
+    }
+  }
+  return total
+}
+
+const bytes = dirSize(out)
+const mb = (bytes / (1024 * 1024)).toFixed(1)
+console.log('prepared', out, mb + ' MB')

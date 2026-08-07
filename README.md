@@ -6,6 +6,19 @@ tunnel, from a friendly window instead of the CLI.
 
 Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worker**.
 
+## Platforms
+
+| Platform | Status | Deliverables |
+|---|---|---|
+| **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, flatpak manifest |
+| **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — needs Node 18+ on the machine |
+| **Android** | ⚠️ UI builds, backend pending | debug APK — see the [Android](#android) caveat |
+| macOS | code-compatible, untested here | `.dmg`/`.app` via `tauri build` on a Mac |
+
+The three primary targets are built automatically by the GitHub Actions
+workflow in `.github/workflows/build.yml` (artifacts on every push /
+`workflow_dispatch`).
+
 ## Architecture
 
 ```
