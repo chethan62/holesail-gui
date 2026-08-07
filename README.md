@@ -65,8 +65,15 @@ platform's prebuilds, ~38 MB) and then bundles it into the installers:
 
 - **Linux:** `.deb` and `.rpm` put the binary in `/usr/bin` and the resources in
   `/usr/lib/holesail-gui/` — `find_worker` resolves them via `resource_dir()`.
-  The AppImage target requires FUSE; on FUSE-less machines (containers/CI) build
-  with `npx tauri build --bundles deb,rpm` instead.
+  The AppImage target needs FUSE; on FUSE-less machines (containers/CI) and on
+  distros whose newer toolchain trips linuxdeploy's bundled `strip`
+  (`.relr.dyn` errors), build it with:
+
+  ```bash
+  NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build --bundles appimage
+  ```
+
+  Or skip it entirely with `npx tauri build --bundles deb,rpm`.
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
   respectively with the same resource layout.
 
