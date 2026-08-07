@@ -2,6 +2,7 @@
 name = "holesail-gui"
 version = "0.1.0"
 description = "Desktop GUI for Holesail — share local ports and connect to P2P tunnels"
+license = "MIT"
 edition = "2021"
 
 [build-dependencies]
