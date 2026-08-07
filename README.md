@@ -118,6 +118,37 @@ your localhost port.
 Sessions can be paused/resumed/stopped; the event log at the bottom shows what
 the worker is doing.
 
+## Android
+
+An Android project is scaffolded with `tauri android init` (already done — see
+`src-tauri/gen/android/`, regenerated on demand; the mobile capability lives in
+`src-tauri/capabilities/mobile.json`).
+
+**Build an APK** (on a machine with Android Studio / the SDK+NDK):
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+ANDROID_HOME=$HOME/Android/Sdk npx tauri android build --apk --debug
+# or open src-tauri/gen/android in Android Studio and run the app
+```
+
+**Current limitation — the backend does not run on Android yet.** The GUI
+spawns its worker with the `node` binary, which does not exist on Android, so
+the Android build currently shows the UI but tunnels are non-functional until
+the worker is ported to the **Bare runtime** (holepunch's JS runtime — this is
+exactly what upstream holesail uses for its own Android build; the native
+addons `sodium-native`/`udx-native` already ship android prebuilds). Plan:
+
+1. Cross-compile `bare` for android (upstream: `bare-make` + `builtins.json`).
+2. Bundle the worker JS into the bare binary; ship it as an APK asset.
+3. In `main.rs`, spawn the bundled bare binary instead of `node` when
+   `cfg(target_os = "android")`.
+
+> The SDK installed in this repo's sandbox lives at
+> `/home/chethan/.reasonix/global-workspace/android-sdk` (not in `$HOME`,
+> which is read-only). `ANDROID_USER_HOME` must also point at a writable dir
+> or `sdkmanager`/gradle will fail.
+
 ## Security notes
 
 - Private connection strings are credentials — treat them like SSH keys.
