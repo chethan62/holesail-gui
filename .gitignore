@@ -2,4 +2,11 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/
 dist-resources/
+packaging/arch/holesail-gui-bin
+packaging/arch/resources.tar.zst
+packaging/arch/holesail-gui.png
+packaging/arch/*.pkg.tar.zst
+packaging/arch/pkg/
+packaging/arch/src/
+packaging/flatpak/build-dir/
 *.log

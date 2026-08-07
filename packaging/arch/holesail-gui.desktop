@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Holesail GUI
+Comment=Peer-to-peer TCP/UDP tunnels — share local ports and connect to others
+Exec=holesail-gui
+Icon=holesail-gui
+Terminal=false
+Categories=Network;Utility;
+Keywords=holesail;tunnel;p2p;proxy;

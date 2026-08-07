@@ -74,6 +74,30 @@ platform's prebuilds, ~38 MB) and then bundles it into the installers:
   ```
 
   Or skip it entirely with `npx tauri build --bundles deb,rpm`.
+
+**Arch Linux (pacman)** — verified build in `packaging/arch/`:
+
+```bash
+./packaging/arch/build.sh        # -> packaging/arch/holesail-gui-<ver>-1-x86_64.pkg.tar.zst
+sudo pacman -U packaging/arch/holesail-gui-*.pkg.tar.zst
+```
+
+Installs the binary + worker + `node_modules` into `/usr/lib/holesail-gui/` with
+a launcher at `/usr/bin/holesail-gui` (binary and resources in the same dir, so
+Tauri's `resource_dir()` resolves without bundler patching).
+
+**Flatpak** — manifest in `packaging/flatpak/` (Tauri webkit2gtk-4.1 base so
+WebKit is bundled):
+
+```bash
+flatpak install flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
+flatpak install flathub org.freedesktop.Sdk.Extension.webkit2gtk-4.1//24.08
+./packaging/flatpak/build.sh     # builds + installs io.holesail.gui (user)
+flatpak run io.holesail.gui
+```
+
+> Note: the flatpak manifest is written but **not verified in this repo's CI
+> environment** (needs `flatpak-builder` + the SDK runtimes).
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
   respectively with the same resource layout.
 
