@@ -18,20 +18,24 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(90); // DHT bootstrap can take a while
+const EXIT_GRACE: Duration = Duration::from_secs(3); // SIGTERM -> SIGKILL escalation on app quit
 static NEXT_RPC_ID: AtomicU64 = AtomicU64::new(1);
 
 struct Worker {
     child: Child,
-    stdin: Mutex<ChildStdin>,
 }
 
 struct WorkerState(Mutex<Option<Worker>>);
+
+/// The worker's stdin lives in its own state so an RPC write never holds the
+/// WorkerState lock: a wedged pipe must not starve the exit watcher.
+struct StdinState(Mutex<Option<ChildStdin>>);
 
 struct Pending {
     tx: tokio::sync::oneshot::Sender<Result<Value, String>>,
@@ -69,7 +73,9 @@ fn find_worker(app: &AppHandle) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
+/// Spawn the node service worker and start its IO threads.
+/// Requires WorkerState/StdinState/PendingState to be managed already.
+fn spawn_worker(app: &AppHandle) -> Result<(), String> {
     let worker_path =
         find_worker(app).ok_or_else(|| "Could not locate service-worker.js".to_string())?;
     let cwd = worker_path
@@ -89,6 +95,9 @@ fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
     let stdin = child.stdin.take().expect("stdin is piped");
+
+    *app.state::<WorkerState>().0.lock().unwrap() = Some(Worker { child });
+    *app.state::<StdinState>().0.lock().unwrap() = Some(stdin);
 
     // stdout reader: match responses to pending RPCs, forward events to UI
     {
@@ -116,7 +125,8 @@ fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
         });
     }
 
-    // watcher: detect worker exit, fail pending RPCs, notify the frontend
+    // watcher: the SOLE reaper. Detects worker exit, fails pending RPCs,
+    // notifies the frontend, then stops (the worker is never respawned in v1).
     {
         let app = app.clone();
         std::thread::spawn(move || loop {
@@ -136,6 +146,10 @@ fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
                 }
             };
             if let Some(status) = exited {
+                // Close the stdin pipe so nothing writes to a dead process
+                let ss = app.state::<StdinState>();
+                ss.0.lock().unwrap().take();
+
                 let ps = app.state::<PendingState>();
                 let mut map = ps.0.lock().unwrap();
                 for (_, p) in map.drain() {
@@ -146,6 +160,7 @@ fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
                     "worker:event",
                     json!({ "event": "worker:exit", "data": { "code": status.code() } }),
                 );
+                break;
             }
         });
     }
@@ -164,15 +179,12 @@ fn spawn_worker(app: &AppHandle) -> Result<Worker, String> {
         });
     }
 
-    Ok(Worker {
-        child,
-        stdin: Mutex::new(stdin),
-    })
+    Ok(())
 }
 
 #[tauri::command]
 async fn rpc(
-    worker: State<'_, WorkerState>,
+    stdin: State<'_, StdinState>,
     pending: State<'_, PendingState>,
     method: String,
     params: Value,
@@ -186,29 +198,24 @@ async fn rpc(
             .as_millis()
     );
 
-    // Register the pending reply and write the request, releasing every mutex
-    // guard before we await — MutexGuard is not Send and the tauri command
-    // future must be Send.
+    // Register the pending reply, then write the request, releasing every
+    // mutex guard before we await — MutexGuard is not Send and the tauri
+    // command future must be Send. The watcher owns reaping, so a dead
+    // worker surfaces here as a broken pipe or a missing stdin handle.
     let rx = {
-        let mut guard = worker.0.lock().unwrap();
-        let w = guard
-            .as_mut()
-            .ok_or_else(|| "Service worker is not running".to_string())?;
-
-        if let Ok(Some(status)) = w.child.try_wait() {
-            guard.take();
-            return Err(format!("Service worker exited ({status})"));
-        }
-
         let (tx, rx) = tokio::sync::oneshot::channel();
         pending.0.lock().unwrap().insert(id.clone(), Pending { tx });
 
         let req = json!({ "id": id, "method": method, "params": params });
-        let mut stdin = w.stdin.lock().unwrap();
-        writeln!(stdin, "{req}").map_err(|e| {
+        let mut ss = stdin.0.lock().unwrap();
+        let pipe = ss.as_mut().ok_or_else(|| {
             pending.0.lock().unwrap().remove(&id);
-            format!("Failed to write to worker: {e}")
+            "Service worker is not running".to_string()
         })?;
+        if let Err(e) = writeln!(pipe, "{req}") {
+            pending.0.lock().unwrap().remove(&id);
+            return Err(format!("Failed to write to worker: {e}"));
+        }
         rx
     };
 
@@ -226,8 +233,10 @@ fn main() {
     tauri::Builder::default()
         .manage(PendingState(Mutex::new(HashMap::new())))
         .setup(|app| {
-            let worker = spawn_worker(app.handle())?;
-            app.manage(WorkerState(Mutex::new(Some(worker))));
+            app.manage(WorkerState(Mutex::new(None)));
+            app.manage(StdinState(Mutex::new(None)));
+            spawn_worker(app.handle())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![rpc])
@@ -235,15 +244,29 @@ fn main() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
-                if let Some(mut w) = app_handle.state::<WorkerState>().0.lock().unwrap().take() {
-                    // SIGTERM so the worker's graceful shutdown (session teardown) runs
+                let worker = app_handle.state::<WorkerState>().0.lock().unwrap().take();
+                let _stdin = app_handle.state::<StdinState>().0.lock().unwrap().take();
+                if let Some(mut w) = worker {
+                    // SIGTERM so the worker's graceful shutdown (session teardown)
+                    // runs; escalate to SIGKILL if it does not exit in time.
                     #[cfg(unix)]
                     unsafe {
                         libc::kill(w.child.id() as i32, libc::SIGTERM);
                     }
                     #[cfg(not(unix))]
                     let _ = w.child.kill();
-                    let _ = w.child.wait();
+
+                    let deadline = Instant::now() + EXIT_GRACE;
+                    while Instant::now() < deadline {
+                        if w.child.try_wait().ok().flatten().is_some() {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    if w.child.try_wait().ok().flatten().is_none() {
+                        let _ = w.child.kill();
+                        let _ = w.child.wait();
+                    }
                 }
             }
         });

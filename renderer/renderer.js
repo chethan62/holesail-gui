@@ -137,7 +137,7 @@ function renderSession(container, s) {
     badge(type, s.type),
     badge(mode, s.secure ? 'secure' : 'public'),
     badge((s.protocol || 'tcp').toUpperCase(), 'proto'),
-    el('span', `state ${s.state || 'running'}`, '', s.state || 'running')
+    el('span', 'state ' + (s.state || 'running'), '', s.state || 'running')
   )
   card.append(head)
 
@@ -232,8 +232,13 @@ onEvent((msg) => {
       upsertSession(msg.data)
       break
     case 'worker:exit':
-      updateWorkerStatus(false, `worker exited (code ${msg.data.code})`)
-      log(`Service worker exited with code ${msg.data.code}`, 'err')
+      updateWorkerStatus(false, `worker exited (code ${msg.data.code ?? 'signal'})`)
+      log(`Service worker exited with code ${msg.data.code ?? 'signal'}`, 'err')
+      // the worker is gone for good — drop stale sessions so the UI reflects reality
+      state.sessions.clear()
+      state.meta.clear()
+      state.revealed.clear()
+      renderSessions()
       break
     case 'worker:log':
       log(msg.data.text)
