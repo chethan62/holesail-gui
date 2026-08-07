@@ -55,16 +55,24 @@ real tunnel).
 ## Build a release bundle
 
 ```bash
-npm run build        # tauri build — produces installers under src-tauri/target/release/bundle/
+npm run build        # prepares resources, then tauri build (deb + rpm + AppImage on Linux)
 ```
 
-> **Known limitation:** the release bundle currently embeds the renderer but not
-> the Node backend (`service-worker.js` + `node_modules/` with `holesail` and its
-> native addons), so `npm run build` artifacts run **dev-only today** — the GUI
-> needs `npm install` + `npm run dev` to work. Packaging the backend into
-> `bundle.resources` (and fixing `find_worker`'s resource-dir lookup) is the
-> remaining step for self-contained releases. `find_worker` in
-> `src-tauri/src/main.rs` looks in: resource dir → binary dir → ancestor dirs → cwd.
+`build` first runs `scripts/prepare-resources.mjs`, which assembles a lean
+`dist-resources/` folder (the Node service worker + a **production-only**
+`node_modules` with `holesail` and its native addons, pruned to the current
+platform's prebuilds, ~38 MB) and then bundles it into the installers:
+
+- **Linux:** `.deb` and `.rpm` put the binary in `/usr/bin` and the resources in
+  `/usr/lib/holesail-gui/` — `find_worker` resolves them via `resource_dir()`.
+  The AppImage target requires FUSE; on FUSE-less machines (containers/CI) build
+  with `npx tauri build --bundles deb,rpm` instead.
+- **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
+  respectively with the same resource layout.
+
+**Packaged-app requirements:** the GUI spawns the service worker with `node`
+from PATH, so end-user machines need Node.js 18+ installed (documented in the
+release notes). A fully embedded Node runtime is future work.
 
 ## Using the app
 

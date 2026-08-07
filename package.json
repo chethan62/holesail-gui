@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "node scripts/prepare-resources.mjs && tauri build",
+    "build:no-bundle": "node scripts/prepare-resources.mjs && tauri build --no-bundle",
     "test": "node test/service.test.js"
   },
   "dependencies": {

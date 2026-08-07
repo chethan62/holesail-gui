@@ -12,7 +12,7 @@ const { spawn } = require('child_process')
 const readline = require('readline')
 const path = require('path')
 
-const WORKER = path.join(__dirname, '..', 'service-worker.js')
+const WORKER = process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
 const TEST_PORT = 43117 // hard-coded local port to expose
 const TIMEOUT_MS = 120000
 
