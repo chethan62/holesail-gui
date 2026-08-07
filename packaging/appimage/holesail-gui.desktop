@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Holesail GUI
+Comment=Peer-to-peer TCP/UDP tunnels — share local ports and connect to others
+# Template: replace @APPDIR@ with the absolute directory holding launch.sh,
+# the AppImage and the icon, then install to ~/.local/share/applications/
+Exec=@APPDIR@/launch.sh
+Icon=@APPDIR@/holesail-gui.png
+Terminal=false
+Categories=Network;Utility;
+Keywords=holesail;tunnel;p2p;proxy;
