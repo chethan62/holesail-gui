@@ -1,0 +1,19 @@
+{
+  "name": "holesail-gui",
+  "version": "0.1.0",
+  "description": "Desktop GUI for Holesail — share local ports and connect to P2P tunnels",
+  "main": "main.js",
+  "author": "Reasonix",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "node test/service.test.js"
+  },
+  "dependencies": {
+    "holesail": "^2.4.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

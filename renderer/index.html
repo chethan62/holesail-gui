@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>Holesail GUI</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">⛵️</span>
+        <span class="title">Holesail GUI</span>
+        <span class="subtitle">peer-to-peer tunnels</span>
+      </div>
+      <div class="status">
+        <button id="theme-toggle" class="icon-btn" title="Toggle light/dark theme">🌓</button>
+        <span id="worker-dot" class="dot"></span>
+        <span id="worker-label">connecting…</span>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="share">Share a port</button>
+      <button class="tab" data-tab="connect">Connect</button>
+    </nav>
+
+    <main>
+      <section id="panel-share" class="panel active">
+        <h2>Expose a local application</h2>
+        <p class="hint">
+          Share any locally running app on a specific port — no port forwarding or static IP
+          needed. Others reach it with the generated connection string.
+        </p>
+        <form id="share-form" class="grid-form">
+          <label>
+            Local port
+            <input id="share-port" type="number" min="1" max="65535" placeholder="e.g. 3000" required />
+          </label>
+          <label>
+            Host
+            <input id="share-host" type="text" placeholder="127.0.0.1" value="127.0.0.1" />
+          </label>
+          <label class="check">
+            <input id="share-secure" type="checkbox" checked />
+            Private mode (secure)
+          </label>
+          <label class="check">
+            <input id="share-udp" type="checkbox" />
+            Use UDP
+          </label>
+          <label class="full">
+            Custom key (optional, min 32 chars)
+            <input id="share-key" type="text" placeholder="leave empty to auto-generate" />
+          </label>
+          <div class="full">
+            <button type="submit" class="primary" id="share-start">Start sharing</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="panel-connect" class="panel">
+        <h2>Connect to a tunnel</h2>
+        <p class="hint">
+          Paste a connection string (<code>hs://s000…</code> private or <code>hs://0000…</code>
+          public). The secure flag is auto-detected from the prefix.
+        </p>
+        <form id="connect-form" class="grid-form">
+          <label class="full">
+            Connection string
+            <input
+              id="connect-key"
+              type="text"
+              placeholder="hs://s000… or hs://0000…"
+              required
+              spellcheck="false"
+              autocomplete="off"
+              list="recent-keys"
+            />
+            <datalist id="recent-keys"></datalist>
+          </label>
+          <label>
+            Local port (optional)
+            <input id="connect-port" type="number" min="1" max="65535" placeholder="auto" />
+          </label>
+          <label>
+            Host (optional)
+            <input id="connect-host" type="text" placeholder="127.0.0.1" />
+          </label>
+          <label class="check">
+            <input id="connect-udp" type="checkbox" />
+            Use UDP
+          </label>
+          <div class="full" id="recent-row" hidden>
+            <span class="recent-label">Recent:</span>
+            <span id="recent-chips"></span>
+            <button type="button" id="recent-clear" class="link-btn">clear</button>
+          </div>
+          <div class="full">
+            <button type="submit" class="primary" id="connect-start">Connect</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="sessions-section">
+        <h2>Sessions <span id="uptime-note" class="uptime-note">—</span></h2>
+        <div id="sessions" class="sessions">
+          <p class="empty">No active sessions. Share a port or connect to a tunnel to get started.</p>
+        </div>
+      </section>
+
+      <section id="log-section">
+        <h2 class="collapsible" id="log-toggle">Event log <span class="caret">▾</span></h2>
+        <div id="log"><p class="empty">No events yet.</p></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="vendor/qrcode.js"></script>
+    <script type="module" src="renderer.js"></script>
+  </body>
+</html>
