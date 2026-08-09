@@ -26,7 +26,25 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(90); // DHT bootstrap can take a while
 const EXIT_GRACE: Duration = Duration::from_secs(3); // SIGTERM -> SIGKILL escalation on app quit
+/// A worker that stayed up this long is considered healthy; the respawn
+/// backoff resets so a later crash restarts fast again.
+const HEALTHY_UPTIME: Duration = Duration::from_secs(60);
+/// Respawn backoff ladder; the last entry repeats indefinitely.
+const BACKOFF: [Duration; 5] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(5),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+];
 static NEXT_RPC_ID: AtomicU64 = AtomicU64::new(1);
+/// Bumped on every manual restart so a pending auto-respawn from an older
+/// worker generation aborts instead of double-spawning.
+static RESPAWN_GEN: AtomicU64 = AtomicU64::new(1);
+
+fn backoff_delay(attempt: u32) -> Duration {
+    BACKOFF[(attempt as usize).min(BACKOFF.len() - 1)]
+}
 
 struct Worker {
     child: Child,
@@ -43,6 +61,37 @@ struct Pending {
 }
 
 struct PendingState(Mutex<HashMap<String, Pending>>);
+
+/// Diagnostics about the service worker lifecycle, queryable from the UI.
+/// Emitted events can be missed (the webview subscribes after setup), so the
+/// authoritative status lives here.
+#[derive(Default)]
+struct WorkerDiag {
+    running: bool,
+    /// Last spawn failure or unexpected exit, human-readable.
+    last_error: Option<String>,
+    /// Consecutive crash count driving the respawn backoff.
+    restart_attempt: u32,
+    spawned_at: Option<Instant>,
+}
+
+struct DiagState(Mutex<WorkerDiag>);
+
+fn diag_record_spawn(app: &AppHandle) {
+    let ds = app.state::<DiagState>();
+    let mut d = ds.0.lock().unwrap();
+    d.running = true;
+    d.last_error = None;
+    d.spawned_at = Some(Instant::now());
+}
+
+fn diag_record_failure(app: &AppHandle, msg: String) {
+    let ds = app.state::<DiagState>();
+    let mut d = ds.0.lock().unwrap();
+    d.running = false;
+    d.last_error = Some(msg);
+    d.spawned_at = None;
+}
 
 /// Locate service-worker.js: try the resource dir (packaged app), then the
 /// directory layout around the running binary (dev build: src-tauri/target/...).
@@ -172,6 +221,10 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
 
     *app.state::<WorkerState>().0.lock().unwrap() = Some(Worker { child });
     *app.state::<StdinState>().0.lock().unwrap() = Some(stdin);
+    diag_record_spawn(app);
+    // The frontend re-syncs (ping + sessions:list) on this event; on first
+    // boot the webview is not listening yet, which is fine — it syncs on load.
+    let _ = app.emit("worker:event", json!({ "event": "worker:spawned" }));
 
     // stdout reader: match responses to pending RPCs, forward events to UI
     {
@@ -200,7 +253,7 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
     }
 
     // watcher: the SOLE reaper. Detects worker exit, fails pending RPCs,
-    // notifies the frontend, then stops (the worker is never respawned in v1).
+    // notifies the frontend, then schedules a respawn with backoff.
     {
         let app = app.clone();
         std::thread::spawn(move || loop {
@@ -234,6 +287,27 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
                     "worker:event",
                     json!({ "event": "worker:exit", "data": { "code": status.code() } }),
                 );
+
+                // Backoff bookkeeping: a worker that lived long enough was
+                // healthy, so its crash restarts the ladder from the bottom.
+                let attempt = {
+                    let ds = app.state::<DiagState>();
+                    let mut d = ds.0.lock().unwrap();
+                    let healthy = d
+                        .spawned_at
+                        .map(|t| t.elapsed() >= HEALTHY_UPTIME)
+                        .unwrap_or(false);
+                    if healthy {
+                        d.restart_attempt = 0;
+                    }
+                    let attempt = d.restart_attempt;
+                    d.restart_attempt += 1;
+                    d.running = false;
+                    d.last_error = Some(format!("worker exited ({status})"));
+                    d.spawned_at = None;
+                    attempt
+                };
+                schedule_respawn(&app, attempt);
                 break;
             }
         });
@@ -254,6 +328,112 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Schedule an automatic worker respawn after a backoff delay. Aborts if a
+/// manual restart happened in the meantime (generation changed) or a worker
+/// is already running.
+fn schedule_respawn(app: &AppHandle, attempt: u32) {
+    let delay = backoff_delay(attempt);
+    let gen = RESPAWN_GEN.load(Ordering::Relaxed);
+    let _ = app.emit(
+        "worker:event",
+        json!({
+            "event": "worker:restarting",
+            "data": { "attempt": attempt + 1, "delay_ms": delay.as_millis() }
+        }),
+    );
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        if gen != RESPAWN_GEN.load(Ordering::Relaxed) {
+            return; // a manual restart took over
+        }
+        if app.state::<WorkerState>().0.lock().unwrap().is_some() {
+            return; // already running (manual restart beat us)
+        }
+        if let Err(e) = spawn_worker(&app) {
+            diag_record_failure(&app, e.clone());
+            let _ = app.emit(
+                "worker:event",
+                json!({ "event": "worker:error", "data": { "message": e } }),
+            );
+            let attempt = {
+                let ds = app.state::<DiagState>();
+                let mut d = ds.0.lock().unwrap();
+                let a = d.restart_attempt;
+                d.restart_attempt += 1;
+                a
+            };
+            schedule_respawn(&app, attempt);
+        }
+    });
+}
+
+/// Gracefully stop a worker: SIGTERM, escalate to SIGKILL after the grace
+/// period, and reap the child.
+fn kill_worker(mut w: Worker) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(w.child.id() as i32, libc::SIGTERM);
+    }
+    #[cfg(not(unix))]
+    let _ = w.child.kill();
+
+    let deadline = Instant::now() + EXIT_GRACE;
+    while Instant::now() < deadline {
+        if w.child.try_wait().ok().flatten().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if w.child.try_wait().ok().flatten().is_none() {
+        let _ = w.child.kill();
+        let _ = w.child.wait();
+    }
+}
+
+#[tauri::command]
+fn worker_diagnostics(app: AppHandle) -> Value {
+    let ds = app.state::<DiagState>();
+    let d = ds.0.lock().unwrap();
+    json!({
+        "running": d.running,
+        "last_error": d.last_error,
+        "restart_attempt": d.restart_attempt,
+        "uptime_ms": d.spawned_at.map(|t| t.elapsed().as_millis()),
+    })
+}
+
+#[tauri::command]
+async fn worker_restart(app: AppHandle) -> Result<Value, String> {
+    // Invalidate any pending auto-respawn BEFORE killing, so the old
+    // worker's watcher schedules against the new generation and then bails
+    // (it will see the fresh worker below already running).
+    RESPAWN_GEN.fetch_add(1, Ordering::Relaxed);
+
+    let worker = app.state::<WorkerState>().0.lock().unwrap().take();
+    app.state::<StdinState>().0.lock().unwrap().take();
+    if let Some(w) = worker {
+        kill_worker(w);
+    }
+
+    {
+        let ds = app.state::<DiagState>();
+        let mut d = ds.0.lock().unwrap();
+        d.restart_attempt = 0;
+    }
+    match spawn_worker(&app) {
+        Ok(()) => Ok(json!({ "ok": true })),
+        Err(e) => {
+            diag_record_failure(&app, e.clone());
+            let _ = app.emit(
+                "worker:event",
+                json!({ "event": "worker:error", "data": { "message": e } }),
+            );
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
@@ -309,55 +489,41 @@ async fn rpc(
 pub fn run() {
     tauri::Builder::default()
         .manage(PendingState(Mutex::new(HashMap::new())))
+        .manage(DiagState(Mutex::new(WorkerDiag::default())))
         .setup(|app| {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
 
             // A missing or incompatible worker runtime (no node on desktop, no
-            // extracted bundle on Android) must not kill the app: surface it
-            // in the UI and keep the window alive.
+            // extracted bundle on Android) must not kill the app: record it in
+            // the diagnostics state (the webview is not listening for events
+            // yet at this point, so emitting alone would lose it) and retry
+            // with backoff — a runtime installed later will be picked up.
             if let Err(e) = spawn_worker(app.handle()) {
                 eprintln!("Failed to spawn holesail service worker: {}", e);
+                diag_record_failure(app.handle(), e.clone());
                 let _ = app.emit(
                     "worker:event",
                     json!({ "event": "worker:error", "data": { "message": e } }),
                 );
-                let _ = app.emit(
-                    "worker:event",
-                    json!({ "event": "worker:exit", "data": { "code": null, "reason": e } }),
-                );
+                schedule_respawn(app.handle(), 0);
             }
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![rpc])
+        .invoke_handler(tauri::generate_handler![rpc, worker_diagnostics, worker_restart])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
+                // No respawn on shutdown: any pending timer will find the
+                // process gone before it fires, but bump the generation so a
+                // racing respawn aborts immediately.
+                RESPAWN_GEN.fetch_add(1, Ordering::Relaxed);
                 let worker = app_handle.state::<WorkerState>().0.lock().unwrap().take();
                 let _stdin = app_handle.state::<StdinState>().0.lock().unwrap().take();
-                if let Some(mut w) = worker {
-                    // SIGTERM so the worker's graceful shutdown (session teardown)
-                    // runs; escalate to SIGKILL if it does not exit in time.
-                    #[cfg(unix)]
-                    unsafe {
-                        libc::kill(w.child.id() as i32, libc::SIGTERM);
-                    }
-                    #[cfg(not(unix))]
-                    let _ = w.child.kill();
-
-                    let deadline = Instant::now() + EXIT_GRACE;
-                    while Instant::now() < deadline {
-                        if w.child.try_wait().ok().flatten().is_some() {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
-                    if w.child.try_wait().ok().flatten().is_none() {
-                        let _ = w.child.kill();
-                        let _ = w.child.wait();
-                    }
+                if let Some(w) = worker {
+                    kill_worker(w);
                 }
             }
         });

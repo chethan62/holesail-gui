@@ -3,7 +3,7 @@
 
 'use strict'
 
-import { rpc, onEvent } from './bridge.js'
+import { rpc, onEvent, workerDiagnostics, workerRestart } from './bridge.js'
 
 const $ = (sel) => document.querySelector(sel)
 const RECENT_KEY = 'holesail-gui:recent'
@@ -228,6 +228,16 @@ function updateWorkerStatus(ok, label) {
   const dot = $('#worker-dot')
   dot.className = 'dot ' + (ok ? 'ok pulse' : ok === null ? '' : 'err')
   $('#worker-label').textContent = label
+  // manual restart is only useful when the worker is down or degraded
+  $('#worker-restart').hidden = ok === true
+}
+
+/// Ping the worker and pull the current session list into the UI.
+async function syncWorker() {
+  await rpc('ping', {})
+  updateWorkerStatus(true, 'worker online')
+  const sessions = await rpc('sessions:list', {})
+  for (const s of sessions) upsertSession(s)
 }
 
 onEvent((msg) => {
@@ -235,10 +245,24 @@ onEvent((msg) => {
     case 'session:update':
       upsertSession(msg.data)
       break
+    case 'worker:spawned':
+      // fresh worker (boot or respawn): re-sync state
+      log('Service worker started')
+      syncWorker().catch((err) => {
+        updateWorkerStatus(false, 'worker unavailable')
+        log('Worker spawned but did not answer: ' + err.message, 'err')
+      })
+      break
+    case 'worker:restarting':
+      updateWorkerStatus(null, `restarting (attempt ${msg.data.attempt})…`)
+      log(
+        `Restarting service worker in ${Math.round(msg.data.delay_ms / 1000)}s (attempt ${msg.data.attempt})`
+      )
+      break
     case 'worker:exit':
       updateWorkerStatus(false, `worker exited (code ${msg.data.code ?? 'signal'})`)
       log(`Service worker exited with code ${msg.data.code ?? 'signal'}`, 'err')
-      // the worker is gone for good — drop stale sessions so the UI reflects reality
+      // the worker is gone — drop stale sessions so the UI reflects reality
       state.sessions.clear()
       state.meta.clear()
       state.revealed.clear()
@@ -443,16 +467,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   })
   $('#share-start').dataset.label = 'Start sharing'
   $('#connect-start').dataset.label = 'Connect'
+  $('#worker-restart').addEventListener('click', async () => {
+    const btn = $('#worker-restart')
+    btn.disabled = true
+    updateWorkerStatus(null, 'restarting…')
+    try {
+      await workerRestart()
+      await syncWorker()
+      log('Service worker restarted manually', 'ok')
+    } catch (err) {
+      updateWorkerStatus(false, 'worker unavailable')
+      log('Worker restart failed: ' + err.message, 'err')
+    } finally {
+      btn.disabled = false
+    }
+  })
   tickUptime()
 
   try {
-    await rpc('ping', {})
-    updateWorkerStatus(true, 'worker online')
+    await syncWorker()
     log('Connected to holesail service worker')
-    const sessions = await rpc('sessions:list', {})
-    for (const s of sessions) upsertSession(s)
   } catch (err) {
     updateWorkerStatus(false, 'worker unavailable')
     log('Service worker unavailable: ' + err.message, 'err')
+    // The spawn error was emitted before the webview subscribed (or never
+    // emitted at all) — pull the authoritative reason from the backend.
+    try {
+      const diag = await workerDiagnostics()
+      if (diag.last_error) log('Worker diagnostics: ' + diag.last_error, 'err')
+    } catch {}
   }
 })

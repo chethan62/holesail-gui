@@ -8,6 +8,14 @@ export async function rpc(method, params) {
   return await window.__TAURI__.core.invoke('rpc', { method, params })
 }
 
+export async function workerDiagnostics() {
+  return await window.__TAURI__.core.invoke('worker_diagnostics')
+}
+
+export async function workerRestart() {
+  return await window.__TAURI__.core.invoke('worker_restart')
+}
+
 export async function onEvent(callback) {
   return await window.__TAURI__.event.listen('worker:event', (event) => callback(event.payload))
 }
