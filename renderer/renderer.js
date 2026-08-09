@@ -3,7 +3,14 @@
 
 'use strict'
 
-import { rpc, onEvent, workerDiagnostics, workerRestart } from './bridge.js'
+import {
+  rpc,
+  onEvent,
+  workerDiagnostics,
+  workerRestart,
+  takePendingDeepLinks,
+  onAppEvent
+} from './bridge.js'
 
 const $ = (sel) => document.querySelector(sel)
 const RECENT_KEY = 'holesail-gui:recent'
@@ -350,6 +357,34 @@ function initTheme() {
   })
 }
 
+/* ------------------------------ deep links ------------------------------ */
+
+function handleDeepLink(url) {
+  if (!url.startsWith('hs://')) return
+  $('#connect-key').value = url
+  switchTab('connect')
+  toast('Connection string loaded — press Connect')
+  log('Loaded connection string from deep link')
+}
+
+async function stopAllTunnels() {
+  const ids = [...state.sessions.keys()]
+  if (ids.length === 0) {
+    toast('No active tunnels')
+    return
+  }
+  let stopped = 0
+  for (const id of ids) {
+    try {
+      await rpc('session:stop', { id })
+      stopped++
+    } catch (err) {
+      log('Failed to stop ' + id + ': ' + err.message, 'err')
+    }
+  }
+  toast(`Stopped ${stopped} tunnel${stopped === 1 ? '' : 's'}`)
+}
+
 /* ------------------------------ actions ---------------------------------- */
 
 async function startShare(event) {
@@ -497,4 +532,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (diag.last_error) log('Worker diagnostics: ' + diag.last_error, 'err')
     } catch {}
   }
+
+  // Deep links: URLs delivered before this listener existed are drained
+  // from the pending queue; live ones arrive as app:event messages.
+  try {
+    const pending = await takePendingDeepLinks()
+    for (const url of pending) handleDeepLink(url)
+  } catch {}
+  onAppEvent((msg) => {
+    if (msg.event === 'deep-link:open') handleDeepLink(msg.data.url)
+    else if (msg.event === 'tray:stop-all') stopAllTunnels()
+  }).catch((err) => log('Failed to subscribe to app events: ' + err.message, 'err'))
 })

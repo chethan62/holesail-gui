@@ -136,8 +136,11 @@ string — hit **Copy** and send it to whoever needs access.
 public; secure mode is auto-detected from the prefix). The tunnel is exposed on
 your localhost port.
 
-Sessions can be paused/resumed/stopped; the event log at the bottom shows what
-the worker is doing.
+Sessions can be paused/resumed/stopped; the event log at the bottom shows what the worker is doing.
+
+**Deep links (`hs://`)** — clicking a connection string link (or running `xdg-open "hs://…"`) opens the app with the Connect form pre-filled, even if it was hidden in the tray. The app registers itself as the handler for the `hs://` scheme on Linux/Windows at first run; on Android, the scheme is baked into the APK manifest. A second app launch while one is running routes to the existing instance instead of duplicating.
+
+**System tray** — closing the window hides the app (tunnels keep running) and a tray icon appears with *Show / Stop all tunnels / Quit*. Quit from the tray is the only way to fully exit while tunnels are active.
 
 ## Android
 

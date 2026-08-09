@@ -23,6 +23,9 @@ finish-args:
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
   # write access for webview storage (localStorage for recent keys)
   - --persist=.local/share/holesail-gui
+  # single-instance plugin (DBus service; id io.holesail.gui -> io_holesail_gui)
+  - --own-name=org.io_holesail_gui.SingleInstance
+  - --talk-name=org.io_holesail_gui.SingleInstance
 
 modules:
   - name: holesail-gui

@@ -7,3 +7,4 @@ Icon=holesail-gui
 Terminal=false
 Categories=Network;Utility;
 Keywords=holesail;tunnel;p2p;proxy;
+MimeType=x-scheme-handler/hs;

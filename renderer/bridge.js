@@ -16,6 +16,14 @@ export async function workerRestart() {
   return await window.__TAURI__.core.invoke('worker_restart')
 }
 
+export async function takePendingDeepLinks() {
+  return await window.__TAURI__.core.invoke('take_pending_deep_links')
+}
+
+export async function onAppEvent(callback) {
+  return await window.__TAURI__.event.listen('app:event', (event) => callback(event.payload))
+}
+
 export async function onEvent(callback) {
   return await window.__TAURI__.event.listen('worker:event', (event) => callback(event.payload))
 }

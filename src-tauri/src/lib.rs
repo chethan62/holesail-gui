@@ -22,7 +22,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(90); // DHT bootstrap can take a while
 const EXIT_GRACE: Duration = Duration::from_secs(3); // SIGTERM -> SIGKILL escalation on app quit
@@ -76,6 +77,27 @@ struct WorkerDiag {
 }
 
 struct DiagState(Mutex<WorkerDiag>);
+
+/// hs:// URLs delivered before the webview subscribed (startup deep links).
+/// The renderer drains them via take_pending_deep_links on boot; live links
+/// are also pushed here so nothing is lost if the UI is reloaded.
+struct PendingDeepLinks(Mutex<Vec<String>>);
+
+fn queue_deep_link(app: &AppHandle, url: String) {
+    if !url.starts_with("hs://") {
+        return;
+    }
+    app.state::<PendingDeepLinks>().0.lock().unwrap().push(url.clone());
+    let _ = app.emit(
+        "app:event",
+        json!({ "event": "deep-link:open", "data": { "url": url } }),
+    );
+}
+
+#[tauri::command]
+fn take_pending_deep_links(app: AppHandle) -> Vec<String> {
+    std::mem::take(&mut app.state::<PendingDeepLinks>().0.lock().unwrap())
+}
 
 fn diag_record_spawn(app: &AppHandle) {
     let ds = app.state::<DiagState>();
@@ -483,16 +505,128 @@ async fn rpc(
     }
 }
 
+/// System tray: show/hide the window, stop all tunnels, quit. The app lives
+/// in the tray once the window is closed (close = hide, not exit).
+#[cfg(desktop)]
+fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show = MenuItem::with_id(app, "show", "Show Holesail GUI", true, None::<&str>)?;
+    let stop_all = MenuItem::with_id(app, "stop-all", "Stop all tunnels", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &stop_all, &quit])?;
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().expect("app icon").clone())
+        .tooltip("Holesail GUI — peer-to-peer tunnels")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+            // the renderer owns the session list — ask it to stop everything
+            "stop-all" => {
+                let _ = app.emit("app:event", json!({ "event": "tray:stop-all" }));
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+/// Close-to-tray: the window close button hides the window instead of
+/// exiting (desktop only — mobile has no close button semantics). Quit
+/// happens from the tray menu, which triggers RunEvent::Exit and the
+/// worker teardown in run().
+fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
+    #[cfg(desktop)]
+    if let WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let _ = window.hide();
+    }
+}
+
 /// Tauri application entry point (desktop via src/main.rs, mobile via the
 /// generated Android/iOS entry).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // MUST be the first plugin registered. With the "deep-link" feature it
+    // routes hs:// argv deep links into the first instance; the on_open_url
+    // handler below fires in the running instance.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // A second launch happened (e.g. the window is hidden in the
+            // tray): bring the running instance to the front.
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            // Belt and braces: the plugin integration usually fires
+            // on_open_url for configured schemes, but argv is the ground
+            // truth on Linux/Windows.
+            for arg in argv.iter().skip(1) {
+                queue_deep_link(app, arg.clone());
+            }
+        }));
+    }
+
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .manage(PendingState(Mutex::new(HashMap::new())))
         .manage(DiagState(Mutex::new(WorkerDiag::default())))
+        .manage(PendingDeepLinks(Mutex::new(Vec::new())))
+        .on_window_event(handle_window_event)
         .setup(|app| {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
+
+            #[cfg(desktop)]
+            setup_tray(app.handle())?;
+
+            // Deep links: deliver startup URLs via the pending queue (the
+            // webview is not listening for events yet) and forward live ones
+            // to the renderer as app:event messages.
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    queue_deep_link(&handle, url.to_string());
+                }
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in urls {
+                    queue_deep_link(app.handle(), url.to_string());
+                }
+            }
+            // Linux/Windows: make this binary the handler for hs:// links
+            // (writes a per-user .desktop entry / registry key). macOS and
+            // Android use the statically configured schemes instead.
+            #[cfg(desktop)]
+            if let Err(e) = app.deep_link().register("hs") {
+                eprintln!("Failed to register hs:// deep link: {e}");
+            }
 
             // A missing or incompatible worker runtime (no node on desktop, no
             // extracted bundle on Android) must not kill the app: record it in
@@ -511,7 +645,12 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![rpc, worker_diagnostics, worker_restart])
+        .invoke_handler(tauri::generate_handler![
+            rpc,
+            worker_diagnostics,
+            worker_restart,
+            take_pending_deep_links
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
