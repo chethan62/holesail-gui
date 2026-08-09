@@ -153,6 +153,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # --generate-notes diffs commits between tags
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
