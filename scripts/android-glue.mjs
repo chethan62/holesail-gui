@@ -224,6 +224,172 @@ if (!main.includes('BareAssets.extract')) {
   console.log('MainActivity.kt already patched')
 }
 
+// 5. foreground service: keeps the app process (and the bare worker child)
+// alive when the app is backgrounded — Android freezes backgrounded apps,
+// which silently kills tunnels. The service itself does nothing; its
+// foreground notification exempts the process from the freezer.
+const holeService = `package ${findMainActivityPackage(GEN)}
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.IBinder
+
+class HoleService : Service() {
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onCreate() {
+    super.onCreate()
+    if (Build.VERSION.SDK_INT >= 26) {
+      val channel = NotificationChannel(
+        CHANNEL_ID,
+        "Holesail worker",
+        NotificationManager.IMPORTANCE_LOW
+      ).apply {
+        description = "Keeps the tunnel worker running in the background"
+        setShowBadge(false)
+      }
+      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+    val builder = if (Build.VERSION.SDK_INT >= 26) {
+      Notification.Builder(this, CHANNEL_ID)
+    } else {
+      Notification.Builder(this)
+    }
+    startForeground(
+      NOTIFICATION_ID,
+      builder
+        .setContentTitle("Holesail")
+        .setContentText("Tunnel worker active")
+        .setSmallIcon(R.drawable.ic_holesail_notification)
+        .setOngoing(true)
+        .build()
+    )
+  }
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    // user swiped the app away — release the keep-alive
+    stopSelf()
+    super.onTaskRemoved(rootIntent)
+  }
+
+  companion object {
+    private const val CHANNEL_ID = "holesail-worker"
+    private const val NOTIFICATION_ID = 1
+
+    fun start(context: Context) {
+      val intent = Intent(context, HoleService::class.java)
+      if (Build.VERSION.SDK_INT >= 26) {
+        context.startForegroundService(intent)
+      } else {
+        context.startService(intent)
+      }
+    }
+
+    fun stop(context: Context) {
+      context.stopService(Intent(context, HoleService::class.java))
+    }
+  }
+}
+`
+writeFileSync(path.join(mainActivity, 'HoleService.kt'), holeService)
+console.log('wrote HoleService.kt in', mainActivity)
+
+// 5b. notification small icon (white alpha mask — plain vector, no deps)
+const iconDir = path.join(GEN, 'app', 'src', 'main', 'res', 'drawable')
+mkdirSync(iconDir, { recursive: true })
+writeFileSync(
+  path.join(iconDir, 'ic_holesail_notification.xml'),
+  `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M4,6a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M16,18a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+  <path
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="2"
+      android:strokeLineCap="round"
+      android:pathData="M7.4,7.4 L16.6,16.6" />
+</vector>
+`
+)
+console.log('wrote ic_holesail_notification.xml')
+
+// 5c. activity wiring: start the service while the UI is alive, request the
+// notification permission (API 33+), stop on destroy
+if (!main.includes('HoleService.start')) {
+  main = main
+    .replace(
+      'import android.os.Bundle',
+      'import android.os.Build\nimport android.os.Bundle'
+    )
+    .replace(
+      '    super.onCreate(savedInstanceState)\n  }\n}',
+      `    super.onCreate(savedInstanceState)
+    if (Build.VERSION.SDK_INT >= 33) {
+      requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+    }
+  }
+
+  override fun onStart() {
+    super.onStart()
+    HoleService.start(this)
+  }
+
+  override fun onDestroy() {
+    HoleService.stop(this)
+    super.onDestroy()
+  }
+}`
+    )
+  writeFileSync(mainActivityFile, main)
+  console.log('patched MainActivity.kt (foreground service wiring)')
+} else {
+  console.log('MainActivity.kt already has foreground service wiring')
+}
+
+// 5d. manifest: service declaration + permissions
+const manifestPath2 = path.join(GEN, 'app', 'src', 'main', 'AndroidManifest.xml')
+let manifest2 = readFileSync(manifestPath2, 'utf8')
+if (!manifest2.includes('HoleService')) {
+  manifest2 = manifest2
+    .replace(
+      '<uses-permission android:name="android.permission.INTERNET" />',
+      '<uses-permission android:name="android.permission.INTERNET" />\n' +
+        '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n' +
+        '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />\n' +
+        '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
+    )
+    .replace(
+      '    </application>',
+      '        <service\n' +
+        '            android:name=".HoleService"\n' +
+        '            android:exported="false"\n' +
+        '            android:foregroundServiceType="specialUse">\n' +
+        '            <property\n' +
+        '                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"\n' +
+        '                android:value="peer-to-peer tunnel worker" />\n' +
+        '        </service>\n' +
+        '    </application>'
+    )
+  writeFileSync(manifestPath2, manifest2)
+  console.log('patched AndroidManifest.xml (foreground service)')
+} else {
+  console.log('AndroidManifest.xml already has foreground service')
+}
+
 function findMainActivityPackage(genDir) {
   // AGP 8+: the app package is the gradle `namespace`, not a manifest attr
   const gradle = readFileSync(path.join(genDir, 'app', 'build.gradle.kts'), 'utf8')

@@ -180,6 +180,13 @@ own Android build):
    pointing at the bundle — same JSON-RPC over stdio, same protocol, same UI.
    If the bundle is missing the app still renders with a "worker offline"
    banner instead of crashing.
+4. A tiny foreground service (`HoleService`, injected by the glue) keeps the
+   app process — and therefore the worker — alive when the app is
+   backgrounded; without it Android freezes backgrounded apps and silently
+   kills active tunnels. The service is started while the UI is visible,
+   stopped when the task is swiped away, and shows a low-importance
+   "Tunnel worker active" notification (notification permission is requested
+   on Android 13+).
 
 `npm test` runs the protocol test under node; `npm run test:bare` runs the
 same test suite against a linux-x64 bare bundle, verifying the whole chain
