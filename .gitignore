@@ -2,6 +2,9 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/
 dist-resources/
+dist-resources-bare/
+dist-resources-android/
+dist-resources-android-x64/
 packaging/arch/holesail-gui-bin
 packaging/arch/resources.tar.zst
 packaging/arch/holesail-gui.png

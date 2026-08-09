@@ -46,6 +46,7 @@ struct PendingState(Mutex<HashMap<String, Pending>>);
 
 /// Locate service-worker.js: try the resource dir (packaged app), then the
 /// directory layout around the running binary (dev build: src-tauri/target/...).
+#[cfg(not(target_os = "android"))]
 fn find_worker(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
@@ -74,24 +75,88 @@ fn find_worker(app: &AppHandle) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Spawn the node service worker and start its IO threads.
-/// Requires WorkerState/StdinState/PendingState to be managed already.
-fn spawn_worker(app: &AppHandle) -> Result<(), String> {
+/// Desktop: run the worker under the system `node`, located via resource_dir
+/// (packaged) or the dev directory layout.
+#[cfg(not(target_os = "android"))]
+fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     let worker_path =
         find_worker(app).ok_or_else(|| "Could not locate service-worker.js".to_string())?;
+    Ok((PathBuf::from("node"), worker_path))
+}
+
+/// Android: run the worker under the bundled bare runtime.
+///
+/// SELinux forbids untrusted_app (targetSdk >= 26) from exec'ing files in
+/// its own data dir (app_data_file), but allows exec of apk_data_file —
+/// the APK's extracted native lib dir (/data/app/.../lib/<abi>/). The
+/// bare runtime is shipped there as libholesail_bare.so by the glue
+/// script; the worker tree (service-worker.js + node_modules) is
+/// extracted from assets into filesDir/bare by BareAssets.kt.
+#[cfg(target_os = "android")]
+fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    let bundle = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("files")
+        .join("bare");
+    let worker = bundle.join("service-worker.js");
+    if !worker.is_file() {
+        return Err("Android worker bundle not extracted (assets missing)".to_string());
+    }
+
+    // locate our own loaded library to derive the native lib dir
+    let maps = std::fs::read_to_string("/proc/self/maps")
+        .map_err(|e| format!("Failed to read /proc/self/maps: {e}"))?;
+    let libdir = maps
+        .lines()
+        .filter_map(|l| l.split_whitespace().last())
+        .find(|p| p.ends_with("libholesail_gui_lib.so"))
+        .and_then(|p| std::path::Path::new(p).parent())
+        .ok_or_else(|| "Could not locate libholesail_gui_lib.so in /proc/self/maps".to_string())?
+        .to_path_buf();
+
+    let bare = libdir.join("libholesail_bare.so");
+    if !bare.is_file() {
+        return Err(format!("libholesail_bare.so not found in {libdir:?}"));
+    }
+    // extracted native libs already carry 0755 (system-owned; the app
+    // cannot and must not chmod them)
+    Ok((bare, worker))
+}
+
+/// Spawn the service worker (node on desktop, bare on Android) and start
+/// its IO threads.
+/// Requires WorkerState/StdinState/PendingState to be managed already.
+fn spawn_worker(app: &AppHandle) -> Result<(), String> {
+    let (program, worker_path) = worker_command(app)?;
     let cwd = worker_path
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_default();
 
-    let mut child = Command::new("node")
+    let mut child = Command::new(&program);
+    // Android: the spawned bare process is outside the zygote linker
+    // namespace, so its dependencies (libc++_shared.so for udx-native)
+    // must be found via LD_LIBRARY_PATH — the native lib dir and the
+    // extracted bundle dir both carry a copy.
+    #[cfg(target_os = "android")]
+    child.env(
+        "LD_LIBRARY_PATH",
+        format!(
+            "{}:{}",
+            program.parent().unwrap_or(&cwd).display(),
+            cwd.display()
+        ),
+    );
+    let mut child = child
         .arg(&worker_path)
         .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn node: {e}"))?;
+        .map_err(|e| format!("Failed to spawn service worker ({program:?}): {e}"))?;
 
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
@@ -240,20 +305,9 @@ pub fn run() {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
 
-            // Android has no Node runtime to spawn (the backend is ported to Bare
-            // later), so let the UI render in an offline-worker state rather than
-            // aborting the whole app.
-            #[cfg(target_os = "android")]
-            {
-                let _ = app.emit(
-                    "worker:event",
-                    json!({ "event": "worker:exit", "data": { "code": null, "reason": "android backend pending" } }),
-                );
-            }
-
-            // On desktop, a missing or incompatible Node installation must not kill
-            // the app. Surface it in the UI and keep the window alive.
-            #[cfg(not(target_os = "android"))]
+            // A missing or incompatible worker runtime (no node on desktop, no
+            // extracted bundle on Android) must not kill the app: surface it
+            // in the UI and keep the window alive.
             if let Err(e) = spawn_worker(app.handle()) {
                 eprintln!("Failed to spawn holesail service worker: {}", e);
                 let _ = app.emit(

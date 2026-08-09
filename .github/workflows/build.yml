@@ -106,6 +106,12 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
+      - name: Prepare bare-runtime worker bundle (android-arm64)
+        run: node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android
+
+      - name: Wire bundle into APK assets (Kotlin extractor)
+        run: node scripts/android-glue.mjs
+
       - name: Build debug APK
         run: npx tauri android build --apk --debug
         env:

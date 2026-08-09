@@ -3,9 +3,9 @@
  * service-worker.js
  *
  * Plain-Node bridge between the holesail npm API and a parent process
- * (the Electron main process). Runs under the SYSTEM node binary so the
- * native addons (sodium-native, udx-native) load with the ABI they were
- * built for — this sidesteps the Electron native-module ABI problem.
+ * (the Tauri Rust backend). Runs under the SYSTEM node binary on desktop
+ * (native addons load with the ABI they were built for) and under the
+ * bare runtime on Android (the .bare prebuilds are picked automatically).
  *
  * Protocol: newline-delimited JSON on stdin/stdout.
  *   Request : { "id": 1, "method": "server:start", "params": { ... } }
@@ -25,8 +25,26 @@
 
 'use strict'
 
-const readline = require('readline')
 const Holesail = require('holesail')
+
+// Runtime shim: the bare runtime (Android backend) does not expose Node
+// globals — its builtins live under bare-* names. Node has them as
+// globals. Resolve whichever runtime we are running under.
+const process = (() => {
+  try {
+    return require('bare-process')
+  } catch {
+    return globalThis.process
+  }
+})()
+const Buffer = (() => {
+  try {
+    return require('buffer').Buffer
+  } catch {
+    return globalThis.Buffer
+  }
+})()
+const setImmediate = globalThis.setImmediate || ((fn, ...args) => setTimeout(fn, 0, ...args))
 
 const sessions = new Map() // id -> { hs, type, url, port, host, secure, protocol, key, publicKey, state }
 let nextId = 1
@@ -178,9 +196,16 @@ async function dispatch(method, params) {
   }
 }
 
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+/* ------------------------------ transport ------------------------------ */
 
-rl.on('line', (line) => {
+// Newline-split stdin without `readline` (not a builtin on the bare
+// runtime used for the Android backend). Handles \n, \r\n and a final
+// unterminated line, mirroring readline's 'line' semantics.
+let pending = ''
+
+function handleLine(line) {
+  if (line.endsWith('\r')) line = line.slice(0, -1)
+  if (line === '') return
   let req
   try {
     req = JSON.parse(line)
@@ -192,6 +217,20 @@ rl.on('line', (line) => {
     .then(() => dispatch(req.method, req.params))
     .then((result) => sendResult(req.id, result))
     .catch((err) => sendError(req.id, err))
+}
+
+process.stdin.on('data', (chunk) => {
+  pending += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+  let idx
+  while ((idx = pending.indexOf('\n')) !== -1) {
+    const line = pending.slice(0, idx)
+    pending = pending.slice(idx + 1)
+    handleLine(line)
+  }
+})
+
+process.stdin.on('end', () => {
+  if (pending !== '') handleLine(pending)
 })
 
 /* ------------------------------ shutdown ------------------------------- */

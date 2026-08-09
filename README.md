@@ -12,7 +12,7 @@ Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worke
 |---|---|---|
 | **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, flatpak manifest |
 | **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — needs Node 18+ on the machine |
-| **Android** | ⚠️ UI builds, backend pending | debug APK — see the [Android](#android) caveat |
+| **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section |
 | macOS | code-compatible, untested here | `.dmg`/`.app` via `tauri build` on a Mac |
 
 The three primary targets are built automatically by the GitHub Actions
@@ -140,22 +140,50 @@ An Android project is scaffolded with `tauri android init` (already done — see
 **Build an APK** (on a machine with Android Studio / the SDK+NDK):
 
 ```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+rustup target add aarch64-linux-android # or all four ABIs
+ANDROID_HOME=$HOME/Android/Sdk npm run build:android   # prepare bundle + glue + build
+# or step by step:
+node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android
+node scripts/android-glue.mjs
 ANDROID_HOME=$HOME/Android/Sdk npx tauri android build --apk --debug
-# or open src-tauri/gen/android in Android Studio and run the app
 ```
 
-**Current limitation — the backend does not run on Android yet.** The GUI
-spawns its worker with the `node` binary, which does not exist on Android, so
-the Android build currently shows the UI but tunnels are non-functional until
-the worker is ported to the **Bare runtime** (holepunch's JS runtime — this is
-exactly what upstream holesail uses for its own Android build; the native
-addons `sodium-native`/`udx-native` already ship android prebuilds). Plan:
+**How the backend works on Android.** The worker is the exact same
+`service-worker.js`, but instead of the system `node` binary it runs under
+**Bare**, holepunch's JS runtime (the same one upstream holesail uses for its
+own Android build):
 
-1. Cross-compile `bare` for android (upstream: `bare-make` + `builtins.json`).
-2. Bundle the worker JS into the bare binary; ship it as an APK asset.
-3. In `main.rs`, spawn the bundled bare binary instead of `node` when
-   `cfg(target_os = "android")`.
+1. `prepare-resources.mjs --bare --target android-arm64` assembles
+   `dist-resources-android/`: the worker + a production `node_modules` pruned
+   to the `android-arm64` `.bare` prebuilds of `sodium-native`/`udx-native`,
+   plus the prebuilt `bare` runtime binary (fetched from the
+   `bare-runtime-android-arm64` npm package — no cross-compiling needed).
+2. `scripts/android-glue.mjs` wires everything into the generated project:
+   - copies the bundle into the APK assets (`app/src/main/assets/bare/`) and
+     injects `BareAssets.kt`, a small Kotlin extractor that copies the assets
+     into `filesDir/bare` on first launch (Android assets are not real
+     filesystem paths);
+   - ships `bare` as a jniLibs library (`libholesail_bare.so`) — SELinux
+     forbids apps (targetSdk ≥ 26) from exec'ing files in their own data dir,
+     but *does* allow exec of the extracted APK lib dir (`apk_data_file`);
+   - bundles `libc++_shared.so` (the `udx-native` addon links the C++ STL,
+     which is not present on Android 10+) and forces
+     `extractNativeLibs="true"` so those files land on disk at install.
+3. In Rust, `worker_command()` under `cfg(target_os = "android")` locates the
+   native lib dir via `/proc/self/maps`, spawns
+   `<libdir>/libholesail_bare.so service-worker.js` with `LD_LIBRARY_PATH`
+   pointing at the bundle — same JSON-RPC over stdio, same protocol, same UI.
+   If the bundle is missing the app still renders with a "worker offline"
+   banner instead of crashing.
+
+`npm test` runs the protocol test under node; `npm run test:bare` runs the
+same test suite against a linux-x64 bare bundle, verifying the whole chain
+(worker → holesail → addons → real DHT tunnel) on the bare runtime.
+
+**Verified end-to-end on an emulator** (x86_64, API 35): the app spawns the
+bare worker, the UI shows "worker online", a server session started from the
+app's own UI is reachable from a desktop client over the public DHT, and data
+sent through the tunnel arrives on the device.
 
 > The SDK installed in this repo's sandbox lives at
 > `/home/chethan/.reasonix/global-workspace/android-sdk` (not in `$HOME`,

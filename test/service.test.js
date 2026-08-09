@@ -13,6 +13,7 @@ const readline = require('readline')
 const path = require('path')
 
 const WORKER = process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
+const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binary
 const TEST_PORT = 43117 // hard-coded local port to expose
 const TIMEOUT_MS = 120000
 
@@ -42,7 +43,7 @@ function assert(cond, message) {
 }
 
 async function main() {
-  worker = spawn('node', [WORKER], { stdio: ['pipe', 'pipe', 'inherit'] })
+  worker = spawn(WORKER_CMD, [WORKER], { stdio: ['pipe', 'pipe', 'inherit'] })
   rl = readline.createInterface({ input: worker.stdout })
 
   rl.on('line', (line) => {
