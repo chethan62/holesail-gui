@@ -311,17 +311,18 @@ writeFileSync(
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+  <!-- two linked nodes: reads as a network link, not a camera -->
   <path
       android:fillColor="#FFFFFFFF"
-      android:pathData="M4,6a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+      android:pathData="M8.5,12 a2.5,2.5 0 1,1 -5,0 a2.5,2.5 0 1,1 5,0z" />
   <path
       android:fillColor="#FFFFFFFF"
-      android:pathData="M16,18a2,2 0 1,0 4,0a2,2 0 1,0 -4,0z" />
+      android:pathData="M20.5,12 a2.5,2.5 0 1,1 -5,0 a2.5,2.5 0 1,1 5,0z" />
   <path
       android:strokeColor="#FFFFFFFF"
       android:strokeWidth="2"
       android:strokeLineCap="round"
-      android:pathData="M7.4,7.4 L16.6,16.6" />
+      android:pathData="M8.5,12 L15.5,12" />
 </vector>
 `
 )
