@@ -14,6 +14,9 @@ REPO_ROOT="$(cd ../.. && pwd)"
 echo "==> preparing resources (dist-resources/, bare runtime included)"
 (cd "$REPO_ROOT" && node scripts/prepare-resources.mjs --bare >/dev/null)
 
+echo "==> staging node_modules.tar for the manifest (dir sources are flaky)"
+(cd "$REPO_ROOT/dist-resources" && tar -cf node_modules.tar node_modules)
+
 echo "==> building unpatched release binary"
 (cd "$REPO_ROOT/src-tauri" && touch src/main.rs && cargo build --release >/dev/null)
 

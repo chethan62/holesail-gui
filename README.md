@@ -101,12 +101,12 @@ Installs the binary + worker + `node_modules` into `/usr/lib/holesail-gui/` with
 a launcher at `/usr/bin/holesail-gui` (binary and resources in the same dir, so
 Tauri's `resource_dir()` resolves without bundler patching).
 
-**Flatpak** — manifest in `packaging/flatpak/` (Tauri webkit2gtk-4.1 base so
-WebKit is bundled):
+**Flatpak** — manifest in `packaging/flatpak/` (built on the GNOME platform,
+which ships WebKitGTK 4.1 — the freedesktop `webkit2gtk-4.1` extension does
+not exist on flathub):
 
 ```bash
-flatpak install flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
-flatpak install flathub org.freedesktop.Sdk.Extension.webkit2gtk-4.1//24.08
+flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47
 ./packaging/flatpak/build.sh     # builds + installs io.holesail.gui (user)
 flatpak run io.holesail.gui
 ```

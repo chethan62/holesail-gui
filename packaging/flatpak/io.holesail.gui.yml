@@ -1,25 +1,25 @@
-# io.holesail.gui — Flatpak manifest (Tauri v2 / webkit2gtk-4.1 base).
-# Build: ./build.sh  (requires flatpak + flatpak-builder + freedesktop SDK/runtime)
+# io.holesail.gui — Flatpak manifest (Tauri v2).
+# Build: ./build.sh  (requires flatpak + flatpak-builder + the GNOME runtimes)
 #
-# The webkit2gtk SDK extension is used as `base` so WebKitGTK is bundled
-# inside the app; no runtime extension needed.
+# WebKitGTK 4.1 ships inside the GNOME platform, so no SDK extension is
+# needed (the freedesktop webkit2gtk-4.1 extension does not exist on
+# flathub).
 
 app-id: io.holesail.gui
-runtime: org.freedesktop.Platform
-runtime-version: '24.08'
-sdk: org.freedesktop.Sdk
-base: org.freedesktop.Sdk.Extension.webkit2gtk-4.1
-base-version: '24.08'
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
 command: holesail-gui
 
 finish-args:
   # P2P tunnel needs outbound + inbound UDP/TCP on the DHT
   - --share=network
   # display
-  - --socket=x11
   - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
   - --device=dri
-  # avoid GPU-rendering glitches in the webkit webview
+  # avoid GPU-rendering glitches in the webkit webview (NVIDIA)
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
   # write access for webview storage (localStorage for recent keys)
   - --persist=.local/share/holesail-gui
@@ -31,10 +31,10 @@ modules:
       - install -Dm755 holesail-gui /app/lib/holesail-gui/holesail-gui
       - install -Dm755 bare /app/lib/holesail-gui/bare
       - install -Dm644 service-worker.js /app/lib/holesail-gui/service-worker.js
-      - cp -a node_modules /app/lib/holesail-gui/
+      - tar -xf node_modules.tar -C /app/lib/holesail-gui/
       - install -Dm755 holesail-gui /app/bin/holesail-gui
       - install -Dm644 holesail-gui.desktop /app/share/applications/io.holesail.gui.desktop
-      - install -Dm644 holesail-gui.png /app/share/icons/hicolor/128x128/apps/io.holesail.gui.png
+      - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/io.holesail.gui.png
     sources:
       - type: file
         path: ../../src-tauri/target/release/holesail-gui
@@ -42,8 +42,8 @@ modules:
         path: ../../dist-resources/bare
       - type: file
         path: ../../dist-resources/service-worker.js
-      - type: dir
-        path: ../../dist-resources/node_modules
+      - type: file
+        path: ../../dist-resources/node_modules.tar
       - type: file
         path: ../arch/holesail-gui.desktop
       - type: file
