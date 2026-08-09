@@ -185,10 +185,11 @@ own Android build):
 same test suite against a linux-x64 bare bundle, verifying the whole chain
 (worker → holesail → addons → real DHT tunnel) on the bare runtime.
 
-**Verified end-to-end on an emulator** (x86_64, API 35): the app spawns the
-bare worker, the UI shows "worker online", a server session started from the
-app's own UI is reachable from a desktop client over the public DHT, and data
-sent through the tunnel arrives on the device.
+**Verified end-to-end on an emulator** (x86_64, API 35) **and on real arm64
+hardware** (OnePlus 13R): the app spawns the bare worker, the UI shows
+"worker online", server sessions started from the app's own UI are reachable
+from a desktop client over the public DHT, and data sent through the tunnel
+arrives on the device — in both directions.
 
 > The SDK installed in this repo's sandbox lives at
 > `/home/chethan/.reasonix/global-workspace/android-sdk` (not in `$HOME`,
