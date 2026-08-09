@@ -239,8 +239,33 @@ pub fn run() {
         .setup(|app| {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
-            spawn_worker(app.handle())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+            // Android has no Node runtime to spawn (the backend is ported to Bare
+            // later), so let the UI render in an offline-worker state rather than
+            // aborting the whole app.
+            #[cfg(target_os = "android")]
+            {
+                let _ = app.emit(
+                    "worker:event",
+                    json!({ "event": "worker:exit", "data": { "code": null, "reason": "android backend pending" } }),
+                );
+            }
+
+            // On desktop, a missing or incompatible Node installation must not kill
+            // the app. Surface it in the UI and keep the window alive.
+            #[cfg(not(target_os = "android"))]
+            if let Err(e) = spawn_worker(app.handle()) {
+                eprintln!("Failed to spawn holesail service worker: {}", e);
+                let _ = app.emit(
+                    "worker:event",
+                    json!({ "event": "worker:error", "data": { "message": e } }),
+                );
+                let _ = app.emit(
+                    "worker:event",
+                    json!({ "event": "worker:exit", "data": { "code": null, "reason": e } }),
+                );
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![rpc])

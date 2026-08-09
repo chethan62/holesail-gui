@@ -145,16 +145,20 @@ function renderSession(container, s) {
   const body = el('div', 'card-body')
   if (s.type === 'server') {
     const qrBox = el('div', 'qr')
-    try {
-      const q = qrcode(0, 'M')
-      q.addData(urlText)
-      q.make()
-      const img = document.createElement('img')
-      img.src = q.createDataURL(4, 8)
-      img.alt = 'QR code'
-      qrBox.append(img)
-    } catch {
-      qrBox.textContent = 'QR unavailable'
+    if (s.secure && !state.revealed.has(s.id)) {
+      qrBox.textContent = 'QR hidden while key is masked'
+    } else {
+      try {
+        const q = qrcode(0, 'M')
+        q.addData(urlText)
+        q.make()
+        const img = document.createElement('img')
+        img.src = q.createDataURL(4, 8)
+        img.alt = 'QR code'
+        qrBox.append(img)
+      } catch {
+        qrBox.textContent = 'QR unavailable'
+      }
     }
     body.append(qrBox)
   }

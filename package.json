@@ -6,6 +6,7 @@
   "author": "Reasonix",
   "license": "MIT",
   "scripts": {
+    "predev": "node scripts/prepare-resources.mjs",
     "dev": "tauri dev",
     "build": "node scripts/prepare-resources.mjs && tauri build",
     "build:no-bundle": "node scripts/prepare-resources.mjs && tauri build --no-bundle",

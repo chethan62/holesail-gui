@@ -11,3 +11,4 @@ packaging/arch/src/
 packaging/flatpak/build-dir/
 *.log
 dist/
+opencode.json
