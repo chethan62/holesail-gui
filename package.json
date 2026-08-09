@@ -12,6 +12,7 @@
     "build:no-bundle": "node scripts/prepare-resources.mjs --bare && tauri build --no-bundle",
     "prepare:android": "node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android",
     "build:android": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk --debug",
+    "build:android:release": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk",
     "test": "node test/service.test.js",
     "test:bare": "node scripts/prepare-resources.mjs --bare --target linux-x64 --out dist-resources-bare && WORKER_CMD=dist-resources-bare/bare WORKER_PATH=dist-resources-bare/service-worker.js node test/service.test.js",
     "tauri": "tauri"

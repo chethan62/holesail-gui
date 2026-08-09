@@ -64,7 +64,11 @@ const assets = path.join(GEN, 'app', 'src', 'main', 'assets', 'bare')
 rmSync(assets, { recursive: true, force: true })
 mkdirSync(assets, { recursive: true })
 cpSync(BUNDLE, assets, { recursive: true })
-console.log('copied', BUNDLE, '->', assets)
+// the bare runtime is shipped ONLY as a jniLibs library (step 2c) — the
+// Rust side spawns it from the native lib dir, so the 60 MB duplicate in
+// assets would only bloat the APK
+rmSync(path.join(assets, 'bare'), { recursive: true, force: true })
+console.log('copied', BUNDLE, '->', assets, '(bare runtime excluded — jniLibs only)')
 
 // 2b. udx-native links against libc++_shared.so (the sodium addon does not).
 // The bare worker is spawned OUTSIDE the zygote linker namespace, so the
