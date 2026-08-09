@@ -564,34 +564,36 @@ fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
         api.prevent_close();
         let _ = window.hide();
     }
+    // mobile: nothing to do (no close button semantics); silence unused params
+    #[cfg(not(desktop))]
+    let _ = (window, event);
 }
 
 /// Tauri application entry point (desktop via src/main.rs, mobile via the
 /// generated Android/iOS entry).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let builder = tauri::Builder::default();
 
     // MUST be the first plugin registered. With the "deep-link" feature it
     // routes hs:// argv deep links into the first instance; the on_open_url
-    // handler below fires in the running instance.
+    // handler below fires in the running instance. Desktop only — mobile
+    // apps have no CLI instances to dedupe.
     #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            // A second launch happened (e.g. the window is hidden in the
-            // tray): bring the running instance to the front.
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-            // Belt and braces: the plugin integration usually fires
-            // on_open_url for configured schemes, but argv is the ground
-            // truth on Linux/Windows.
-            for arg in argv.iter().skip(1) {
-                queue_deep_link(app, arg.clone());
-            }
-        }));
-    }
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        // A second launch happened (e.g. the window is hidden in the
+        // tray): bring the running instance to the front.
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+        // Belt and braces: the plugin integration usually fires
+        // on_open_url for configured schemes, but argv is the ground
+        // truth on Linux/Windows.
+        for arg in argv.iter().skip(1) {
+            queue_deep_link(app, arg.clone());
+        }
+    }));
 
     builder
         .plugin(tauri_plugin_deep_link::init())
