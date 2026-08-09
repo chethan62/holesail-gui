@@ -361,7 +361,9 @@ function initTheme() {
 
 function handleDeepLink(url) {
   if (!url.startsWith('hs://')) return
-  $('#connect-key').value = url
+  const input = $('#connect-key')
+  if (input.value === url) return // already loaded (queued + live event)
+  input.value = url
   switchTab('connect')
   toast('Connection string loaded — press Connect')
   log('Loaded connection string from deep link')
@@ -534,10 +536,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Deep links: URLs delivered before this listener existed are drained
-  // from the pending queue; live ones arrive as app:event messages.
+  // from the pending queue; live ones arrive as app:event messages. The
+  // drain retries briefly — Rust setup() may still be queuing the startup
+  // URL while the webview boots, and an early drain would miss it.
   try {
-    const pending = await takePendingDeepLinks()
-    for (const url of pending) handleDeepLink(url)
+    for (let i = 0; i < 10; i++) {
+      const pending = await takePendingDeepLinks()
+      if (pending.length) {
+        for (const url of pending) handleDeepLink(url)
+        break
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
   } catch {}
   onAppEvent((msg) => {
     if (msg.event === 'deep-link:open') handleDeepLink(msg.data.url)
