@@ -75,10 +75,18 @@ fn find_worker(app: &AppHandle) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Desktop: run the worker under the system `node`, located via resource_dir
-/// (packaged) or the dev directory layout.
+/// Desktop: run the worker under the bundled bare runtime when present
+/// (production bundles ship it — no system Node needed), falling back to
+/// the system `node` for dev checkouts and installs without the bundle.
 #[cfg(not(target_os = "android"))]
 fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    if let Ok(dir) = app.path().resource_dir() {
+        let bare = dir.join("bare");
+        let worker = dir.join("service-worker.js");
+        if bare.is_file() && worker.is_file() {
+            return Ok((bare, worker));
+        }
+    }
     let worker_path =
         find_worker(app).ok_or_else(|| "Could not locate service-worker.js".to_string())?;
     Ok((PathBuf::from("node"), worker_path))

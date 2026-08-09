@@ -11,8 +11,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 
-echo "==> preparing resources (dist-resources/)"
-(cd "$REPO_ROOT" && node scripts/prepare-resources.mjs >/dev/null)
+echo "==> preparing resources (dist-resources/, bare runtime included)"
+(cd "$REPO_ROOT" && node scripts/prepare-resources.mjs --bare >/dev/null)
 
 echo "==> building unpatched release binary"
 (cd "$REPO_ROOT/src-tauri" && touch src/main.rs && cargo build --release >/dev/null)

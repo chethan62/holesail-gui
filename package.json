@@ -8,8 +8,8 @@
   "scripts": {
     "predev": "node scripts/prepare-resources.mjs",
     "dev": "tauri dev",
-    "build": "node scripts/prepare-resources.mjs && tauri build",
-    "build:no-bundle": "node scripts/prepare-resources.mjs && tauri build --no-bundle",
+    "build": "node scripts/prepare-resources.mjs --bare && tauri build",
+    "build:no-bundle": "node scripts/prepare-resources.mjs --bare && tauri build --no-bundle",
     "prepare:android": "node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android",
     "build:android": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk --debug",
     "test": "node test/service.test.js",

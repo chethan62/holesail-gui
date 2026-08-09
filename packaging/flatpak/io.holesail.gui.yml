@@ -29,6 +29,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 holesail-gui /app/lib/holesail-gui/holesail-gui
+      - install -Dm755 bare /app/lib/holesail-gui/bare
       - install -Dm644 service-worker.js /app/lib/holesail-gui/service-worker.js
       - cp -a node_modules /app/lib/holesail-gui/
       - install -Dm755 holesail-gui /app/bin/holesail-gui
@@ -37,6 +38,8 @@ modules:
     sources:
       - type: file
         path: ../../src-tauri/target/release/holesail-gui
+      - type: file
+        path: ../../dist-resources/bare
       - type: file
         path: ../../dist-resources/service-worker.js
       - type: dir

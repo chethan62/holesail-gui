@@ -28,7 +28,7 @@ jobs:
 
       - name: Prepare resources + build bundles
         run: |
-          node scripts/prepare-resources.mjs
+          node scripts/prepare-resources.mjs --bare
           # NO_STRIP avoids linuxdeploy's bundled strip choking on .relr.dyn;
           # APPIMAGE_EXTRACT_AND_RUN works without FUSE
           NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build

@@ -9,7 +9,7 @@ pkgdesc="Desktop GUI for Holesail — peer-to-peer TCP/UDP tunnel sharing"
 arch=('x86_64')
 url="https://github.com/holesail/holesail"
 license=('MIT')
-depends=('nodejs>=18' 'webkit2gtk-4.1' 'gtk3')
+depends=('webkit2gtk-4.1' 'gtk3')
 source=(
   'holesail-gui-bin'
   'resources.tar.zst'

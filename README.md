@@ -42,7 +42,9 @@ proxies JSON-RPC over stdio.
 
 ## Requirements
 
-- **Node.js 18+** (`node` on PATH) — needed by the service worker
+- **Node.js 18+** (`node` on PATH) — for development and for the
+  Windows/macOS packages; the **Linux** packages embed the Bare runtime, so
+  end users don't need Node at all
 - Rust toolchain (`cargo`) for Tauri
 - Linux: `webkit2gtk-4.1` + `gtk3` dev packages (Tauri prerequisites;
   see [Tauri docs](https://v2.tauri.app/start/prerequisites/))
@@ -114,9 +116,12 @@ flatpak run io.holesail.gui
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
   respectively with the same resource layout.
 
-**Packaged-app requirements:** the GUI spawns the service worker with `node`
-from PATH, so end-user machines need Node.js 18+ installed (documented in the
-release notes). A fully embedded Node runtime is future work.
+**Packaged-app requirements:** the GUI prefers the **bundled Bare runtime**
+(same engine as the Android build — no Node needed). Linux packages ship it;
+Windows/macOS installers still spawn `node` from PATH, so those end-user
+machines need Node.js 18+ installed (documented in the release notes).
+Switching Windows/macOS to the embedded runtime is future work once verified
+there.
 
 ## Using the app
 
