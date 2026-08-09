@@ -1,5 +1,8 @@
 # Holesail GUI
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/chethan62/holesail-gui/actions/workflows/build.yml/badge.svg)](https://github.com/chethan62/holesail-gui/actions/workflows/build.yml)
+
 A desktop GUI for [Holesail](https://github.com/holesail/holesail) — the peer-to-peer
 TCP/UDP tunnel. Share any local port with the world, or connect to someone else's
 tunnel, from a friendly window instead of the CLI.
@@ -214,3 +217,21 @@ arrives on the device — in both directions.
   10 entries) for convenience. They're only readable by local processes with
   access to your app profile, but if that's a concern, use the "clear" button
   or avoid saving private keys you care about.
+
+## Acknowledgements
+
+- [holesail](https://github.com/holesail/holesail) — the peer-to-peer
+  TCP/UDP tunnel engine this app is a GUI for (MIT).
+- [Bare](https://github.com/holepunchto/bare) — holepunch's JavaScript
+  runtime; powers the Android and embedded-Linux backends so end users don't
+  need Node.js (Apache-2.0).
+- [HyperDHT](https://github.com/holepunchto/hyperdht), [udx-native](https://github.com/holepunchto/udx-native)
+  and [sodium-native](https://github.com/holepunchto/sodium-native) — the
+  encrypted DHT and networking stack underneath (MIT/Apache-2.0).
+- [Tauri](https://tauri.app) — the desktop/mobile framework (MIT/Apache-2.0).
+- The current app icon comes from the Tauri template; a custom icon is a
+  TODO.
+
+## License
+
+[MIT](LICENSE) © 2026 Reasonix
