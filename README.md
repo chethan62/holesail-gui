@@ -221,7 +221,8 @@ arrives on the device — in both directions.
 ## Acknowledgements
 
 - [holesail](https://github.com/holesail/holesail) — the peer-to-peer
-  TCP/UDP tunnel engine this app is a GUI for (MIT).
+  TCP/UDP tunnel engine this app is a GUI for (**AGPL-3.0** — see the license
+  note below).
 - [Bare](https://github.com/holepunchto/bare) — holepunch's JavaScript
   runtime; powers the Android and embedded-Linux backends so end users don't
   need Node.js (Apache-2.0).
@@ -234,4 +235,11 @@ arrives on the device — in both directions.
 
 ## License
 
-[MIT](LICENSE) © 2026 Reasonix
+[MIT](LICENSE) © 2026 Reasonix — for this project's own code.
+
+**Note:** the bundled `holesail` engine (the service worker) is
+[AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that
+embeds AGPL code carries source-availability obligations for the combined
+work; the GUI's own source is here, so this is effectively satisfied, but if
+you intend commercial redistribution, review AGPL implications or contact the
+upstream maintainers.
