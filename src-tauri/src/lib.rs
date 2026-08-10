@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -108,6 +109,147 @@ fn version_info(app: AppHandle) -> serde_json::Value {
         "version": app.package_info().version.to_string(),
         "gitHash": env!("GIT_HASH"),
     })
+}
+
+/* --------------------------- saved tunnels ---------------------------- */
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedTunnel {
+    id: String,
+    name: String,
+    kind: String, // "server" | "client"
+    key: String,  // server: fixed key hex; client: full hs:// string
+    port: Option<u16>,
+    host: Option<String>,
+    udp: bool,
+    autostart: bool,
+    created_at: u64,
+}
+
+struct SavedStore(Mutex<Vec<SavedTunnel>>);
+
+fn saved_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("saved-tunnels.json")
+}
+
+fn saved_persist(app: &AppHandle, store: &SavedStore) {
+    let data = serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into());
+    let path = saved_path(app);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, data);
+}
+
+/// Keep login autostart in sync with saved tunnels: on when any tunnel
+/// wants it, off when none do. Desktop only (mobile has no login session).
+#[cfg(desktop)]
+fn autostart_sync(app: &AppHandle, store: &SavedStore) {
+    use tauri_plugin_autostart::ManagerExt;
+    let want = store.0.lock().unwrap().iter().any(|t| t.autostart);
+    let la = app.autolaunch();
+    let on = la.is_enabled().unwrap_or(false);
+    if want && !on {
+        let _ = la.enable();
+    } else if !want && on {
+        let _ = la.disable();
+    }
+}
+
+#[cfg(not(desktop))]
+fn autostart_sync(_app: &AppHandle, _store: &SavedStore) {}
+
+fn next_id() -> String {
+    static N: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        N.fetch_add(1, Ordering::SeqCst)
+    )
+}
+
+#[tauri::command]
+fn saved_list(store: State<SavedStore>) -> Vec<SavedTunnel> {
+    store.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn saved_save(app: AppHandle, store: State<SavedStore>, tunnel: SavedTunnel) -> SavedTunnel {
+    let mut t = tunnel;
+    if t.id.is_empty() {
+        t.id = next_id();
+    }
+    if t.name.is_empty() {
+        t.name = t.kind.clone();
+    }
+    {
+        let mut list = store.0.lock().unwrap();
+        if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
+            *existing = t.clone();
+        } else {
+            list.push(t.clone());
+        }
+    }
+    saved_persist(&app, &store);
+    autostart_sync(&app, &store);
+    t
+}
+
+#[tauri::command]
+fn saved_delete(app: AppHandle, store: State<SavedStore>, id: String) {
+    store.0.lock().unwrap().retain(|t| t.id != id);
+    saved_persist(&app, &store);
+    autostart_sync(&app, &store);
+}
+
+#[tauri::command]
+fn saved_duplicate(app: AppHandle, store: State<SavedStore>, id: String) -> Option<SavedTunnel> {
+    let copy = {
+        let mut list = store.0.lock().unwrap();
+        let mut c = list.iter().find(|t| t.id == id).cloned()?;
+        c.id = next_id();
+        c.name = format!("{} (copy)", c.name);
+        list.push(c.clone());
+        c
+    };
+    saved_persist(&app, &store);
+    Some(copy)
+}
+
+#[tauri::command]
+fn saved_export(store: State<SavedStore>) -> String {
+    serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into())
+}
+
+#[tauri::command]
+fn saved_import(app: AppHandle, store: State<SavedStore>, json: String) -> usize {
+    let parsed: Vec<SavedTunnel> = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => return 0,
+    };
+    {
+        let mut list = store.0.lock().unwrap();
+        for mut t in parsed {
+            if t.id.is_empty() {
+                t.id = next_id();
+            }
+            if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
+                *existing = t;
+            } else {
+                list.push(t);
+            }
+        }
+    }
+    saved_persist(&app, &store);
+    autostart_sync(&app, &store);
+    store.0.lock().unwrap().len()
 }
 
 fn diag_record_spawn(app: &AppHandle) {
@@ -606,6 +748,14 @@ pub fn run() {
         }
     }));
 
+    // Login autostart for permanent tunnels (desktop only; mobile has no
+    // login session to hook into).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        None,
+    ));
+
     builder
         .plugin(tauri_plugin_deep_link::init())
         .manage(PendingState(Mutex::new(HashMap::new())))
@@ -615,6 +765,15 @@ pub fn run() {
         .setup(|app| {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
+            // Saved tunnels (temp/permanent) persisted under the app config
+            // dir; autostart follows the saved tunnels' preferences.
+            app.manage(SavedStore(Mutex::new(
+                std::fs::read_to_string(saved_path(app.handle()))
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+            )));
+            autostart_sync(app.handle(), &app.state::<SavedStore>());
 
             #[cfg(desktop)]
             setup_tray(app.handle())?;
@@ -663,7 +822,13 @@ pub fn run() {
             worker_diagnostics,
             worker_restart,
             take_pending_deep_links,
-            version_info
+            version_info,
+            saved_list,
+            saved_save,
+            saved_delete,
+            saved_duplicate,
+            saved_export,
+            saved_import
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

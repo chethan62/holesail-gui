@@ -438,6 +438,84 @@ button.primary:disabled {
   color: var(--text);
 }
 
+/* saved tunnels */
+.saved-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.saved-list {
+  display: grid;
+  gap: 10px;
+}
+.saved-item {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+.saved-item .saved-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.saved-item .saved-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.saved-item .saved-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.saved-item .saved-actions button,
+.saved-toolbar button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.saved-item .saved-actions button:hover,
+.saved-toolbar button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.saved-item .saved-actions button.danger:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+.saved-item code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+}
+.saved-item .saved-start {
+  margin-left: auto;
+}
+#saved-import-json {
+  width: 100%;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+#saved-import-box .full,
+#saved-import-box > div {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* recent keys */
 .recent-label {
   color: var(--text-dim);

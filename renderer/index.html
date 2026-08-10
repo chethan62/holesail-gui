@@ -35,6 +35,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="share">Share a port</button>
       <button class="tab" data-tab="connect">Connect</button>
+      <button class="tab" data-tab="saved">Saved</button>
     </nav>
 
     <main>
@@ -52,6 +53,17 @@
           <label>
             Host
             <input id="share-host" type="text" placeholder="127.0.0.1" value="127.0.0.1" />
+          </label>
+          <label class="full">
+            Tunnel type
+            <select id="share-type">
+              <option value="temp">Temporary — new random key each time</option>
+              <option value="perm">Permanent — fixed key, auto-restarts with the app</option>
+            </select>
+          </label>
+          <label id="share-name-wrap" class="full" hidden>
+            Name
+            <input id="share-name" type="text" placeholder="e.g. My PC" maxlength="40" />
           </label>
           <label class="check">
             <input id="share-secure" type="checkbox" checked />
@@ -103,6 +115,14 @@
             <input id="connect-udp" type="checkbox" />
             Use UDP
           </label>
+          <label class="check full" id="connect-save-wrap">
+            <input id="connect-save" type="checkbox" />
+            Save this connection (auto-reconnect on app launch)
+          </label>
+          <label class="full" id="connect-name-wrap" hidden>
+            Name
+            <input id="connect-name" type="text" placeholder="e.g. My PC" maxlength="40" />
+          </label>
           <div class="full" id="recent-row" hidden>
             <span class="recent-label">Recent:</span>
             <span id="recent-chips"></span>
@@ -112,6 +132,31 @@
             <button type="submit" class="primary" id="connect-start">Connect</button>
           </div>
         </form>
+      </section>
+
+      <section id="panel-saved" class="panel">
+        <h2>Saved tunnels</h2>
+        <p class="hint">
+          Permanent tunnels keep a fixed key and restart automatically with the app. Saved
+          connections reconnect on launch. Everything here survives app restarts (desktop:
+          also your PC reboots, when the app launches at login).
+        </p>
+        <div class="full saved-toolbar">
+          <button type="button" id="saved-export" class="btn">Export all</button>
+          <button type="button" id="saved-import" class="btn">Import</button>
+        </div>
+        <div id="saved-list" class="saved-list">
+          <p class="empty">No saved tunnels yet. Use "Permanent" on the Share tab or
+            "Save this connection" on the Connect tab.</p>
+        </div>
+        <div class="full" id="saved-import-box" hidden>
+          <label>Paste exported JSON</label>
+          <textarea id="saved-import-json" rows="6" spellcheck="false"></textarea>
+          <div>
+            <button type="button" id="saved-import-apply" class="primary">Import</button>
+            <button type="button" id="saved-import-cancel" class="btn">Cancel</button>
+          </div>
+        </div>
       </section>
 
       <section id="sessions-section">

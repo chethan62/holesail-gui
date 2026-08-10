@@ -10,7 +10,13 @@ import {
   workerRestart,
   takePendingDeepLinks,
   onAppEvent,
-  versionInfo
+  versionInfo,
+  savedList,
+  savedSave,
+  savedDelete,
+  savedDuplicate,
+  savedExport,
+  savedImport
 } from './bridge.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -84,6 +90,7 @@ const state = {
   sessions: new Map(), // id -> session
   meta: new Map(), // id -> { startedAt }
   revealed: new Set(), // ids whose connection string is revealed
+  saved: [], // saved tunnels from the backend (temp/permanent)
   workerOk: false
 }
 
@@ -412,19 +419,42 @@ async function stopAllTunnels() {
 async function startShare(event) {
   event.preventDefault()
   const button = $('#share-start')
+  const isPerm = $('#share-type').value === 'perm'
+  const key = $('#share-key').value.trim() || undefined
   const params = {
     port: Number($('#share-port').value),
     host: $('#share-host').value.trim() || '127.0.0.1',
     secure: $('#share-secure').checked,
     udp: $('#share-udp').checked,
-    key: $('#share-key').value.trim() || undefined
+    key
   }
   setBusy(button, true)
   try {
+    let tunnel = null
+    if (isPerm) {
+      // permanent: fixed key (user-provided or generated once), saved to
+      // the store so it auto-restarts with the same connection string
+      if (!key) params.key = genKey()
+      tunnel = await savedSave({
+        id: '',
+        name: $('#share-name').value.trim() || 'Permanent server',
+        kind: 'server',
+        key: params.key,
+        port: params.port,
+        host: params.host,
+        udp: params.udp,
+        autostart: true,
+        createdAt: Date.now()
+      })
+    }
     const session = await rpc('server:start', params)
     log(`Server started on ${session.host}:${session.port} (${session.protocol})`, 'ok')
-    toast('Sharing started 🎉')
+    toast(isPerm ? 'Permanent sharing started 🔒' : 'Sharing started 🎉')
     addRecent(session.url)
+    if (tunnel) {
+      await refreshSaved()
+      log(`Saved as permanent tunnel "${tunnel.name}" — it will restart with the app`, 'ok')
+    }
     $('#share-port').value = ''
     $('#share-key').value = ''
   } catch (err) {
@@ -447,17 +477,212 @@ async function startConnect(event) {
   }
   setBusy(button, true)
   try {
+    let tunnel = null
+    if ($('#connect-save').checked) {
+      tunnel = await savedSave({
+        id: '',
+        name: $('#connect-name').value.trim() || 'Saved connection',
+        kind: 'client',
+        key: params.key,
+        port: params.port ?? null,
+        host: params.host ?? null,
+        udp: params.udp,
+        autostart: true,
+        createdAt: Date.now()
+      })
+    }
     const session = await rpc('client:connect', params)
     log(`Connected to ${session.host}:${session.port} (${session.protocol})`, 'ok')
     toast('Connected')
     addRecent(params.key)
+    if (tunnel) {
+      await refreshSaved()
+      log(`Saved connection "${tunnel.name}" — it will reconnect with the app`, 'ok')
+    }
     $('#connect-key').value = ''
     $('#connect-port').value = ''
+    $('#connect-save').checked = false
+    $('#connect-name-wrap').hidden = true
   } catch (err) {
     log('Failed to connect: ' + err.message, 'err')
     toast('Failed to connect: ' + err.message, true)
   } finally {
     setBusy(button, false)
+  }
+}
+
+/* --------------------------- saved tunnels ------------------------------ */
+
+/// 32 random bytes as hex — a fixed key for permanent tunnels.
+function genKey() {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function refreshSaved() {
+  try {
+    state.saved = await savedList()
+    renderSaved()
+  } catch (err) {
+    log('Failed to load saved tunnels: ' + err.message, 'err')
+  }
+}
+
+/// Is there a running session for this saved tunnel?
+function savedSession(t) {
+  for (const s of state.sessions.values()) {
+    if (t.kind === 'server' && s.url === 'hs://s000' + t.key) return s
+    if (t.kind === 'client' && s.url === t.key) return s
+  }
+  return null
+}
+
+async function startSaved(t) {
+  try {
+    if (t.kind === 'server') {
+      await rpc('server:start', {
+        port: t.port,
+        host: t.host || '127.0.0.1',
+        secure: true,
+        udp: t.udp,
+        key: t.key
+      })
+    } else {
+      await rpc('client:connect', {
+        key: t.key,
+        port: t.port ?? undefined,
+        host: t.host || undefined,
+        udp: t.udp
+      })
+    }
+    log(`Started saved tunnel "${t.name}"`, 'ok')
+  } catch (err) {
+    toast('Failed to start: ' + err.message, true)
+  }
+}
+
+async function stopSaved(t) {
+  const s = savedSession(t)
+  if (!s) return
+  try {
+    await rpc('session:stop', { id: s.id })
+  } catch (err) {
+    toast(err.message, true)
+  }
+}
+
+async function toggleAutostart(t) {
+  await savedSave({ ...t, autostart: !t.autostart })
+  await refreshSaved()
+  toast(t.autostart ? 'Will restart with the app' : 'Won\'t auto-restart')
+}
+
+function renderSaved() {
+  const list = $('#saved-list')
+  if (state.saved.length === 0) {
+    list.innerHTML =
+      '<p class="empty">No saved tunnels yet. Use "Permanent" on the Share tab or ' +
+      '"Save this connection" on the Connect tab.</p>'
+    return
+  }
+  list.innerHTML = ''
+  for (const t of state.saved) {
+    const item = el('div', 'saved-item')
+    const head = el('div', 'saved-head')
+    head.append(
+      badge(t.kind === 'server' ? 'Server' : 'Client', t.kind),
+      el('span', 'saved-name', '', t.name)
+    )
+    const startBtn = el('button', 'saved-start', '', savedSession(t) ? 'Stop' : 'Start')
+    startBtn.addEventListener('click', () => {
+      if (savedSession(t)) stopSaved(t)
+      else startSaved(t)
+    })
+    head.append(startBtn)
+    item.append(head)
+
+    const keyLine = el('code', '', '', t.kind === 'server' ? 'hs://s000' + t.key : t.key)
+    const meta = el('div', 'meta')
+    meta.append(metaItem('Port', t.port ?? 'auto'))
+    if (t.host) meta.append(metaItem('Host', t.host))
+    meta.append(metaItem('Auto', t.autostart ? 'on' : 'off'))
+    item.append(keyLine, meta)
+
+    const actions = el('div', 'saved-actions')
+    const autostart = el('button', '', '', t.autostart ? 'Auto-start: on' : 'Auto-start: off')
+    autostart.title = 'Restart automatically with the app'
+    autostart.addEventListener('click', () => toggleAutostart(t))
+    const rename = el('button', '', '', 'Rename')
+    rename.addEventListener('click', async () => {
+      const name = prompt('Tunnel name:', t.name)
+      if (name && name.trim()) {
+        await savedSave({ ...t, name: name.trim() })
+        await refreshSaved()
+      }
+    })
+    const dup = el('button', '', '', 'Duplicate')
+    dup.addEventListener('click', async () => {
+      await savedDuplicate(t.id)
+      await refreshSaved()
+      toast('Duplicated')
+    })
+    const exp = el('button', '', '', 'Export')
+    exp.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify([t], null, 2))
+        toast('Exported to clipboard')
+      } catch {
+        toast('Copy failed', true)
+      }
+    })
+    const del = el('button', 'danger', '', 'Delete')
+    del.addEventListener('click', async () => {
+      if (!confirm('Delete saved tunnel "' + t.name + '"?')) return
+      await savedDelete(t.id)
+      await refreshSaved()
+    })
+    actions.append(autostart, rename, dup, exp, del)
+    item.append(actions)
+    list.appendChild(item)
+  }
+}
+
+async function exportAllSaved() {
+  try {
+    const json = await savedExport()
+    await navigator.clipboard.writeText(json)
+    toast('Exported all saved tunnels to clipboard')
+  } catch {
+    toast('Copy failed', true)
+  }
+}
+
+async function applyImport() {
+  const json = $('#saved-import-json').value.trim()
+  if (!json) return
+  try {
+    const n = await savedImport(json)
+    await refreshSaved()
+    toast(`Imported ${n} saved tunnel${n === 1 ? '' : 's'}`)
+    $('#saved-import-box').hidden = true
+    $('#saved-import-json').value = ''
+  } catch (err) {
+    toast('Import failed: ' + err.message, true)
+  }
+}
+
+/// Auto-restart saved tunnels (autostart = on) after the worker connects.
+async function autostartSaved() {
+  for (const t of state.saved) {
+    if (!t.autostart) continue
+    if (savedSession(t)) continue
+    try {
+      await startSaved(t)
+      log(`Auto-started saved tunnel "${t.name}"`, 'ok')
+    } catch (err) {
+      log(`Auto-start failed for "${t.name}": ${err.message}`, 'err')
+    }
   }
 }
 
@@ -493,6 +718,7 @@ function bindShortcuts() {
     } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.target.matches('input, textarea')) {
       if (e.key === '1') switchTab('share')
       else if (e.key === '2') switchTab('connect')
+      else if (e.key === '3') switchTab('saved')
     }
   })
 }
@@ -526,6 +752,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
+  // tunnel type toggle reveals the name field for permanent tunnels
+  $('#share-type').addEventListener('change', () => {
+    $('#share-name-wrap').hidden = $('#share-type').value !== 'perm'
+  })
+  // save-connection checkbox reveals its name field
+  $('#connect-save').addEventListener('change', () => {
+    $('#connect-name-wrap').hidden = !$('#connect-save').checked
+  })
+  // saved panel
+  $('#saved-export').addEventListener('click', exportAllSaved)
+  $('#saved-import').addEventListener('click', () => {
+    $('#saved-import-box').hidden = false
+  })
+  $('#saved-import-apply').addEventListener('click', applyImport)
+  $('#saved-import-cancel').addEventListener('click', () => {
+    $('#saved-import-box').hidden = true
+    $('#saved-import-json').value = ''
+  })
   $('#recent-clear').addEventListener('click', () => {
     saveRecent([])
     renderRecent()
@@ -552,6 +796,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     await syncWorker()
     log('Connected to holesail service worker')
+    // load saved tunnels, then auto-restart the autostart ones
+    await refreshSaved()
+    await autostartSaved()
   } catch (err) {
     updateWorkerStatus(false, 'worker unavailable')
     log('Service worker unavailable: ' + err.message, 'err')
