@@ -122,9 +122,18 @@ struct SavedTunnel {
     key: String,  // server: fixed key hex; client: full hs:// string
     port: Option<u16>,
     host: Option<String>,
+    /// Secure (private) mode. Servers: controls the keypair derivation —
+    /// private vs public derive DIFFERENT keys, so this must be persisted.
+    /// Defaults to true for saved tunnels created before this field existed.
+    #[serde(default = "default_true")]
+    secure: bool,
     udp: bool,
     autostart: bool,
     created_at: u64,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 struct SavedStore(Mutex<Vec<SavedTunnel>>);

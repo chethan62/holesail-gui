@@ -50,6 +50,38 @@ function setBusy(button, busy) {
   button.textContent = busy ? 'Working…' : button.dataset.label
 }
 
+/// Copy text to the clipboard. navigator.clipboard needs a secure context
+/// + permission and can be missing in some Android WebViews; fall back to
+/// a hidden textarea + execCommand('copy').
+function copyText(text) {
+  return new Promise((resolve) => {
+    const done = (ok) => {
+      toast(ok ? 'Copied' : 'Copy failed', !ok)
+      resolve(ok)
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => done(true), () => fallback(text, done))
+    } else {
+      fallback(text, done)
+    }
+    function fallback(t, cb) {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = t
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        const ok = document.execCommand('copy')
+        ta.remove()
+        cb(ok)
+      } catch {
+        cb(false)
+      }
+    }
+  })
+}
+
 function maskKey(url) {
   if (url.length <= 16) return url
   return url.slice(0, 10) + '…' + url.slice(-8)
@@ -193,12 +225,7 @@ function renderSession(container, s) {
   }
   const copy = el('button', 'copy', '', 'Copy')
   copy.title = 'Copy connection string'
-  copy.addEventListener('click', () => {
-    navigator.clipboard.writeText(urlText).then(
-      () => toast('Connection string copied'),
-      () => toast('Copy failed', true)
-    )
-  })
+  copy.addEventListener('click', () => copyText(urlText))
   urlRow.append(copy)
   urlCol.append(urlRow)
 
@@ -211,12 +238,7 @@ function renderSession(container, s) {
     localRow.append(el('code', 'local-url', '', localUrl))
     const copyUrl = el('button', 'copy', '', 'Copy URL')
     copyUrl.title = 'Copy local URL'
-    copyUrl.addEventListener('click', () => {
-      navigator.clipboard.writeText(localUrl).then(
-        () => toast('Local URL copied'),
-        () => toast('Copy failed', true)
-      )
-    })
+    copyUrl.addEventListener('click', () => copyText(localUrl))
     localRow.append(copyUrl)
     urlCol.append(localRow)
   }
@@ -444,6 +466,7 @@ async function startShare(event) {
         key: params.key,
         port: params.port,
         host: params.host,
+        secure: params.secure,
         udp: params.udp,
         autostart: true,
         createdAt: Date.now()
@@ -481,13 +504,18 @@ async function startConnect(event) {
   try {
     let tunnel = null
     if ($('#connect-save').checked) {
+      // normalize the key before saving: the worker strips trailing
+      // slashes (URL parsers add them), and the saved key must match the
+      // session url exactly or the dedupe/autostart logic double-connects
+      const cleanKey = params.key.replace(/\/+$/, '')
       tunnel = await savedSave({
         id: '',
         name: $('#connect-name').value.trim() || 'Saved connection',
         kind: 'client',
-        key: params.key,
+        key: cleanKey,
         port: params.port ?? null,
         host: params.host ?? null,
+        secure: cleanKey.startsWith('hs://s000'),
         udp: params.udp,
         autostart: true,
         createdAt: Date.now()
@@ -533,9 +561,11 @@ async function refreshSaved() {
 
 /// Is there a running session for this saved tunnel?
 function savedSession(t) {
+  const serverUrl = t.kind === 'server' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : null
+  const clientKey = t.kind === 'client' ? String(t.key || '').replace(/\/+$/, '') : null
   for (const s of state.sessions.values()) {
-    if (t.kind === 'server' && s.url === 'hs://s000' + t.key) return s
-    if (t.kind === 'client' && s.url === t.key) return s
+    if (serverUrl && s.url === serverUrl) return s
+    if (clientKey && s.url === clientKey) return s
   }
   return null
 }
@@ -547,7 +577,7 @@ async function startSaved(t) {
       session = await rpc('server:start', {
         port: t.port,
         host: t.host || '127.0.0.1',
-        secure: true,
+        secure: t.secure !== false, // public permanents must stay public
         udp: t.udp,
         key: t.key
       })
@@ -597,6 +627,7 @@ function renderSaved() {
     const nameSpan = el('span', 'saved-name', '', t.name)
     head.append(
       badge(t.kind === 'server' ? 'Server' : 'Client', t.kind),
+      badge(t.secure === false ? 'Public' : 'Private', t.secure === false ? 'public' : 'secure'),
       nameSpan
     )
     const startBtn = el('button', 'saved-start', '', savedSession(t) ? 'Stop' : 'Start')
@@ -654,14 +685,7 @@ function renderSaved() {
       toast('Duplicated')
     })
     const exp = el('button', '', '', 'Export')
-    exp.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(JSON.stringify([t], null, 2))
-        toast('Exported to clipboard')
-      } catch {
-        toast('Copy failed', true)
-      }
-    })
+    exp.addEventListener('click', () => copyText(JSON.stringify([t], null, 2)))
 
     // delete — two-tap confirm (no confirm(): unreliable in Android WebView)
     const del = el('button', 'danger', '', 'Delete')
@@ -690,10 +714,9 @@ function renderSaved() {
 async function exportAllSaved() {
   try {
     const json = await savedExport()
-    await navigator.clipboard.writeText(json)
-    toast('Exported all saved tunnels to clipboard')
+    await copyText(json)
   } catch {
-    toast('Copy failed', true)
+    toast('Export failed', true)
   }
 }
 
@@ -712,16 +735,25 @@ async function applyImport() {
 }
 
 /// Auto-restart saved tunnels (autostart = on) after the worker connects.
+/// Guarded so concurrent callers (boot + worker:spawned) never double-start
+/// a tunnel — a port-less client would otherwise get two proxies.
+let autostartRunning = false
 async function autostartSaved() {
-  for (const t of state.saved) {
-    if (!t.autostart) continue
-    if (savedSession(t)) continue
-    try {
-      await startSaved(t)
-      log(`Auto-started saved tunnel "${t.name}"`, 'ok')
-    } catch (err) {
-      log(`Auto-start failed for "${t.name}": ${err.message}`, 'err')
+  if (autostartRunning) return
+  autostartRunning = true
+  try {
+    for (const t of state.saved) {
+      if (!t.autostart) continue
+      if (savedSession(t)) continue
+      try {
+        await startSaved(t)
+        log(`Auto-started saved tunnel "${t.name}"`, 'ok')
+      } catch (err) {
+        log(`Auto-start failed for "${t.name}": ${err.message}`, 'err')
+      }
     }
+  } finally {
+    autostartRunning = false
   }
 }
 
@@ -787,7 +819,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const v = await versionInfo()
     $('#version-tag').textContent = `v${v.version} · ${v.gitHash}`
   } catch {
-    $('#version-tag').textContent = 'v' + ($('#version-tag') && '?')
+    $('#version-tag').textContent = 'v?'
   }
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
@@ -850,10 +882,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch {}
   }
 
-  // Deep links: URLs delivered before this listener existed are drained
-  // from the pending queue; live ones arrive as app:event messages. The
-  // drain retries briefly — Rust setup() may still be queuing the startup
-  // URL while the webview boots, and an early drain would miss it.
+  // Deep links: subscribe FIRST so live app:event links are never lost
+  // while the pending-queue drain below runs.
+  onAppEvent((msg) => {
+    if (msg.event === 'deep-link:open') handleDeepLink(msg.data.url)
+    else if (msg.event === 'tray:stop-all') stopAllTunnels()
+  }).catch((err) => log('Failed to subscribe to app events: ' + err.message, 'err'))
+
+  // URLs delivered before this listener existed are drained from the
+  // pending queue. The drain retries briefly — Rust setup() may still be
+  // queuing the startup URL while the webview boots.
   try {
     for (let i = 0; i < 10; i++) {
       const pending = await takePendingDeepLinks()
@@ -864,8 +902,4 @@ document.addEventListener('DOMContentLoaded', async () => {
       await new Promise((r) => setTimeout(r, 500))
     }
   } catch {}
-  onAppEvent((msg) => {
-    if (msg.event === 'deep-link:open') handleDeepLink(msg.data.url)
-    else if (msg.event === 'tray:stop-all') stopAllTunnels()
-  }).catch((err) => log('Failed to subscribe to app events: ' + err.message, 'err'))
 })

@@ -74,8 +74,15 @@
             Use UDP
           </label>
           <label class="full">
-            Custom key (optional, min 32 chars)
-            <input id="share-key" type="text" placeholder="leave empty to auto-generate" />
+            Custom key (optional, min 32 hex chars)
+            <input
+              id="share-key"
+              type="text"
+              placeholder="leave empty to auto-generate"
+              minlength="32"
+              pattern="[0-9a-fA-F]{32,}"
+              title="Custom keys must be at least 32 hex characters (0-9, a-f)"
+            />
           </label>
           <div class="full">
             <button type="submit" class="primary" id="share-start">Start sharing</button>
