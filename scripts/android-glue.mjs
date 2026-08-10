@@ -403,10 +403,14 @@ if (!main.includes('onWebViewCreate')) {
   }
 
   private fun applySafeAreaVars(webView: WebView) {
-    val js = "document.documentElement.style.setProperty('--sat', '\${top}px');" +
-      "document.documentElement.style.setProperty('--sab', '\${bottom}px');" +
-      "document.documentElement.style.setProperty('--sal', '\${left}px');" +
-      "document.documentElement.style.setProperty('--sar', '\${right}px');"
+    // Android reports insets in PHYSICAL pixels; CSS px are scaled by the
+    // webview's devicePixelRatio (~2.6 on a 1080p phone), so injecting raw
+    // px over-pads by that factor. Divide by the live ratio in JS.
+    val js = "(() => { const dpr = window.devicePixelRatio || 1;" +
+      "document.documentElement.style.setProperty('--sat', (\${top} / dpr) + 'px');" +
+      "document.documentElement.style.setProperty('--sab', (\${bottom} / dpr) + 'px');" +
+      "document.documentElement.style.setProperty('--sal', (\${left} / dpr) + 'px');" +
+      "document.documentElement.style.setProperty('--sar', (\${right} / dpr) + 'px'); })();"
     webView.post { webView.evaluateJavascript(js, null) }
   }
 
