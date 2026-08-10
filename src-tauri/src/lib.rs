@@ -142,7 +142,13 @@ fn saved_persist(app: &AppHandle, store: &SavedStore) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let _ = std::fs::write(path, data);
+    let _ = std::fs::write(&path, data);
+    // The file holds private tunnel keys — never world-readable.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
 }
 
 /// Keep login autostart in sync with saved tunnels: on when any tunnel

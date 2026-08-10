@@ -481,6 +481,20 @@ button.primary:disabled {
   font-size: 12px;
   cursor: pointer;
 }
+.saved-item .saved-actions button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.saved-rename-input {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 140px;
+}
 .saved-item .saved-actions button:hover,
 .saved-toolbar button:hover {
   color: var(--text);

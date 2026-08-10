@@ -282,10 +282,12 @@ onEvent((msg) => {
     case 'worker:spawned':
       // fresh worker (boot or respawn): re-sync state
       log('Service worker started')
-      syncWorker().catch((err) => {
-        updateWorkerStatus(false, 'worker unavailable')
-        log('Worker spawned but did not answer: ' + err.message, 'err')
-      })
+      syncWorker()
+        .then(() => autostartSaved()) // respawn: restore permanent tunnels
+        .catch((err) => {
+          updateWorkerStatus(false, 'worker unavailable')
+          log('Worker spawned but did not answer: ' + err.message, 'err')
+        })
       break
     case 'worker:restarting':
       updateWorkerStatus(null, `restarting (attempt ${msg.data.attempt})…`)
@@ -590,9 +592,10 @@ function renderSaved() {
   for (const t of state.saved) {
     const item = el('div', 'saved-item')
     const head = el('div', 'saved-head')
+    const nameSpan = el('span', 'saved-name', '', t.name)
     head.append(
       badge(t.kind === 'server' ? 'Server' : 'Client', t.kind),
-      el('span', 'saved-name', '', t.name)
+      nameSpan
     )
     const startBtn = el('button', 'saved-start', '', savedSession(t) ? 'Stop' : 'Start')
     startBtn.addEventListener('click', () => {
@@ -613,14 +616,35 @@ function renderSaved() {
     const autostart = el('button', '', '', t.autostart ? 'Auto-start: on' : 'Auto-start: off')
     autostart.title = 'Restart automatically with the app'
     autostart.addEventListener('click', () => toggleAutostart(t))
+
+    // rename — inline input (no prompt(): unreliable in Android WebView)
     const rename = el('button', '', '', 'Rename')
-    rename.addEventListener('click', async () => {
-      const name = prompt('Tunnel name:', t.name)
-      if (name && name.trim()) {
-        await savedSave({ ...t, name: name.trim() })
+    rename.addEventListener('click', () => {
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.maxLength = 40
+      input.value = t.name
+      input.className = 'saved-rename-input'
+      nameSpan.replaceWith(input)
+      input.focus()
+      input.select()
+      const save = el('button', 'primary', '', 'Save')
+      const cancel = el('button', '', '', 'Cancel')
+      const done = async (apply) => {
+        if (apply && input.value.trim()) {
+          await savedSave({ ...t, name: input.value.trim() })
+        }
         await refreshSaved()
       }
+      save.addEventListener('click', () => done(true))
+      cancel.addEventListener('click', () => done(false))
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') done(true)
+        else if (e.key === 'Escape') done(false)
+      })
+      rename.replaceWith(save, cancel)
     })
+
     const dup = el('button', '', '', 'Duplicate')
     dup.addEventListener('click', async () => {
       await savedDuplicate(t.id)
@@ -636,9 +660,22 @@ function renderSaved() {
         toast('Copy failed', true)
       }
     })
+
+    // delete — two-tap confirm (no confirm(): unreliable in Android WebView)
     const del = el('button', 'danger', '', 'Delete')
+    let confirmTimer = null
     del.addEventListener('click', async () => {
-      if (!confirm('Delete saved tunnel "' + t.name + '"?')) return
+      if (del.dataset.confirm !== 'yes') {
+        del.dataset.confirm = 'yes'
+        del.textContent = 'Confirm?'
+        clearTimeout(confirmTimer)
+        confirmTimer = setTimeout(() => {
+          del.dataset.confirm = ''
+          del.textContent = 'Delete'
+        }, 3000)
+        return
+      }
+      clearTimeout(confirmTimer)
       await savedDelete(t.id)
       await refreshSaved()
     })

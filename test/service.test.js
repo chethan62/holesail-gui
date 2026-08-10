@@ -86,11 +86,33 @@ async function main() {
     assert(typeof client.url === 'string' && client.url.startsWith('hs://s000'), 'client url present')
     console.log('    client url: ' + client.url)
 
-    console.log('4) sessions:list')
+    console.log('4) trailing-slash key regression (hs://…/ must not corrupt the key)')
+    const slashed = await rpc('client:connect', { key: server.url + '/' }, 90000)
+    assert(slashed.url === server.url, 'slashed key strips to the same url (no phantom tunnel)')
+    const stoppedSlashed = await rpc('session:stop', { id: slashed.id })
+    assert(stoppedSlashed.state === 'stopped', 'slashed client stopped')
+
+    console.log('5) sessions:list')
     const sessions = await rpc('sessions:list', {})
     assert(sessions.length === 2, 'two active sessions')
 
-    console.log('5) session:stop both')
+    console.log('6) client free-port regression (empty port while the server port is taken)')
+    // holesail's client mirrors the server's port when none is given; if
+    // something local occupies it, the bind used to crash the worker as an
+    // async EADDRINUSE. The worker must now bind a free port instead.
+    const net = require('net')
+    const blocker = net.createServer()
+    await new Promise((res) => blocker.listen(TEST_PORT, '127.0.0.1', res))
+    const clash = await rpc('client:connect', { key: server.url }, 90000)
+    assert(clash.type === 'client', 'client connects despite the occupied default port')
+    assert(clash.port !== TEST_PORT, 'client landed on a free port, not the taken one')
+    const stoppedClash = await rpc('session:stop', { id: clash.id })
+    assert(stoppedClash.state === 'stopped', 'free-port client stopped')
+    await new Promise((res) => blocker.close(res))
+    const pongAfter = await rpc('ping', {})
+    assert(pongAfter === 'pong', 'worker still alive after the port conflict')
+
+    console.log('7) session:stop both')
     const stop1 = await rpc('session:stop', { id: server.id })
     assert(stop1.state === 'stopped', 'server session stopped')
     const stop2 = await rpc('session:stop', { id: client.id })
@@ -99,7 +121,7 @@ async function main() {
     const after = await rpc('sessions:list', {})
     assert(after.length === 0, 'no sessions remain')
 
-    console.log('6) invalid server port rejected')
+    console.log('8) invalid server port rejected')
     let threw = false
     try {
       await rpc('server:start', { port: 'not-a-port' })
