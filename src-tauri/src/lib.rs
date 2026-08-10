@@ -99,6 +99,17 @@ fn take_pending_deep_links(app: AppHandle) -> Vec<String> {
     std::mem::take(&mut app.state::<PendingDeepLinks>().0.lock().unwrap())
 }
 
+/// App version + embedded short git hash — lets the UI identify exactly
+/// which build is installed (identical versions across CI builds are
+/// otherwise indistinguishable on-device).
+#[tauri::command]
+fn version_info(app: AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "version": app.package_info().version.to_string(),
+        "gitHash": env!("GIT_HASH"),
+    })
+}
+
 fn diag_record_spawn(app: &AppHandle) {
     let ds = app.state::<DiagState>();
     let mut d = ds.0.lock().unwrap();
@@ -651,7 +662,8 @@ pub fn run() {
             rpc,
             worker_diagnostics,
             worker_restart,
-            take_pending_deep_links
+            take_pending_deep_links,
+            version_info
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -9,7 +9,8 @@ import {
   workerDiagnostics,
   workerRestart,
   takePendingDeepLinks,
-  onAppEvent
+  onAppEvent,
+  versionInfo
 } from './bridge.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -515,6 +516,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindShortcuts()
   initTheme()
   renderRecent()
+  // identify the installed build (version + git hash embedded at compile
+  // time) — lets anyone tell two otherwise-identical builds apart
+  try {
+    const v = await versionInfo()
+    $('#version-tag').textContent = `v${v.version} · ${v.gitHash}`
+  } catch {
+    $('#version-tag').textContent = 'v' + ($('#version-tag') && '?')
+  }
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
   $('#recent-clear').addEventListener('click', () => {

@@ -76,6 +76,12 @@ body {
   align-items: baseline;
   gap: 10px;
 }
+.version-tag {
+  font-size: 11px;
+  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", monospace;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 .logo {
   font-size: 20px;
 }
