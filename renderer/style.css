@@ -275,8 +275,14 @@ button.primary:disabled {
 .session .head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+  row-gap: 6px;
   margin-bottom: 10px;
+}
+.session .head .state {
+  margin-left: auto;
+  white-space: nowrap;
 }
 .badge {
   font-size: 11px;
@@ -307,8 +313,16 @@ button.primary:disabled {
   font-size: 12px;
   margin-bottom: 8px;
   display: flex;
+  align-items: baseline;
   gap: 14px;
   flex-wrap: wrap;
+  row-gap: 4px;
+}
+.session .meta span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
 }
 .url-row {
   display: flex;
@@ -347,7 +361,13 @@ button.primary:disabled {
 .session .actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
   margin-top: 10px;
+}
+.session .actions button {
+  flex: 1;
+  min-width: 110px;
+  text-align: center;
 }
 .state {
   font-size: 12px;
