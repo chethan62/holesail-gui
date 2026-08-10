@@ -45,6 +45,26 @@ const Buffer = (() => {
   }
 })()
 const setImmediate = globalThis.setImmediate || ((fn, ...args) => setTimeout(fn, 0, ...args))
+const net = (() => {
+  try {
+    return require('bare-net')
+  } catch {
+    return require('net')
+  }
+})()
+
+/// Ask the OS for a free local port (bind :0, read the assignment, close).
+function pickFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const port = srv.address().port
+      srv.close(() => resolve(port))
+    })
+  })
+}
 
 const sessions = new Map() // id -> { hs, type, url, port, host, secure, protocol, key, publicKey, state }
 let nextId = 1
@@ -114,7 +134,11 @@ async function startServer(params) {
 }
 
 async function connectClient(params) {
-  if (!params.key || String(params.key).length === 0) {
+  // URL parsers normalize hs://s000… to hs://s000…/ — the trailing slash
+  // becomes part of the key and derives a WRONG seed (a phantom tunnel
+  // that never establishes, with no error). Strip it.
+  let key = String(params.key || '').replace(/\/+$/, '')
+  if (key.length === 0) {
     throw new Error('Connection string is required')
   }
   let port
@@ -123,10 +147,16 @@ async function connectClient(params) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error(`Invalid port: ${params.port}`)
     }
+  } else {
+    // holesail's client mirrors the SERVER's port when none is given —
+    // if something local already occupies that port, the bind fails as an
+    // ASYNC 'error' event (uncaughtException) that would crash the whole
+    // worker. Always bind an OS-assigned free port instead.
+    port = await pickFreePort()
   }
   const hs = new Holesail({
     client: true,
-    key: String(params.key),
+    key,
     port,
     host: params.host || undefined,
     udp: params.udp || false,
