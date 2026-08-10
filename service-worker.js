@@ -282,3 +282,13 @@ process.on('uncaughtException', (err) => {
   sendEvent('worker:error', { message: String((err && err.message) || err) })
   setImmediate(() => process.exit(1))
 })
+
+/* ------------------------------ readiness ------------------------------ */
+
+// Handshake: emit once the worker is fully initialized (holesail loaded,
+// stdin wired, handlers registered). The parent gates RPC traffic on this
+// event, so a spawned-but-still-initializing worker never swallows early
+// requests (which previously could ride the full 90s RPC timeout).
+setImmediate(() => {
+  sendEvent('worker:ready', { pid: process.pid, startedAt: Date.now() })
+})

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -43,6 +43,10 @@ static NEXT_RPC_ID: AtomicU64 = AtomicU64::new(1);
 /// Bumped on every manual restart so a pending auto-respawn from an older
 /// worker generation aborts instead of double-spawning.
 static RESPAWN_GEN: AtomicU64 = AtomicU64::new(1);
+/// Set when the worker's `worker:ready` handshake arrives; reset on every
+/// spawn/exit. RPCs issued before ready fail fast instead of riding the
+/// full RPC_TIMEOUT against a worker that is still initializing.
+static WORKER_READY: AtomicBool = AtomicBool::new(false);
 
 fn backoff_delay(attempt: u32) -> Duration {
     BACKOFF[(attempt as usize).min(BACKOFF.len() - 1)]
@@ -328,7 +332,36 @@ fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     }
     let worker_path =
         find_worker(app).ok_or_else(|| "Could not locate service-worker.js".to_string())?;
-    Ok((PathBuf::from("node"), worker_path))
+    let node = find_node().ok_or_else(|| {
+        let _ = app.emit("worker:event", json!({ "event": "worker:node_missing" }));
+        "Node.js not found — install Node.js v18+ to run tunnels".to_string()
+    })?;
+    Ok((node, worker_path))
+}
+
+/// Locate a usable `node` binary: known install locations first, then PATH.
+#[cfg(not(target_os = "android"))]
+fn find_node() -> Option<PathBuf> {
+    let candidates = [
+        "/usr/bin/node",
+        "/usr/local/bin/node",
+        "/opt/homebrew/bin/node",
+        "/usr/bin/nodejs",
+    ];
+    for c in candidates {
+        if std::path::Path::new(c).is_file() {
+            return Some(PathBuf::from(c));
+        }
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let cand = dir.join("node");
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
 }
 
 /// Android: run the worker under the bundled bare runtime.
@@ -376,6 +409,7 @@ fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
 /// its IO threads.
 /// Requires WorkerState/StdinState/PendingState to be managed already.
 fn spawn_worker(app: &AppHandle) -> Result<(), String> {
+    WORKER_READY.store(false, Ordering::SeqCst);
     let (program, worker_path) = worker_command(app)?;
     let cwd = worker_path
         .parent()
@@ -436,6 +470,10 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
                     }
                 }
                 if msg.get("event").is_some() {
+                    // readiness handshake: gate RPC traffic on it
+                    if msg.get("event").and_then(|v| v.as_str()) == Some("worker:ready") {
+                        WORKER_READY.store(true, Ordering::SeqCst);
+                    }
                     let _ = app.emit("worker:event", msg);
                 }
             }
@@ -463,6 +501,7 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
                 }
             };
             if let Some(status) = exited {
+                WORKER_READY.store(false, Ordering::SeqCst);
                 // Close the stdin pipe so nothing writes to a dead process
                 let ss = app.state::<StdinState>();
                 ss.0.lock().unwrap().take();
@@ -626,6 +665,30 @@ async fn worker_restart(app: AppHandle) -> Result<Value, String> {
     }
 }
 
+/// Manual retry after "Node.js not found": bump the respawn generation so
+/// any pending auto-respawn aborts, reset the backoff ladder, and try to
+/// spawn now. Success flows through the normal worker:ready path.
+#[tauri::command]
+async fn retry_spawn_worker(app: AppHandle) -> Result<Value, String> {
+    RESPAWN_GEN.fetch_add(1, Ordering::Relaxed);
+    {
+        let ds = app.state::<DiagState>();
+        let mut d = ds.0.lock().unwrap();
+        d.restart_attempt = 0;
+    }
+    match spawn_worker(&app) {
+        Ok(()) => Ok(json!({ "ok": true })),
+        Err(e) => {
+            diag_record_failure(&app, e.clone());
+            let _ = app.emit(
+                "worker:event",
+                json!({ "event": "worker:error", "data": { "message": e } }),
+            );
+            Err(e)
+        }
+    }
+}
+
 #[tauri::command]
 async fn rpc(
     stdin: State<'_, StdinState>,
@@ -633,6 +696,9 @@ async fn rpc(
     method: String,
     params: Value,
 ) -> Result<Value, String> {
+    if !WORKER_READY.load(Ordering::SeqCst) {
+        return Err("Service worker is still starting up".to_string());
+    }
     let id = format!(
         "{}-{}",
         NEXT_RPC_ID.fetch_add(1, Ordering::Relaxed),
@@ -836,6 +902,7 @@ pub fn run() {
             rpc,
             worker_diagnostics,
             worker_restart,
+            retry_spawn_worker,
             take_pending_deep_links,
             version_info,
             saved_list,

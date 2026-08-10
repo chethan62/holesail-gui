@@ -8,6 +8,7 @@ import {
   onEvent,
   workerDiagnostics,
   workerRestart,
+  workerRetrySpawn,
   takePendingDeepLinks,
   onAppEvent,
   versionInfo,
@@ -125,6 +126,9 @@ const state = {
   saved: [], // saved tunnels from the backend (temp/permanent)
   workerOk: false
 }
+
+// worker readiness handshake (worker:ready event); RPCs fail fast until set
+let workerReady = false
 
 function upsertSession(data) {
   if (data.state === 'stopped') {
@@ -296,19 +300,76 @@ async function syncWorker() {
   for (const s of sessions) upsertSession(s)
 }
 
+/* ------------------------ node-required screen ------------------------- */
+// Shown when the desktop backend cannot find a Node.js runtime to run the
+// worker (the bundled bare runtime is preferred; this only happens on
+// dev/standalone installs without the bundle).
+
+function showNodeRequired() {
+  updateWorkerStatus(false, 'node.js required')
+  $('#node-required').hidden = false
+}
+
+function hideNodeRequired() {
+  $('#node-required').hidden = true
+}
+
+let nodeRetryInFlight = false
+async function retryNode() {
+  if (nodeRetryInFlight) return
+  nodeRetryInFlight = true
+  const btn = $('#node-retry')
+  btn.disabled = true
+  try {
+    await workerRetrySpawn()
+    // success path flows through worker:ready — hideNodeRequired() there
+  } catch (err) {
+    log('Node.js still not found: ' + err.message, 'err')
+    $('#node-required-msg').textContent =
+      'Still can\'t find Node.js. Install it, then try again (restarting the app also refreshes the PATH).'
+  } finally {
+    btn.disabled = false
+    nodeRetryInFlight = false
+  }
+}
+
+function bindNodeScreen() {
+  // CSP blocks in-webview navigation; copy the link instead
+  $('#node-install').addEventListener('click', () => copyText('https://nodejs.org'))
+  $('#node-retry').addEventListener('click', retryNode)
+}
+
 onEvent((msg) => {
   switch (msg.event) {
     case 'session:update':
       upsertSession(msg.data)
       break
     case 'worker:spawned':
-      // fresh worker (boot or respawn): re-sync state
+      // fresh worker (boot or respawn): log only — actual syncing waits for
+      // worker:ready so RPCs never race a still-initializing worker
       log('Service worker started')
+      // fallback: a worker that never emits ready (older build, odd race)
+      // must not wedge autostart forever
+      setTimeout(() => {
+        if (!workerReady) {
+          log('worker:ready never arrived — syncing anyway', 'warn')
+          syncWorker()
+            .then(() => autostartSaved())
+            .catch((err) => {
+              updateWorkerStatus(false, 'worker unavailable')
+              log(err.message, 'err')
+            })
+        }
+      }, 5000)
+      break
+    case 'worker:ready':
+      workerReady = true
+      hideNodeRequired()
       syncWorker()
         .then(() => autostartSaved().catch((err) => log('Autostart failed: ' + err.message, 'err')))
         .catch((err) => {
           updateWorkerStatus(false, 'worker unavailable')
-          log('Worker spawned but did not answer: ' + err.message, 'err')
+          log('Worker ready but did not answer: ' + err.message, 'err')
         })
       break
     case 'worker:restarting':
@@ -318,6 +379,7 @@ onEvent((msg) => {
       )
       break
     case 'worker:exit':
+      workerReady = false
       updateWorkerStatus(false, `worker exited (code ${msg.data.code ?? 'signal'})`)
       log(`Service worker exited with code ${msg.data.code ?? 'signal'}`, 'err')
       // the worker is gone — drop stale sessions so the UI reflects reality
@@ -331,6 +393,9 @@ onEvent((msg) => {
       break
     case 'worker:error':
       log('Worker error: ' + msg.data.message, 'err')
+      break
+    case 'worker:node_missing':
+      showNodeRequired()
       break
   }
 }).catch((err) => log('Failed to subscribe to worker events: ' + err.message, 'err'))
@@ -823,6 +888,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
+  bindNodeScreen()
   // tunnel type toggle reveals the name field for permanent tunnels
   $('#share-type').addEventListener('change', () => {
     $('#share-name-wrap').hidden = $('#share-type').value !== 'perm'
@@ -853,6 +919,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateWorkerStatus(null, 'restarting…')
     try {
       await workerRestart()
+      // wait for the fresh worker's ready handshake (max 5s), then re-sync
+      const startedAt = Date.now()
+      while (!workerReady && Date.now() - startedAt < 5000) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
       await syncWorker()
       await autostartSaved()
       log('Service worker restarted manually', 'ok')
@@ -866,6 +937,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   tickUptime()
 
   try {
+    // wait for the worker's ready handshake (max 10s), then sync — RPCs
+    // fail fast until then, so an eager boot would look like a failure
+    const bootDeadline = Date.now() + 10000
+    while (!workerReady && Date.now() < bootDeadline) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
     await syncWorker()
     log('Connected to holesail service worker')
     // load saved tunnels, then auto-restart the autostart ones

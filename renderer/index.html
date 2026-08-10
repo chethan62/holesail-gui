@@ -179,6 +179,20 @@
       </section>
     </main>
 
+    <div id="node-required" class="overlay" hidden>
+      <div class="overlay-card">
+        <h2>Node.js required</h2>
+        <p id="node-required-msg">
+          This app needs Node.js (v18+) installed to run tunnels. Install it, then retry —
+          or restart the app (that also refreshes the PATH).
+        </p>
+        <div class="overlay-actions">
+          <button type="button" id="node-install" class="btn primary">Copy Node.js download link</button>
+          <button type="button" id="node-retry" class="btn">Retry</button>
+        </div>
+      </div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
 
     <script src="vendor/qrcode.js"></script>

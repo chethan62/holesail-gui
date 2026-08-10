@@ -16,6 +16,10 @@ export async function workerRestart() {
   return await window.__TAURI__.core.invoke('worker_restart')
 }
 
+export async function workerRetrySpawn() {
+  return await window.__TAURI__.core.invoke('retry_spawn_worker')
+}
+
 export async function takePendingDeepLinks() {
   return await window.__TAURI__.core.invoke('take_pending_deep_links')
 }

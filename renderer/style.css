@@ -675,6 +675,48 @@ button.primary:disabled {
   color: #86efac;
 }
 
+/* node-required overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 24px calc(24px + var(--sal)) calc(24px + var(--sab)) calc(24px + var(--sar));
+}
+.overlay[hidden] {
+  display: none;
+}
+.overlay-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px;
+  max-width: 400px;
+  width: 100%;
+}
+.overlay-card h2 {
+  margin-bottom: 8px;
+}
+.overlay-card p {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.overlay-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.overlay-actions .btn.primary {
+  background: var(--accent);
+  color: white;
+  border: none;
+}
+
 /* toast */
 .toast {
   position: fixed;
