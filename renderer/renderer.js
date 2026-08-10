@@ -194,6 +194,25 @@ function renderSession(container, s) {
   urlRow.append(copy)
   urlCol.append(urlRow)
 
+  // Client sessions expose a local HTTP proxy. Android Chrome refuses
+  // literal 127.0.0.1 in some cases, but `localhost` always resolves to
+  // the app's tunnel — hand out the URL that actually works.
+  if (s.type === 'client' && s.port) {
+    const localUrl = 'http://localhost:' + s.port + '/'
+    const localRow = el('div', 'url-row')
+    localRow.append(el('code', 'local-url', '', localUrl))
+    const copyUrl = el('button', 'copy', '', 'Copy URL')
+    copyUrl.title = 'Copy local URL'
+    copyUrl.addEventListener('click', () => {
+      navigator.clipboard.writeText(localUrl).then(
+        () => toast('Local URL copied'),
+        () => toast('Copy failed', true)
+      )
+    })
+    localRow.append(copyUrl)
+    urlCol.append(localRow)
+  }
+
   const metaRow = el('div', 'meta')
   metaRow.append(metaItem('Host', s.host), metaItem('Port', s.port))
   const up = el('span')
