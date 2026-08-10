@@ -222,9 +222,19 @@ main {
   padding-top: 24px;
   color: var(--text);
   cursor: pointer;
+  min-width: 0;
+}
+.grid-form label.check input[type="checkbox"] {
+  flex-shrink: 0;
+}
+.grid-form label.check .check-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+  line-height: 1.4;
 }
 .grid-form input[type="text"],
-.grid-form input[type="number"] {
+.grid-form input[type="number"],
+.grid-form select {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -233,8 +243,25 @@ main {
   font-size: 14px;
   outline: none;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
-.grid-form input:focus {
+.grid-form textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  width: 100%;
+  box-sizing: border-box;
+}
+.grid-form input:focus,
+.grid-form select:focus {
   border-color: var(--accent);
 }
 .grid-form input[type="checkbox"] {
@@ -242,6 +269,54 @@ main {
   height: 16px;
   accent-color: var(--accent);
   cursor: pointer;
+}
+.grid-form .full > button.primary {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* recent chips */
+.recent-label {
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+#recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+#recent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+#recent-row[hidden] {
+  display: none;
+}
+#recent-row .link-btn {
+  flex-shrink: 0;
+}
+
+/* mobile: stack the two-column grid so port/host etc never cram */
+@media (max-width: 560px) {
+  .grid-form {
+    grid-template-columns: 1fr;
+  }
+  .grid-form label.check {
+    padding-top: 2px;
+  }
+  .grid-form label.check .check-text {
+    font-size: 13px;
+  }
 }
 
 button.primary {
@@ -531,11 +606,6 @@ button.primary:disabled {
 }
 
 /* recent keys */
-.recent-label {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-right: 6px;
-}
 .recent-chip {
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -544,7 +614,6 @@ button.primary:disabled {
   padding: 3px 10px;
   font-size: 12px;
   cursor: pointer;
-  margin-right: 6px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   max-width: 220px;
   overflow: hidden;
