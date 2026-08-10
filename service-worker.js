@@ -266,7 +266,7 @@ process.stdin.on('end', () => {
 /* ------------------------------ shutdown ------------------------------- */
 
 async function shutdown() {
-  for (const [id] of sessions) {
+  for (const id of [...sessions.keys()]) {
     try {
       await stopSession(id)
     } catch {}

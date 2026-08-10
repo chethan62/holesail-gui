@@ -283,7 +283,7 @@ onEvent((msg) => {
       // fresh worker (boot or respawn): re-sync state
       log('Service worker started')
       syncWorker()
-        .then(() => autostartSaved()) // respawn: restore permanent tunnels
+        .then(() => autostartSaved().catch((err) => log('Autostart failed: ' + err.message, 'err')))
         .catch((err) => {
           updateWorkerStatus(false, 'worker unavailable')
           log('Worker spawned but did not answer: ' + err.message, 'err')
@@ -542,8 +542,9 @@ function savedSession(t) {
 
 async function startSaved(t) {
   try {
+    let session
     if (t.kind === 'server') {
-      await rpc('server:start', {
+      session = await rpc('server:start', {
         port: t.port,
         host: t.host || '127.0.0.1',
         secure: true,
@@ -551,13 +552,14 @@ async function startSaved(t) {
         key: t.key
       })
     } else {
-      await rpc('client:connect', {
+      session = await rpc('client:connect', {
         key: t.key,
         port: t.port ?? undefined,
         host: t.host || undefined,
         udp: t.udp
       })
     }
+    addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
   } catch (err) {
     toast('Failed to start: ' + err.message, true)
@@ -577,7 +579,7 @@ async function stopSaved(t) {
 async function toggleAutostart(t) {
   await savedSave({ ...t, autostart: !t.autostart })
   await refreshSaved()
-  toast(t.autostart ? 'Will restart with the app' : 'Won\'t auto-restart')
+  toast(!t.autostart ? 'Will restart with the app' : 'Won\'t auto-restart')
 }
 
 function renderSaved() {
@@ -609,7 +611,7 @@ function renderSaved() {
     const meta = el('div', 'meta')
     meta.append(metaItem('Port', t.port ?? 'auto'))
     if (t.host) meta.append(metaItem('Host', t.host))
-    meta.append(metaItem('Auto', t.autostart ? 'on' : 'off'))
+    meta.append(metaItem('Auto-start', t.autostart ? 'on' : 'off'))
     item.append(keyLine, meta)
 
     const actions = el('div', 'saved-actions')
@@ -820,6 +822,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await workerRestart()
       await syncWorker()
+      await autostartSaved()
       log('Service worker restarted manually', 'ok')
     } catch (err) {
       updateWorkerStatus(false, 'worker unavailable')
