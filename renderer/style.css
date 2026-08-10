@@ -25,6 +25,15 @@ body[data-theme='light'] {
   --green: #16a34a;
   --red: #dc2626;
   --yellow: #b45309;
+
+  /* Safe-area insets reported by the OS per device: notch/punch-hole
+     top, gesture-bar bottom, and landscape notch sides. Always 0 on
+     desktop and on non-edge-to-edge devices, so the desktop UI is
+     untouched. */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 * {
@@ -39,6 +48,10 @@ body {
   color: var(--text);
   height: 100vh;
   overflow-y: auto;
+  /* keep content clear of the gesture bar and landscape notch */
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  padding-bottom: var(--sab);
 }
 
 /* top bar */
@@ -47,6 +60,11 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 14px 22px;
+  /* sticky + edge-to-edge: the bar's background extends under the
+     status bar / cutout while content stays below the inset */
+  padding-top: calc(14px + var(--sat));
+  padding-left: calc(22px + var(--sal));
+  padding-right: calc(22px + var(--sar));
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -473,7 +491,7 @@ button.primary:disabled {
 /* toast */
 .toast {
   position: fixed;
-  bottom: 22px;
+  bottom: calc(22px + var(--sab));
   left: 50%;
   transform: translateX(-50%);
   background: #1e293b;
