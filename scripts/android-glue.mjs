@@ -361,6 +361,63 @@ if (!main.includes('HoleService.start')) {
   console.log('MainActivity.kt already has foreground service wiring')
 }
 
+// 5e. safe-area insets: Android 15 enforces edge-to-edge and wry does not
+// feed real WindowInsets into the webview's env(safe-area-inset-*) (works
+// on emulators, not real devices — the 13R's punch hole overlaps the
+// header). Read the actual insets natively and publish them as the CSS
+// variables the renderer already consumes (--sat/--sab/--sal/--sar).
+if (!main.includes('onWebViewCreate')) {
+  main = main
+    .replace(
+      'import androidx.activity.enableEdgeToEdge',
+      'import androidx.activity.enableEdgeToEdge\n' +
+        'import android.webkit.WebView\n' +
+        'import androidx.core.view.ViewCompat\n' +
+        'import androidx.core.view.WindowInsetsCompat'
+    )
+    .replace(
+      'class MainActivity : TauriActivity() {\n',
+      `class MainActivity : TauriActivity() {
+  private var top = 0
+  private var bottom = 0
+  private var left = 0
+  private var right = 0
+
+  override fun onWebViewCreate(webView: WebView) {
+    super.onWebViewCreate(webView)
+    ViewCompat.setOnApplyWindowInsetsListener(webView) { _, insets ->
+      val bars = insets.getInsets(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+      )
+      top = bars.top
+      bottom = bars.bottom
+      left = bars.left
+      right = bars.right
+      applySafeAreaVars(webView)
+      insets // do not consume: keep default webview behavior
+    }
+    // The first inset dispatch usually lands on about:blank, before the
+    // real page exists — re-apply shortly after load (idempotent).
+    webView.postDelayed({ applySafeAreaVars(webView) }, 800)
+    webView.postDelayed({ applySafeAreaVars(webView) }, 2500)
+  }
+
+  private fun applySafeAreaVars(webView: WebView) {
+    val js = "document.documentElement.style.setProperty('--sat', '\${top}px');" +
+      "document.documentElement.style.setProperty('--sab', '\${bottom}px');" +
+      "document.documentElement.style.setProperty('--sal', '\${left}px');" +
+      "document.documentElement.style.setProperty('--sar', '\${right}px');"
+    webView.post { webView.evaluateJavascript(js, null) }
+  }
+
+`
+    )
+  writeFileSync(mainActivityFile, main)
+  console.log('patched MainActivity.kt (safe-area insets)')
+} else {
+  console.log('MainActivity.kt already has safe-area insets')
+}
+
 // 5d. manifest: service declaration + permissions
 const manifestPath2 = path.join(GEN, 'app', 'src', 'main', 'AndroidManifest.xml')
 let manifest2 = readFileSync(manifestPath2, 'utf8')
