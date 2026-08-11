@@ -301,8 +301,8 @@ arrives on the device — in both directions.
   and [sodium-native](https://github.com/holepunchto/sodium-native) — the
   encrypted DHT and networking stack underneath (MIT/Apache-2.0).
 - [Tauri](https://tauri.app) — the desktop/mobile framework (MIT/Apache-2.0).
-- The current app icon comes from the Tauri template; a custom icon is a
-  TODO.
+- The app icon (two linked nodes — a P2P tunnel) is generated from
+  `src-tauri/icons/source.png` with `npx tauri icon`.
 
 ## License
 
