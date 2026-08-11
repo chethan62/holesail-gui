@@ -306,7 +306,7 @@ arrives on the device — in both directions.
 
 ## License
 
-[MIT](LICENSE) © 2026 Reasonix, chethan62 — for this project's own code.
+[MIT](LICENSE) © 2026 chethan62 — for this project's own code.
 
 **Note:** the bundled `holesail` engine (the service worker) is
 [AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that

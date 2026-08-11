@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "description": "Desktop GUI for Holesail — share local ports and connect to P2P tunnels",
   "main": "main.js",
-  "author": "Reasonix",
+  "author": "chethan62",
   "license": "MIT",
   "scripts": {
     "predev": "node scripts/prepare-resources.mjs",
