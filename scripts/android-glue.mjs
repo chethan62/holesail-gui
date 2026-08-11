@@ -301,32 +301,19 @@ class HoleService : Service() {
 writeFileSync(path.join(mainActivity, 'HoleService.kt'), holeService)
 console.log('wrote HoleService.kt in', mainActivity)
 
-// 5b. notification small icon (white alpha mask — plain vector, no deps)
+// 5b. notification small icon — the repo icon's white silhouette
+// (Android renders notification glyphs as alpha masks; a colored PNG
+// would show as a blob). src-tauri/icons/android-notification.png is
+// generated from the app icon and committed, so it survives regen.
 const iconDir = path.join(GEN, 'app', 'src', 'main', 'res', 'drawable')
 mkdirSync(iconDir, { recursive: true })
-writeFileSync(
-  path.join(iconDir, 'ic_holesail_notification.xml'),
-  `<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-  <!-- two linked nodes: reads as a network link, not a camera -->
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M8.5,12 a2.5,2.5 0 1,1 -5,0 a2.5,2.5 0 1,1 5,0z" />
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M20.5,12 a2.5,2.5 0 1,1 -5,0 a2.5,2.5 0 1,1 5,0z" />
-  <path
-      android:strokeColor="#FFFFFFFF"
-      android:strokeWidth="2"
-      android:strokeLineCap="round"
-      android:pathData="M8.5,12 L15.5,12" />
-</vector>
-`
-)
-console.log('wrote ic_holesail_notification.xml')
+const repoIcon = path.join(root, 'src-tauri', 'icons', 'android-notification.png')
+if (!existsSync(repoIcon)) {
+  console.error('src-tauri/icons/android-notification.png not found — regenerate with magick')
+  process.exit(1)
+}
+cpSync(repoIcon, path.join(iconDir, 'ic_holesail_notification.png'))
+console.log('copied android-notification.png -> ic_holesail_notification.png')
 
 // 5c. activity wiring: start the service while the UI is alive, request the
 // notification permission (API 33+), stop on destroy
