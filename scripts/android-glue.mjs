@@ -452,6 +452,65 @@ if (!manifest2.includes('HoleService')) {
   console.log('AndroidManifest.xml already has foreground service')
 }
 
+// 6. boot receiver: restart tunnels after a device reboot. Android kills
+// all app processes on reboot; without this, permanent tunnels only come
+// back when the user opens the app. BOOT_COMPLETED grants a temporary
+// background-activity-start allowlist, so launching MainActivity (which
+// runs Tauri setup -> worker spawn -> autostart) is allowed. The FGS is
+// started first so the process is exempt from the background freezer.
+const bootReceiver = `package ${findMainActivityPackage(GEN)}
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+
+/**
+ * Restores tunnels after a device reboot (and after an app update).
+ * The foreground service is started first so the process is exempt from
+ * the background freezer; MainActivity's Tauri setup then spawns the
+ * worker, which auto-restarts permanent/saved tunnels.
+ */
+class BootReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    val action = intent.action
+    if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+    HoleService.start(context)
+    val launch = Intent(context, MainActivity::class.java).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(launch)
+  }
+}
+`
+writeFileSync(path.join(mainActivity, 'BootReceiver.kt'), bootReceiver)
+console.log('wrote BootReceiver.kt in', mainActivity)
+
+// 6b. manifest: boot permission + receiver declaration
+if (!manifest2.includes('RECEIVE_BOOT_COMPLETED')) {
+  manifest2 = manifest2
+    .replace(
+      '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+      '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n' +
+        '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'
+    )
+    .replace(
+      '        </service>',
+      '        </service>\n' +
+        '        <receiver\n' +
+        '            android:name=".BootReceiver"\n' +
+        '            android:exported="false">\n' +
+        '            <intent-filter>\n' +
+        '                <action android:name="android.intent.action.BOOT_COMPLETED" />\n' +
+        '                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />\n' +
+        '            </intent-filter>\n' +
+        '        </receiver>'
+    )
+  writeFileSync(manifestPath2, manifest2)
+  console.log('patched AndroidManifest.xml (boot receiver)')
+} else {
+  console.log('AndroidManifest.xml already has boot receiver')
+}
+
 function findMainActivityPackage(genDir) {
   // AGP 8+: the app package is the gradle `namespace`, not a manifest attr
   const gradle = readFileSync(path.join(genDir, 'app', 'build.gradle.kts'), 'utf8')
