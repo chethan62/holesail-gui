@@ -138,6 +138,11 @@ function upsertSession(data) {
     state.meta.delete(data.id)
     state.revealed.delete(data.id)
   } else {
+    if (data.state === 'error') {
+      // the worker killed just this session after an async error — show
+      // why, then the follow-up 'stopped' event removes the card
+      log(`Session errored: ${data.error || 'unknown error'}`, 'err')
+    }
     const existing = state.sessions.get(data.id)
     if (existing) {
       Object.assign(existing, data) // events may carry only {id, state}
@@ -555,7 +560,7 @@ async function startShare(event) {
         createdAt: Date.now()
       })
     }
-    const session = await rpc('server:start', params)
+    const session = await rpc('server:start', params, 90000)
     log(`Server started on ${session.host}:${session.port} (${session.protocol})`, 'ok')
     toast(isPerm ? 'Permanent sharing started 🔒' : 'Sharing started 🎉')
     addRecent(session.url)
@@ -604,7 +609,7 @@ async function startConnect(event) {
         createdAt: Date.now()
       })
     }
-    const session = await rpc('client:connect', params)
+    const session = await rpc('client:connect', params, 90000)
     log(`Connected to ${session.host}:${session.port} (${session.protocol})`, 'ok')
     toast('Connected')
     addRecent(params.key)

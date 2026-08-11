@@ -4,8 +4,11 @@
 
 'use strict'
 
-export async function rpc(method, params) {
-  return await window.__TAURI__.core.invoke('rpc', { method, params })
+// RPC with an optional per-call timeout override. Default 30s (a hung
+// worker surfaces fast); session-start calls (server:start, client:connect)
+// pass 90s because cold DHT bootstrap genuinely takes that long.
+export async function rpc(method, params, timeoutMs) {
+  return await window.__TAURI__.core.invoke('rpc', { method, params, timeoutMs })
 }
 
 export async function workerDiagnostics() {

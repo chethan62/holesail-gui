@@ -26,7 +26,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
-const RPC_TIMEOUT: Duration = Duration::from_secs(90); // DHT bootstrap can take a while
+const RPC_TIMEOUT: Duration = Duration::from_secs(30); // hung worker surfaces fast
+const RPC_TIMEOUT_LONG: Duration = Duration::from_secs(90); // session starts: cold DHT bootstrap
 const EXIT_GRACE: Duration = Duration::from_secs(3); // SIGTERM -> SIGKILL escalation on app quit
 /// A worker that stayed up this long is considered healthy; the respawn
 /// backoff resets so a later crash restarts fast again.
@@ -180,7 +181,7 @@ fn saved_persist(app: &AppHandle, store: &SavedStore) {
 #[cfg(desktop)]
 fn autostart_sync(app: &AppHandle, store: &SavedStore) {
     use tauri_plugin_autostart::ManagerExt;
-    let want = store.0.lock().unwrap().iter().any(|t| t.autostart);
+    let want = saved_wants_autostart(store);
     let la = app.autolaunch();
     let on = la.is_enabled().unwrap_or(false);
     if want && !on {
@@ -210,45 +211,57 @@ fn saved_list(store: State<SavedStore>) -> Vec<SavedTunnel> {
     store.0.lock().unwrap().clone()
 }
 
-#[tauri::command]
-fn saved_save(app: AppHandle, store: State<SavedStore>, tunnel: SavedTunnel) -> SavedTunnel {
-    let mut t = tunnel;
+/// Core upsert (insert or replace by id), filling id/name when empty.
+/// Pure — no AppHandle, so it is unit-testable.
+fn saved_upsert(store: &SavedStore, mut t: SavedTunnel) -> SavedTunnel {
     if t.id.is_empty() {
         t.id = next_id();
     }
     if t.name.is_empty() {
         t.name = t.kind.clone();
     }
-    {
-        let mut list = store.0.lock().unwrap();
-        if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
-            *existing = t.clone();
-        } else {
-            list.push(t.clone());
-        }
+    let mut list = store.0.lock().unwrap();
+    if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
+        *existing = t.clone();
+    } else {
+        list.push(t.clone());
     }
+    t
+}
+
+#[tauri::command]
+fn saved_save(app: AppHandle, store: State<SavedStore>, tunnel: SavedTunnel) -> SavedTunnel {
+    let t = saved_upsert(&store, tunnel);
     saved_persist(&app, &store);
     autostart_sync(&app, &store);
     t
 }
 
+/// Core remove by id. Pure.
+fn saved_remove(store: &SavedStore, id: &str) {
+    store.0.lock().unwrap().retain(|t| t.id != id);
+}
+
 #[tauri::command]
 fn saved_delete(app: AppHandle, store: State<SavedStore>, id: String) {
-    store.0.lock().unwrap().retain(|t| t.id != id);
+    saved_remove(&store, &id);
     saved_persist(&app, &store);
     autostart_sync(&app, &store);
 }
 
+/// Core duplicate: new id, "(copy)" name. Returns the copy or None. Pure.
+fn saved_duplicate_core(store: &SavedStore, id: &str) -> Option<SavedTunnel> {
+    let mut list = store.0.lock().unwrap();
+    let mut c = list.iter().find(|t| t.id == id).cloned()?;
+    c.id = next_id();
+    c.name = format!("{} (copy)", c.name);
+    list.push(c.clone());
+    Some(c)
+}
+
 #[tauri::command]
 fn saved_duplicate(app: AppHandle, store: State<SavedStore>, id: String) -> Option<SavedTunnel> {
-    let copy = {
-        let mut list = store.0.lock().unwrap();
-        let mut c = list.iter().find(|t| t.id == id).cloned()?;
-        c.id = next_id();
-        c.name = format!("{} (copy)", c.name);
-        list.push(c.clone());
-        c
-    };
+    let copy = saved_duplicate_core(&store, &id)?;
     saved_persist(&app, &store);
     Some(copy)
 }
@@ -258,28 +271,175 @@ fn saved_export(store: State<SavedStore>) -> String {
     serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into())
 }
 
-#[tauri::command]
-fn saved_import(app: AppHandle, store: State<SavedStore>, json: String) -> usize {
-    let parsed: Vec<SavedTunnel> = match serde_json::from_str(&json) {
+/// Core import: merge parsed tunnels by id (new ids for empty ones).
+/// Returns the new store length. Pure.
+fn saved_import_core(store: &SavedStore, json: &str) -> usize {
+    let parsed: Vec<SavedTunnel> = match serde_json::from_str(json) {
         Ok(v) => v,
         Err(_) => return 0,
     };
-    {
-        let mut list = store.0.lock().unwrap();
-        for mut t in parsed {
-            if t.id.is_empty() {
-                t.id = next_id();
-            }
-            if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
-                *existing = t;
-            } else {
-                list.push(t);
-            }
+    let mut list = store.0.lock().unwrap();
+    for mut t in parsed {
+        if t.id.is_empty() {
+            t.id = next_id();
+        }
+        if let Some(existing) = list.iter_mut().find(|x| x.id == t.id) {
+            *existing = t;
+        } else {
+            list.push(t);
         }
     }
-    saved_persist(&app, &store);
-    autostart_sync(&app, &store);
-    store.0.lock().unwrap().len()
+    list.len()
+}
+
+#[tauri::command]
+fn saved_import(app: AppHandle, store: State<SavedStore>, json: String) -> usize {
+    let len = saved_import_core(&store, &json);
+    if len > 0 {
+        saved_persist(&app, &store);
+        autostart_sync(&app, &store);
+    }
+    len
+}
+
+/// Does any saved tunnel want login autostart? Pure (used by autostart_sync).
+fn saved_wants_autostart(store: &SavedStore) -> bool {
+    store.0.lock().unwrap().iter().any(|t| t.autostart)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store_with(items: Vec<SavedTunnel>) -> SavedStore {
+        SavedStore(Mutex::new(items))
+    }
+
+    fn tunnel(id: &str, kind: &str, autostart: bool) -> SavedTunnel {
+        SavedTunnel {
+            id: id.to_string(),
+            name: format!("tunnel-{id}"),
+            kind: kind.to_string(),
+            key: "k".repeat(64),
+            port: Some(8080),
+            host: Some("127.0.0.1".into()),
+            secure: true,
+            udp: false,
+            autostart,
+            created_at: 1,
+        }
+    }
+
+    #[test]
+    fn upsert_fills_id_and_name() {
+        let store = store_with(vec![]);
+        let saved = saved_upsert(
+            &store,
+            SavedTunnel {
+                id: String::new(),
+                name: String::new(),
+                kind: "server".into(),
+                key: "k".repeat(64),
+                port: Some(1),
+                host: None,
+                secure: true,
+                udp: false,
+                autostart: false,
+                created_at: 2,
+            },
+        );
+        assert!(!saved.id.is_empty());
+        assert_eq!(saved.name, "server");
+        assert_eq!(store.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn upsert_replaces_existing_id_without_duplicating() {
+        let store = store_with(vec![tunnel("a", "server", false)]);
+        let mut updated = tunnel("a", "client", true);
+        updated.name = "renamed".into();
+        let saved = saved_upsert(&store, updated);
+        assert_eq!(saved.name, "renamed");
+        let list = store.0.lock().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind, "client");
+        assert!(list[0].autostart);
+    }
+
+    #[test]
+    fn delete_removes_by_id() {
+        let store = store_with(vec![tunnel("a", "server", false), tunnel("b", "client", false)]);
+        saved_remove(&store, "a");
+        let list = store.0.lock().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "b");
+    }
+
+    #[test]
+    fn duplicate_creates_new_id_and_copy_name() {
+        let store = store_with(vec![tunnel("a", "server", true)]);
+        let copy = saved_duplicate_core(&store, "a").expect("copy");
+        assert_ne!(copy.id, "a");
+        assert!(copy.name.contains("(copy)"));
+        assert_eq!(store.0.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn duplicate_missing_id_returns_none() {
+        let store = store_with(vec![]);
+        assert!(saved_duplicate_core(&store, "nope").is_none());
+    }
+
+    #[test]
+    fn import_merges_and_counts() {
+        let store = store_with(vec![tunnel("a", "server", false)]);
+        let json = serde_json::json!([
+            { "id": "a", "name": "replaced", "kind": "server", "key": "k", "port": 1, "secure": true, "udp": false, "autostart": true, "createdAt": 1 },
+            { "id": "b", "name": "new", "kind": "client", "key": "hs://x", "port": null, "secure": false, "udp": false, "autostart": false, "createdAt": 2 }
+        ])
+        .to_string();
+        let len = saved_import_core(&store, &json);
+        assert_eq!(len, 2);
+        let list = store.0.lock().unwrap();
+        assert_eq!(list[0].name, "replaced"); // existing id replaced
+        assert_eq!(list[1].id, "b");
+    }
+
+    #[test]
+    fn import_invalid_json_returns_zero_and_keeps_store() {
+        let store = store_with(vec![tunnel("a", "server", false)]);
+        assert_eq!(saved_import_core(&store, "not json"), 0);
+        assert_eq!(store.0.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn legacy_json_without_secure_defaults_to_private() {
+        // tunnels saved before the `secure` field existed must deserialize
+        // as private (secure=true) — otherwise a public permanent server
+        // would silently become private (different keypair) on restart
+        let legacy = r#"[{"id":"x","name":"old","kind":"server","key":"k","port":1,"udp":false,"autostart":true,"createdAt":1}]"#;
+        let parsed: Vec<SavedTunnel> = serde_json::from_str(legacy).expect("legacy parses");
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].secure, "legacy entries must default to private");
+    }
+
+    #[test]
+    fn autostart_wants_true_when_any_tunnel_asks() {
+        let store = store_with(vec![tunnel("a", "server", false), tunnel("b", "client", true)]);
+        assert!(saved_wants_autostart(&store));
+        let store2 = store_with(vec![tunnel("a", "server", false)]);
+        assert!(!saved_wants_autostart(&store2));
+    }
+
+    #[test]
+    fn saved_json_roundtrip() {
+        let store = store_with(vec![tunnel("a", "server", true)]);
+        let json = serde_json::to_string(&*store.0.lock().unwrap()).unwrap();
+        let back: Vec<SavedTunnel> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, "a");
+        assert!(back[0].secure);
+    }
 }
 
 fn diag_record_spawn(app: &AppHandle) {
@@ -706,6 +866,7 @@ async fn rpc(
     pending: State<'_, PendingState>,
     method: String,
     params: Value,
+    timeout_ms: Option<u64>,
 ) -> Result<Value, String> {
     if !WORKER_READY.load(Ordering::SeqCst) {
         return Err("Service worker is still starting up".to_string());
@@ -740,7 +901,11 @@ async fn rpc(
         rx
     };
 
-    match tokio::time::timeout(RPC_TIMEOUT, rx).await {
+    let timeout = match timeout_ms {
+        Some(ms) if ms > 0 => Duration::from_millis(ms),
+        _ => RPC_TIMEOUT,
+    };
+    match tokio::time::timeout(timeout, rx).await {
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err("Service worker dropped the request".into()),
         Err(_) => {

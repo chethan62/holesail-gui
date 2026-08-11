@@ -130,6 +130,21 @@ async function main() {
     }
     assert(threw, 'invalid port raises error')
 
+    console.log('9) async session error kills only that session')
+    const survivor = await rpc('server:start', { port: TEST_PORT + 1, secure: true }, 90000)
+    assert(survivor.type === 'server', 'survivor server started')
+    // simulate a real async bind failure attributed to the SURVIVOR's port
+    // (thrown on the next tick as an uncaughtException, like a socket
+    // 'error' event nobody listens to) — containment must drop just that
+    // session and keep the worker alive
+    const sim = await rpc('test:throw', { port: survivor.port })
+    assert(sim && sim.thrown === true, 'simulated error scheduled')
+    await new Promise((res) => setTimeout(res, 800)) // let the containment settle
+    const pongAfterSim = await rpc('ping', {})
+    assert(pongAfterSim === 'pong', 'worker still alive after a session-attributable error')
+    const list = await rpc('sessions:list', {})
+    assert(list.length === 0, 'broken session was removed, worker did not die')
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)
