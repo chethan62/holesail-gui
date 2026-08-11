@@ -12,6 +12,7 @@ import {
   takePendingDeepLinks,
   onAppEvent,
   versionInfo,
+  lanAddress,
   savedList,
   savedSave,
   savedDelete,
@@ -124,6 +125,7 @@ const state = {
   meta: new Map(), // id -> { startedAt }
   revealed: new Set(), // ids whose connection string is revealed
   saved: [], // saved tunnels from the backend (temp/permanent)
+  lanIp: null, // this machine's LAN IPv4, for direct same-network access
   workerOk: false
 }
 
@@ -245,6 +247,22 @@ function renderSession(container, s) {
     copyUrl.addEventListener('click', () => copyText(localUrl))
     localRow.append(copyUrl)
     urlCol.append(localRow)
+  }
+
+  // Server sessions also expose the service on the LAN — a phone on the
+  // SAME network can skip the DHT entirely and hit the LAN URL directly
+  // (fast, and works even when hole-punching is blocked by the router).
+  // Only shown when the machine actually has a LAN address; the DHT
+  // connection string above remains the universal fallback.
+  if (s.type === 'server' && s.port && state.lanIp && state.lanIp !== '127.0.0.1') {
+    const lanUrl = `http://${state.lanIp}:${s.port}/`
+    const lanRow = el('div', 'url-row')
+    lanRow.append(el('code', 'local-url', '', lanUrl))
+    const copyLan = el('button', 'copy', '', 'Copy LAN URL')
+    copyLan.title = 'Copy LAN URL (same network only)'
+    copyLan.addEventListener('click', () => copyText(lanUrl))
+    lanRow.append(copyLan)
+    urlCol.append(lanRow)
   }
 
   const metaRow = el('div', 'meta')
@@ -886,6 +904,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch {
     $('#version-tag').textContent = 'v?'
   }
+  // LAN address for the direct same-network URL on server cards (best-effort)
+  try {
+    state.lanIp = await lanAddress()
+    renderSessions() // cards may have rendered before the fetch finished
+  } catch {}
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
   bindNodeScreen()

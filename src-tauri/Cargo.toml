@@ -18,6 +18,7 @@ tauri-plugin-deep-link = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "time"] }
+local-ip-address = "0.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

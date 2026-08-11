@@ -28,6 +28,10 @@ export async function versionInfo() {
   return await window.__TAURI__.core.invoke('version_info')
 }
 
+export async function lanAddress() {
+  return await window.__TAURI__.core.invoke('lan_address')
+}
+
 // saved tunnels (temp/permanent) — persisted by the Rust backend
 export async function savedList() {
   return await window.__TAURI__.core.invoke('saved_list')

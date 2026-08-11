@@ -115,6 +115,17 @@ fn version_info(app: AppHandle) -> serde_json::Value {
     })
 }
 
+/// The machine's primary LAN IPv4 address (e.g. 192.168.29.94). Server
+/// session cards show a "LAN access" URL built from it, so a phone on the
+/// same network can reach the shared service directly — no DHT, no
+/// hole-punching. Falls back to 127.0.0.1 when no LAN address exists.
+#[tauri::command]
+fn lan_address() -> String {
+    local_ip_address::local_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|_| "127.0.0.1".into())
+}
+
 /* --------------------------- saved tunnels ---------------------------- */
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -905,6 +916,7 @@ pub fn run() {
             retry_spawn_worker,
             take_pending_deep_links,
             version_info,
+            lan_address,
             saved_list,
             saved_save,
             saved_delete,
