@@ -9,6 +9,61 @@ tunnel, from a friendly window instead of the CLI.
 
 Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worker**.
 
+## What is this tool?
+
+**Holesail GUI is a window over [holesail](https://github.com/holesail/holesail): a
+peer-to-peer tunnel that exposes any local service (a web app, an API, a
+game server, a NAS, anything on a TCP/UDP port) to other devices — over the
+internet — without port forwarding, a static IP, or a middleman server.**
+
+The phone in your pocket can reach your home PC's services from anywhere,
+and your PC can reach services on your phone, through an encrypted
+connection that goes directly peer-to-peer over the public HyperDHT
+network.
+
+## Why does this exist? (the problem it solves)
+
+Exposing a local service to the internet usually means one of these
+headaches:
+
+- **Port forwarding** — requires router admin access, a public/static IP,
+  and it punches a hole in your home network's firewall
+- **CGNAT** — many ISPs (especially mobile and home fiber in some regions)
+  don't give you a public IPv4 at all, so port forwarding is impossible
+- **Tunneling services (ngrok/cloudflare tunnels)** — work, but route all
+  your traffic through a third-party server, add latency, and put a
+  single company between you and your data
+
+holesail sidesteps all three: both ends connect *outward* to the DHT
+(no inbound ports, works behind any NAT), find each other by key, and
+then talk directly peer-to-peer with end-to-end encryption. **No relay
+server, no open firewall ports, no static IP.**
+
+## Why a GUI?
+
+The CLI works, but tunnels are a *continuous* thing, not a one-shot
+command. The GUI adds what the terminal can't:
+
+- **Permanent tunnels** — a fixed key that never changes and
+  auto-restarts with the app, so your phone always knows where to find
+  your PC
+- **Saved connections** — one tap to reconnect to a key you use often
+- **Background operation** — the app lives in the system tray; tunnels
+  keep running when the window is closed (desktop) and survive device
+  reboots (Android boot receiver, desktop login autostart)
+- **A phone app** — the same codebase runs on Android, so a phone can be
+  a tunnel *server* too (e.g. share Termux/HTTP servers outward)
+
+## Typical uses
+
+- Reach your home PC's apps (SearXNG, Jellyfin, dev servers) from your
+  phone on mobile data
+- Share a local dev server with a colleague — no ngrok, no deploy
+- Access a service on your phone (e.g. an on-device web server) from
+  your PC
+- A private, key-based alternative to exposing services — nobody can
+  connect without the connection string
+
 ## Platforms
 
 | Platform | Status | Deliverables |
@@ -128,15 +183,28 @@ there.
 
 ## Using the app
 
-**Share a port** — pick a local port (e.g. 3000), optionally a custom 32+ char key,
+**Share a port** — pick a local port (e.g. 3000), optionally a custom 32+ hex char key,
 toggle private/public. A session card appears with the `hs://s000…` connection
-string — hit **Copy** and send it to whoever needs access.
+string — hit **Copy** and send it to whoever needs access. Server cards also show
+a **Copy LAN URL** row (`http://<lan-ip>:<port>`) — a phone on the *same network*
+can reach the service directly, no DHT involved.
 
 **Connect** — paste a connection string (`hs://s000…` private or `hs://0000…`
 public; secure mode is auto-detected from the prefix). The tunnel is exposed on
 your localhost port.
 
 Sessions can be paused/resumed/stopped; the event log at the bottom shows what the worker is doing.
+
+**Temporary vs Permanent** — the Tunnel type selector on the Share tab chooses
+between a one-off key (new random key each start) and a **permanent** tunnel:
+fixed key, named, saved, and auto-restarted whenever the app (re)starts.
+Connect has a matching **Save this connection** checkbox for keys you use often.
+
+**Saved tab** — every permanent tunnel and saved connection is listed here with
+Start/Stop, an Auto-start toggle, Rename, Duplicate, Export (to clipboard) and
+Delete (two-tap confirm). **Import** merges exported JSON back in. On desktop,
+Auto-start tunnels also enable login autostart, so they survive PC reboots; on
+Android, a boot receiver restores them after device reboots.
 
 **Deep links (`hs://`)** — clicking a connection string link (or running `xdg-open "hs://…"`) opens the app with the Connect form pre-filled, even if it was hidden in the tray. The app registers itself as the handler for the `hs://` scheme on Linux/Windows at first run; on Android, the scheme is baked into the APK manifest. A second app launch while one is running routes to the existing instance instead of duplicating.
 
