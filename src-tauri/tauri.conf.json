@@ -35,6 +35,13 @@
           "appLink": false
         }
       ]
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/chethan62/holesail-gui/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCQjQ4QTVBMUE1NTE0MApSV1JBVWFXaHBVaTdEWWNsSS9LM1JrMlBXWDByWDN3cnRUaThqUys1U1NSR2FoWVFmUEd3Y0dVcQo="
     }
   },
   "bundle": {

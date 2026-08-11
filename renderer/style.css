@@ -198,6 +198,23 @@ main {
   border-radius: 4px;
   font-size: 12px;
 }
+.hint-card {
+  margin-top: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.hint-card code {
+  background: var(--bg, #0f172a);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
 
 /* forms */
 .grid-form {
@@ -667,6 +684,22 @@ button.primary:disabled {
   color: var(--text-dim);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+#log .log-line.warn {
+  color: var(--yellow, #fbbf24);
+}
+#log .log-action {
+  margin-left: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+#log .log-action:hover {
+  filter: brightness(1.15);
 }
 #log .log-line.err {
   color: #fca5a5;

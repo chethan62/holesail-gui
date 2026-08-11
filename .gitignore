@@ -15,3 +15,5 @@ packaging/flatpak/build-dir/
 *.log
 dist/
 opencode.json
+__pycache__/
+*.pyc

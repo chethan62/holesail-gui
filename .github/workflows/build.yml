@@ -22,6 +22,47 @@ jobs:
       - name: npm run test:bare (bare runtime)
         run: npm run test:bare
 
+  ui-smoke:
+    name: UI smoke (Xvfb + AT-SPI)
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps (webkit, Xvfb, AT-SPI)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            xvfb dbus at-spi2-core python3-pyatspi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+
+      - name: Build debug binary with bare runtime
+        run: |
+          node scripts/prepare-resources.mjs --bare
+          cargo build
+        working-directory: src-tauri
+
+      - name: Launch under Xvfb and assert the a11y tree
+        run: |
+          export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+          mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            dbus-run-session -- bash -euo pipefail -c '
+              export GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1
+              ./src-tauri/target/debug/holesail-gui &
+              APP_PID=$!
+              python3 scripts/ci-ui-smoke.py --app-pid $APP_PID --timeout 120
+              kill $APP_PID 2>/dev/null || true
+            '
+
   linux:
     name: Linux (deb / rpm / AppImage)
     needs: test
@@ -44,6 +85,9 @@ jobs:
       - run: npm ci
 
       - name: Prepare resources + build bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           node scripts/prepare-resources.mjs --bare
           # NO_STRIP avoids linuxdeploy's bundled strip choking on .relr.dyn;
@@ -75,6 +119,9 @@ jobs:
 
       - name: Prepare resources + build bundles
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           node scripts/prepare-resources.mjs
           npx tauri build
@@ -85,6 +132,36 @@ jobs:
           path: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+
+  macos:
+    name: macOS (app / dmg)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+
+      - name: Prepare resources + build bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          node scripts/prepare-resources.mjs
+          npx tauri build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: holesail-gui-macos
+          path: |
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/dmg/*.dmg
 
   android:
     name: Android (APK)
@@ -148,7 +225,7 @@ jobs:
   release:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, android]
+    needs: [linux, windows, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -160,14 +237,27 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: Sign artifacts + write update manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/release-assets
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+            -o -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.apk' \) \
+            -exec cp {} /tmp/release-assets/ \;
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/release-key
+            node scripts/update-manifest.mjs /tmp/release-assets "$GITHUB_REF_NAME" \
+              --key /tmp/release-key
+          fi
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          FILES=$(find artifacts -type f -name '*.deb' -o -type f -name '*.rpm' \
-            -o -type f -name '*.AppImage' -o -type f -name '*.msi' \
-            -o -type f -name '*.exe' -o -type f -name '*.apk' | sort)
+          FILES=$(find /tmp/release-assets -type f | sort)
           [ -n "$FILES" ] || { echo "no artifacts found"; exit 1; }
           gh release create "$GITHUB_REF_NAME" $FILES \
             --title "$GITHUB_REF_NAME" \

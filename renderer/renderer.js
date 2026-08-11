@@ -18,7 +18,10 @@ import {
   savedDelete,
   savedDuplicate,
   savedExport,
-  savedImport
+  savedImport,
+  recentList,
+  recentAdd,
+  recentClear
 } from './bridge.js'
 
 const $ = (sel) => document.querySelector(sel)
@@ -27,10 +30,18 @@ const THEME_KEY = 'holesail-gui:theme'
 
 /* ------------------------------ helpers -------------------------------- */
 
-function log(message, cls = '') {
+function log(message, cls = '', actions = []) {
   const line = document.createElement('div')
   line.className = 'log-line ' + cls
   line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`
+  for (const a of actions) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'log-action'
+    btn.textContent = a.label
+    btn.addEventListener('click', a.onClick)
+    line.appendChild(btn)
+  }
   const el = $('#log')
   if (el.querySelector('.empty')) el.innerHTML = ''
   el.appendChild(line)
@@ -125,6 +136,8 @@ const state = {
   meta: new Map(), // id -> { startedAt }
   revealed: new Set(), // ids whose connection string is revealed
   saved: [], // saved tunnels from the backend (temp/permanent)
+  recent: [], // recent keys, mirrored from the Rust keychain/file store
+  replay: new Map(), // session id -> { type, params } for one-click reconnect
   lanIp: null, // this machine's LAN IPv4, for direct same-network access
   workerOk: false
 }
@@ -139,10 +152,17 @@ function upsertSession(data) {
     state.revealed.delete(data.id)
   } else {
     if (data.state === 'error') {
-      // the worker killed just this session after an async error — show
-      // why, then the follow-up 'stopped' event removes the card
-      log(`Session errored: ${data.error || 'unknown error'}`, 'err')
+    // the worker killed just this session after an async error — show
+    // why, then the follow-up 'stopped' event removes the card
+    log(`Session errored: ${data.error || 'unknown error'}`, 'err')
+    // temporary tunnels don't auto-restore (only saved permanents do);
+    // offer a one-click reconnect while the params are still in memory
+    if (state.replay.has(data.id)) {
+      log('Tunnel dropped — reconnect?', 'warn', [
+        { label: '↻ Reconnect', onClick: () => reconnectSession(data.id) }
+      ])
     }
+  }
     const existing = state.sessions.get(data.id)
     if (existing) {
       Object.assign(existing, data) // events may carry only {id, state}
@@ -152,6 +172,52 @@ function upsertSession(data) {
     }
   }
   renderSessions()
+}
+
+/// Remember the params that started a session so a dropped temporary
+/// tunnel can be restarted in one click (see the 'error' event path).
+function rememberSession(id, type, params) {
+  state.replay.set(id, { type, params })
+}
+
+async function reconnectSession(id) {
+  const r = state.replay.get(id)
+  if (!r) return
+  const method = r.type === 'server' ? 'server:start' : 'client:connect'
+  try {
+    const session = await rpc(method, r.params, 90000)
+    state.replay.delete(id) // the new session has its own id
+    log(
+      `Reconnected ${r.type === 'server' ? 'server' : 'client'} (${session.host}:${session.port})`,
+      'ok'
+    )
+    toast('Reconnected')
+    addRecent(session.url)
+  } catch (err) {
+    log('Reconnect failed: ' + err.message, 'err')
+    toast('Reconnect failed: ' + err.message, true)
+  }
+}
+
+/// Desktop only: the updater plugin is not built into mobile releases, so
+/// window.__TAURI__.updater is absent there and this is a silent no-op.
+/// Non-fatal by design — offline or not-yet-released updates just skip.
+async function checkForUpdate() {
+  const upd = window.__TAURI__ && window.__TAURI__.updater
+  if (!upd) return
+  try {
+    const res = await upd.check()
+    if (res && res.shouldUpdate) {
+      const v = res.manifest ? res.manifest.version : '?'
+      toast(`Update available: v${v}`)
+      log(
+        `Update available: v${v} — download from https://github.com/chethan62/holesail-gui/releases`,
+        'ok'
+      )
+    }
+  } catch {
+    // offline / no published update yet — not an error worth showing
+  }
 }
 
 function renderSessions() {
@@ -425,29 +491,39 @@ onEvent((msg) => {
 
 /* ------------------------------ recent keys ------------------------------ */
 
-function loadRecent() {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY)) || []
-  } catch {
-    return []
-  }
-}
+// Recents live in the Rust backend (OS keychain on desktop, 0600 file on
+// Android). state.recent is the in-memory mirror; all mutations update the
+// cache immediately and persist in the background.
 
-function saveRecent(list) {
+async function initRecent() {
   try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 10)))
+    state.recent = await recentList()
+  } catch {
+    state.recent = []
+  }
+  // One-time migration: builds before the keychain store kept recents in
+  // web storage. Move them into the backend, then wipe the local copy.
+  try {
+    const legacy = JSON.parse(localStorage.getItem(RECENT_KEY)) || []
+    if (legacy.length) {
+      for (const item of legacy.slice(0, 10).reverse()) {
+        await recentAdd(item)
+      }
+      state.recent = await recentList()
+    }
+    localStorage.removeItem(RECENT_KEY)
   } catch {}
+  renderRecent()
 }
 
 function addRecent(label) {
-  const list = loadRecent().filter((x) => x !== label)
-  list.unshift(label)
-  saveRecent(list)
+  state.recent = [label, ...state.recent.filter((x) => x !== label)].slice(0, 10)
+  recentAdd(label).catch(() => {})
   renderRecent()
 }
 
 function renderRecent() {
-  const list = loadRecent()
+  const list = state.recent
   const row = $('#recent-row')
   const chips = $('#recent-chips')
   const dl = $('#recent-keys')
@@ -561,6 +637,7 @@ async function startShare(event) {
       })
     }
     const session = await rpc('server:start', params, 90000)
+    rememberSession(session.id, 'server', { ...params })
     log(`Server started on ${session.host}:${session.port} (${session.protocol})`, 'ok')
     toast(isPerm ? 'Permanent sharing started 🔒' : 'Sharing started 🎉')
     addRecent(session.url)
@@ -610,6 +687,7 @@ async function startConnect(event) {
       })
     }
     const session = await rpc('client:connect', params, 90000)
+    rememberSession(session.id, 'client', { ...params })
     log(`Connected to ${session.host}:${session.port} (${session.protocol})`, 'ok')
     toast('Connected')
     addRecent(params.key)
@@ -677,6 +755,11 @@ async function startSaved(t) {
         udp: t.udp
       })
     }
+    rememberSession(session.id, t.kind, {
+      ...(t.kind === 'server'
+        ? { port: t.port, host: t.host || '127.0.0.1', secure: t.secure !== false, udp: t.udp, key: t.key }
+        : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp })
+    })
     addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
   } catch (err) {
@@ -900,7 +983,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindLogToggle()
   bindShortcuts()
   initTheme()
-  renderRecent()
+  initRecent()
+  checkForUpdate()
   // identify the installed build (version + git hash embedded at compile
   // time) — lets anyone tell two otherwise-identical builds apart
   try {
@@ -936,9 +1020,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('#saved-import-json').value = ''
   })
   $('#recent-clear').addEventListener('click', () => {
-    saveRecent([])
+    state.recent = []
+    recentClear().catch(() => {})
     renderRecent()
   })
+  // Android-only hint: boot-restart needs manual Auto-launch permission on
+  // most OEMs, and the localhost-vs-127.0.0.1 browser quirk is phone-specific.
+  if (/Android/i.test(navigator.userAgent)) {
+    $('#android-hint').hidden = false
+  }
   $('#share-start').dataset.label = 'Start sharing'
   $('#connect-start').dataset.label = 'Connect'
   $('#worker-restart').addEventListener('click', async () => {

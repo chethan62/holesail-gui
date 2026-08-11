@@ -55,6 +55,18 @@ export async function savedImport(json) {
   return await window.__TAURI__.core.invoke('saved_import', { json })
 }
 
+// recent keys — held by the Rust backend (OS keychain on desktop, 0600 file
+// on Android); the renderer keeps only an in-memory copy
+export async function recentList() {
+  return await window.__TAURI__.core.invoke('recent_list')
+}
+export async function recentAdd(label) {
+  return await window.__TAURI__.core.invoke('recent_add', { label })
+}
+export async function recentClear() {
+  return await window.__TAURI__.core.invoke('recent_clear')
+}
+
 export async function onAppEvent(callback) {
   return await window.__TAURI__.event.listen('app:event', (event) => callback(event.payload))
 }

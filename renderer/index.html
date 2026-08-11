@@ -22,12 +22,12 @@
         <span class="logo">⛵️</span>
         <span class="title">Holesail GUI</span>
         <span class="subtitle">peer-to-peer tunnels</span>
-        <span id="version-tag" class="version-tag"></span>
+        <span id="version-tag" class="version-tag" role="status" aria-live="polite"></span>
       </div>
       <div class="status">
         <button id="theme-toggle" class="icon-btn" title="Toggle light/dark theme">🌓</button>
         <span id="worker-dot" class="dot"></span>
-        <span id="worker-label">connecting…</span>
+        <span id="worker-label" aria-live="polite">connecting…</span>
         <button id="worker-restart" class="icon-btn" title="Restart service worker" hidden>↻</button>
       </div>
     </header>
@@ -177,6 +177,16 @@
         <h2 class="collapsible" id="log-toggle">Event log <span class="caret">▾</span></h2>
         <div id="log"><p class="empty">No events yet.</p></div>
       </section>
+
+      <aside id="android-hint" class="hint-card" hidden>
+        <strong>On this phone</strong>: permanent tunnels only restart after a
+        reboot if the app is allowed to start automatically. Check
+        Settings&nbsp;→&nbsp;Apps&nbsp;→&nbsp;holesail-gui&nbsp;→&nbsp;Auto-launch
+        (label varies by OEM — on OnePlus/OxygenOS it's under
+        "Other permissions") and enable it. Also use the
+        <code>localhost</code> URL on each card — some Android browsers refuse
+        <code>127.0.0.1</code>.
+      </aside>
     </main>
 
     <div id="node-required" class="overlay" hidden>

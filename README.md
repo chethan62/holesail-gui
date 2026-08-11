@@ -284,10 +284,10 @@ arrives on the device — in both directions.
   (`withGlobalTauri`, CSP `default-src 'self'`, `style-src 'unsafe-inline'`) and
   can only talk to it through the whitelisted `rpc` command. Untrusted values
   (keys, hosts, logs) are rendered with `textContent`, never injected as HTML.
-- **Recent keys are stored in plaintext in the webview's localStorage** (up to
-  10 entries) for convenience. They're only readable by local processes with
-  access to your app profile, but if that's a concern, use the "clear" button
-  or avoid saving private keys you care about.
+- **Recent keys live in the OS keychain on desktop** (Secret Service /
+  Keychain / Credential Manager, falling back to a 0600 file if no keychain
+  daemon is reachable) **and a 0600 file on Android** — never in web storage.
+  The "clear" button wipes the backing store.
 
 ## Acknowledgements
 
@@ -301,8 +301,7 @@ arrives on the device — in both directions.
   and [sodium-native](https://github.com/holepunchto/sodium-native) — the
   encrypted DHT and networking stack underneath (MIT/Apache-2.0).
 - [Tauri](https://tauri.app) — the desktop/mobile framework (MIT/Apache-2.0).
-- The current app icon comes from the Tauri template; a custom icon is a
-  TODO.
+- The current app icon is the Tauri template icon (kept by user preference).
 
 ## License
 
