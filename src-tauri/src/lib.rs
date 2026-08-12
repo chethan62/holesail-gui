@@ -112,6 +112,9 @@ fn version_info(app: AppHandle) -> serde_json::Value {
     serde_json::json!({
         "version": app.package_info().version.to_string(),
         "gitHash": env!("GIT_HASH"),
+        // The updater plugin is registered #[cfg(desktop)] only; the
+        // renderer uses this to decide whether to show the ⬆ check button.
+        "updater": cfg!(desktop),
     })
 }
 

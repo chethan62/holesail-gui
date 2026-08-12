@@ -200,23 +200,49 @@ async function reconnectSession(id) {
 }
 
 /// Desktop only: the updater plugin is not built into mobile releases, so
-/// window.__TAURI__.updater is absent there and this is a silent no-op.
+/// the `plugin:updater|check` command is absent there and the boot call is a
+/// silent no-op. NOTE: there is no `window.__TAURI__.updater` global in this
+/// no-bundler renderer (withGlobalTauri injects core only) — the plugin
+/// command is invoked directly, bridge.js style.
 /// Non-fatal by design — offline or not-yet-released updates just skip.
-async function checkForUpdate() {
-  const upd = window.__TAURI__ && window.__TAURI__.updater
-  if (!upd) return
+/// manual=true is the topbar ⬆ button: it surfaces "up to date" and error
+/// toasts too, while the boot check stays silent.
+async function checkForUpdate(manual = false) {
+  const core = window.__TAURI__ && window.__TAURI__.core
+  if (!core) return
+  const btn = $('#update-check')
+  if (manual && btn) {
+    btn.disabled = true
+    btn.textContent = '…'
+  }
   try {
-    const res = await upd.check()
-    if (res && res.shouldUpdate) {
-      const v = res.manifest ? res.manifest.version : '?'
+    const res = await core.invoke('plugin:updater|check')
+    // raw command payload: Update | null; the JS wrapper's shouldUpdate
+    // getter is just version !== currentVersion
+    const shouldUpdate = !!res && res.version !== res.currentVersion
+    if (shouldUpdate) {
+      const v = (res.manifest && res.manifest.version) || res.version || '?'
       toast(`Update available: v${v}`)
       log(
         `Update available: v${v} — download from https://github.com/chethan62/holesail-gui/releases`,
         'ok'
       )
+    } else if (manual) {
+      toast('You are up to date')
+      log('Update check: up to date', 'ok')
     }
-  } catch {
-    // offline / no published update yet — not an error worth showing
+  } catch (err) {
+    // offline / no published release yet — only worth telling a human who
+    // explicitly asked for the check
+    if (manual) {
+      toast('Update check failed — offline or no release yet', true)
+      log(`Update check failed: ${err}`, 'err')
+    }
+  } finally {
+    if (manual && btn) {
+      btn.disabled = false
+      btn.textContent = '⬆'
+    }
   }
 }
 
@@ -986,10 +1012,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   initRecent()
   checkForUpdate()
   // identify the installed build (version + git hash embedded at compile
-  // time) — lets anyone tell two otherwise-identical builds apart
+  // time) — lets anyone tell two otherwise-identical builds apart; the
+  // desktop-only `updater` flag gates the manual ⬆ check button
   try {
     const v = await versionInfo()
     $('#version-tag').textContent = `v${v.version} · ${v.gitHash}`
+    if (v.updater) {
+      const updBtn = $('#update-check')
+      updBtn.hidden = false
+      updBtn.addEventListener('click', () => checkForUpdate(true))
+    }
   } catch {
     $('#version-tag').textContent = 'v?'
   }
