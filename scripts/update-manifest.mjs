@@ -59,11 +59,21 @@ for (const f of files) {
   if (!p) continue
   const abs = join(dir, f)
   console.log(`signing ${f} -> ${p}`)
-  const sig = execFileSync(
+  const out = execFileSync(
     'npx',
     ['tauri', 'signer', 'sign', '-f', key, abs],
     { encoding: 'utf8' }
-  ).trim()
+  )
+  // tauri signer prints a human-readable block (paths, prose) around the
+  // actual minisign signature. The updater verifies the `signature` field
+  // with minisign, so it must contain ONLY the base64 block printed after
+  // "Public signature:".
+  const m = out.match(/Public signature:\n([\s\S]+?)\n\nMake sure to include/)
+  if (!m) {
+    console.error(`could not parse signature output for ${f}`)
+    process.exit(1)
+  }
+  const sig = m[1].trim()
   writeFileSync(join(dir, `${f}.sig`), `${sig}\n`)
   platformsObj[p] = { signature: sig, url: `${baseUrl}/${f}` }
   signed++
