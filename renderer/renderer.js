@@ -448,12 +448,38 @@ function renderSession(container, s) {
 /* ------------------------------ worker ---------------------------------- */
 
 function updateWorkerStatus(ok, label) {
+  const wasOk = state.workerOk
   state.workerOk = ok
   const dot = $('#worker-dot')
   dot.className = 'dot ' + (ok ? 'ok pulse' : ok === null ? '' : 'err')
   $('#worker-label').textContent = label
   // manual restart is only useful when the worker is down or degraded
   $('#worker-restart').hidden = ok === true
+  if (ok !== true) return
+  // worker-health readout (best-effort, never blocks the UI): surface
+  // restart count in the label, uptime + last error as the tooltip, and
+  // log a one-line recovery notice when a degraded worker comes back.
+  workerDiagnostics()
+    .then((diag) => {
+      if (!diag) return
+      const restarts = diag.restart_attempt || 0
+      const lbl = $('#worker-label')
+      lbl.textContent =
+        restarts > 0 ? `worker online (${restarts} restart${restarts === 1 ? '' : 's'})` : 'worker online'
+      const parts = []
+      if (diag.uptime_ms) parts.push(`up ${fmtDuration(diag.uptime_ms)}`)
+      if (restarts > 0) parts.push(`${restarts} restart${restarts === 1 ? '' : 's'}`)
+      if (diag.last_error) parts.push(`last error: ${diag.last_error}`)
+      lbl.title = parts.length ? parts.join(' · ') : 'worker online'
+      if (!wasOk && restarts > 0) {
+        log(
+          `Worker recovered after ${restarts} restart${restarts === 1 ? '' : 's'}` +
+            (diag.last_error ? ` — last error: ${diag.last_error}` : ''),
+          'ok'
+        )
+      }
+    })
+    .catch(() => {})
 }
 
 /// Ping the worker and pull the current session list into the UI.
