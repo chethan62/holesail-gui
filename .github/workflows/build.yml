@@ -116,15 +116,31 @@ jobs:
 
       - run: npm ci
 
-      - name: Prepare resources + build bundles
+      - name: Cache linuxdeploy/appimagetool downloads (~/.cache/tauri)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/tauri
+          key: tauri-cache-${{ runner.os }}-v1
+
+      - name: Prepare resources + build bundles (retry transient bundler failures)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          set +e
           node scripts/prepare-resources.mjs --bare
           # NO_STRIP avoids linuxdeploy's bundled strip choking on .relr.dyn;
-          # APPIMAGE_EXTRACT_AND_RUN works without FUSE
-          NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build
+          # APPIMAGE_EXTRACT_AND_RUN works without FUSE.
+          # 'http status: 503' / 'Peer disconnected' while the bundlers
+          # download tooling is a runner-side network flake; retry.
+          for attempt in 1 2 3; do
+            echo "build attempt $attempt"
+            NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build && exit 0
+            sleep 10
+          done
+          echo "build failed after 3 attempts"
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
