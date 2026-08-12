@@ -142,6 +142,10 @@ def main():
     ok &= wait_for("form entries", lambda: len(entries()) >= 4, 30)
     ok &= wait_for("controls (tunnel type, secure, UDP)", lambda: has_text("Tunnel") or len(checkboxes()) >= 2, 30)
     ok &= wait_for("share action button", lambda: has_text("Start sharing"), 30)
+    # event-log toolbar (persistent log + copy/clear) — the buttons are
+    # real interactive nodes, so they must surface by name
+    ok &= wait_for("log toolbar (Copy log)", lambda: has_text("Copy log"), 30)
+    ok &= wait_for("log toolbar (Clear)", lambda: has_text("Clear"), 30)
 
     # the worker is a bare child process spawned by the app (bundled runtime)
     if args.app_pid and wait_for("worker process (bare)", lambda: bool(child_processes(args.app_pid)), args.timeout):
