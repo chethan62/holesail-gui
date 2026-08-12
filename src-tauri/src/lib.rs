@@ -118,6 +118,33 @@ fn version_info(app: AppHandle) -> serde_json::Value {
     })
 }
 
+/// Append a renderer log line to the persistent event log so history
+/// survives restarts (bug reports). File: <app_config_dir>/event-log.txt,
+/// capped at 64 KiB and trimmed from the front on whole-line boundaries.
+#[tauri::command]
+fn log_append(app: AppHandle, line: String) {
+    const LOG_MAX_BYTES: usize = 64 * 1024;
+    let Ok(config_dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let path = config_dir.join("event-log.txt");
+    let Ok(mut cur) = std::fs::read_to_string(&path) else {
+        let _ = std::fs::create_dir_all(&config_dir);
+        let _ = std::fs::write(&path, format!("{line}\n"));
+        return;
+    };
+    cur.push_str(&line);
+    cur.push('\n');
+    if cur.len() > LOG_MAX_BYTES {
+        let keep_from = cur.len() - LOG_MAX_BYTES;
+        cur = match cur[keep_from..].find('\n') {
+            Some(pos) => cur[keep_from + pos + 1..].to_string(),
+            None => cur[keep_from..].to_string(),
+        };
+    }
+    let _ = std::fs::write(&path, cur);
+}
+
 /// The machine's primary LAN IPv4 address (e.g. 192.168.29.94). Server
 /// session cards show a "LAN access" URL built from it, so a phone on the
 /// same network can reach the shared service directly — no DHT, no
@@ -1225,6 +1252,7 @@ pub fn run() {
             take_pending_deep_links,
             version_info,
             lan_address,
+            log_append,
             saved_list,
             saved_save,
             saved_delete,

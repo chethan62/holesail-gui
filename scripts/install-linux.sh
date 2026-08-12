@@ -57,6 +57,29 @@ cp "$REPO/src-tauri/icons/128x128.png" "$APP_DIR/holesail-gui.png"
 cp "$REPO/src-tauri/icons/128x128.png" \
   "$HOME/.local/share/icons/hicolor/128x128/apps/holesail-gui.png"
 
+# One-time migration from the OLD launcher's unconditional XDG redirect
+# ($APP_DIR/.local/config/io.holesail.gui) to the default XDG location —
+# launch.sh now redirects only when $HOME is unwritable. Per-file merge:
+# the target dir may already exist from pre-AppImage (dev) runs, so a
+# whole-dir mv would skip; event logs are concatenated oldest-first.
+OLD_STATE="$APP_DIR/.local/config/io.holesail.gui"
+NEW_STATE="$HOME/.config/io.holesail.gui"
+if [ -d "$OLD_STATE" ]; then
+  mkdir -p "$NEW_STATE"
+  for f in "$OLD_STATE"/*; do
+    [ -e "$f" ] || continue
+    base="$(basename "$f")"
+    if [ ! -e "$NEW_STATE/$base" ]; then
+      mv "$f" "$NEW_STATE/"
+    elif [ "$base" = "event-log.txt" ]; then
+      cat "$f" "$NEW_STATE/$base" > "$NEW_STATE/$base.merge" \
+        && mv "$NEW_STATE/$base.merge" "$NEW_STATE/$base" && rm "$f"
+    fi
+  done
+  rmdir "$OLD_STATE" 2>/dev/null || true
+  echo "migrated app state: $OLD_STATE -> $NEW_STATE"
+fi
+
 sed "s|@APPDIR@|$APP_DIR|" "$REPO/packaging/appimage/holesail-gui.desktop" \
   > "$HOME/.local/share/applications/holesail-gui.desktop"
 

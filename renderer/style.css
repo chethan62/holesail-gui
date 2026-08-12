@@ -771,3 +771,23 @@ button.primary:disabled {
   border-color: var(--red);
   color: #fca5a5;
 }
+
+/* event log toolbar (copy / clear) */
+.log-toolbar {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.log-toolbar button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.log-toolbar button:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}

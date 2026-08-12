@@ -13,6 +13,7 @@ import {
   onAppEvent,
   versionInfo,
   lanAddress,
+  logAppend,
   savedList,
   savedSave,
   savedDelete,
@@ -33,7 +34,8 @@ const THEME_KEY = 'holesail-gui:theme'
 function log(message, cls = '', actions = []) {
   const line = document.createElement('div')
   line.className = 'log-line ' + cls
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`
+  const stamp = `[${new Date().toLocaleTimeString()}] ${message}`
+  line.textContent = stamp
   for (const a of actions) {
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -46,6 +48,11 @@ function log(message, cls = '', actions = []) {
   if (el.querySelector('.empty')) el.innerHTML = ''
   el.appendChild(line)
   el.scrollTop = el.scrollHeight
+  // Persist so the history survives restarts (bug reports). Best-effort:
+  // a missing command (mobile) or full disk must never break the UI.
+  try {
+    logAppend(stamp)
+  } catch {}
 }
 
 let toastTimer = null
@@ -972,6 +979,20 @@ function bindLogToggle() {
     const el = $('#log')
     el.classList.toggle('collapsed')
     $('#log-toggle .caret').textContent = el.classList.contains('collapsed') ? '▸' : '▾'
+  })
+  // toolbar: copy the on-screen log for bug reports; clear empties the view
+  // (the persistent event-log.txt keeps the full history)
+  $('#log-copy').addEventListener('click', async () => {
+    const lines = [...$('#log').querySelectorAll('.log-line')].map((l) => l.textContent)
+    if (lines.length === 0) {
+      toast('Log is empty')
+      return
+    }
+    const ok = await copyText(lines.join('\n'))
+    if (ok) toast('Log copied')
+  })
+  $('#log-clear').addEventListener('click', () => {
+    $('#log').innerHTML = '<p class="empty">No events yet.</p>'
   })
 }
 
