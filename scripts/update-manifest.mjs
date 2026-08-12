@@ -59,10 +59,17 @@ for (const f of files) {
   if (!p) continue
   const abs = join(dir, f)
   console.log(`signing ${f} -> ${p}`)
+  // The CLI's signer reads TAURI_SIGNING_PRIVATE_KEY from the env as an
+  // inline --private-key — which CONFLICTS with -f/--private-key-path
+  // (mutually exclusive args). CI exports that secret for the tauri-build
+  // artifact signing; strip it here so the keyfile is used. The password
+  // env must stay: the keyfile is password-protected.
+  const signEnv = { ...process.env }
+  delete signEnv.TAURI_SIGNING_PRIVATE_KEY
   const out = execFileSync(
     'npx',
     ['tauri', 'signer', 'sign', '-f', key, abs],
-    { encoding: 'utf8' }
+    { encoding: 'utf8', env: signEnv }
   )
   // tauri signer prints a human-readable block (paths, prose) around the
   // actual minisign signature. The updater verifies the `signature` field
