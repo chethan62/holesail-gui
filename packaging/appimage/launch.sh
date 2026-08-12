@@ -7,6 +7,10 @@
 # unset XDG_CONFIG_HOME/XDG_CACHE_HOME/XDG_DATA_HOME to use the defaults.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
+# NVIDIA/Wayland: WebKitGTK DMABUF path fails (GBM buffer errors) and the
+# WebView renders blank white. Force the non-DMABUF renderer.
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$DIR/.local/config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$DIR/.local/cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$DIR/.local/data}"
