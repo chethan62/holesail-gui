@@ -28,7 +28,8 @@ TIMEOUT = 120
 
 
 def tree_items(root):
-    """Collect (role, name) pairs recursively, cap to avoid runaway trees."""
+    """Collect (node, role, name) triples recursively, cap to avoid runaway
+    trees. Keeping the node lets callers test states (e.g. STATE_EDITABLE)."""
     out = []
     stack = [(root, 0)]
     while stack:
@@ -36,7 +37,7 @@ def tree_items(root):
         if d > 40 or len(out) > 5000:
             continue
         try:
-            out.append((node.get_role_name(), node.name or ""))
+            out.append((node, node.get_role_name(), node.name or ""))
         except Exception:
             continue
         try:
@@ -112,13 +113,26 @@ def main():
         return tree_items(window)
 
     def has_text(text):
-        return any(t for t in items() if text.lower() in t[1].lower())
+        return any(t for t in items() if text.lower() in t[2].lower())
 
     def entries():
-        return [t for t in items() if t[0] == "entry"]
+        # Editable text fields — role varies across webkit versions
+        # ('entry' on 2.4x, 'text'/'password' on 2.38), but STATE_EDITABLE
+        # is stable. Static paragraph text is not editable and can't
+        # inflate the count.
+        out = []
+        for node, role, _name in items():
+            if role not in ("entry", "text", "password", "textbox"):
+                continue
+            try:
+                if node.getState().contains(pyatspi.STATE_EDITABLE):
+                    out.append((role, _name))
+            except Exception:
+                pass
+        return out
 
     def checkboxes():
-        return [t for t in items() if t[0] == "check box"]
+        return [t for t in items() if t[1] == "check box"]
 
     ok = True
     ok &= wait_for("nav tabs (Share, Connect)", lambda: has_text("Share") and has_text("Connect"), 30)
@@ -138,6 +152,20 @@ def main():
         alive = os.path.isdir(f"/proc/{args.app_pid}")
         print(f"OK: app pid {args.app_pid} alive" if alive else "FAIL: app pid died")
         ok = ok and alive
+
+    if not ok:
+        # debug aid: what the tree actually exposed (role histogram + names)
+        from collections import Counter
+        hist = Counter()
+        named = []
+        for _node, role, name in items():
+            hist[role] += 1
+            if name and len(named) < 40:
+                named.append(f"{role}: {name[:50]}")
+        print("DEBUG role histogram:", dict(hist))
+        print("DEBUG named nodes:")
+        for line in named:
+            print("  ", line)
 
     print("PASS" if ok else "FAIL")
     sys.exit(0 if ok else 1)
