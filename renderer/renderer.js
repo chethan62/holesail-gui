@@ -228,12 +228,11 @@ async function checkForUpdate(manual = false) {
     // getter is just version !== currentVersion
     const shouldUpdate = !!res && res.version !== res.currentVersion
     if (shouldUpdate) {
-      const v = (res.manifest && res.manifest.version) || res.version || '?'
+      const v = res.version || '?'
       toast(`Update available: v${v}`)
-      log(
-        `Update available: v${v} — download from https://github.com/chethan62/holesail-gui/releases`,
-        'ok'
-      )
+      log(`Update available: v${v}`, 'ok', [
+        { label: 'Download & install', onClick: () => installUpdate(v) }
+      ])
     } else if (manual) {
       toast('You are up to date')
       log('Update check: up to date', 'ok')
@@ -250,6 +249,49 @@ async function checkForUpdate(manual = false) {
       btn.disabled = false
       btn.textContent = '⬆'
     }
+  }
+}
+
+/// Desktop only: download + install the offered update in-app. The plugin
+/// protocol is a 3-step chain — check() returns a Metadata with a `rid`
+/// (the Update lives in the webview's resource table), download(rid, Channel)
+/// streams the artifact with Started/Progress/Finished events, install()
+/// swaps the binary and relaunches the app on desktop. `updater:default`
+/// already grants all three commands.
+async function installUpdate(version) {
+  const core = window.__TAURI__ && window.__TAURI__.core
+  if (!core || !core.Channel) {
+    toast('In-app update unavailable — download from the releases page', true)
+    return
+  }
+  let contentLength = 0
+  const ch = new core.Channel()
+  ch.onmessage = (e) => {
+    if (!e) return
+    if (e.event === 'Started') {
+      contentLength = (e.data && e.data.contentLength) || 0
+      toast(`Downloading v${version}…`)
+    } else if (e.event === 'Progress') {
+      if (contentLength && e.data && e.data.chunkLength) {
+        const pct = Math.min(99, Math.round((e.data.chunkLength / contentLength) * 100))
+        toast(`Downloading v${version}… ${pct}%`)
+      }
+    } else if (e.event === 'Finished') {
+      toast(`v${version} downloaded — installing…`)
+    }
+  }
+  try {
+    const meta = await core.invoke('plugin:updater|check')
+    if (!meta || !meta.rid) throw new Error('no update available')
+    const bytesRid = await core.invoke('plugin:updater|download', { rid: meta.rid, onEvent: ch })
+    await core.invoke('plugin:updater|install', { updateRid: meta.rid, bytesRid })
+    // install() relaunches the app on desktop; landing here means no
+    // relaunch happened (unexpected) — tell the user how to proceed
+    toast('Update installed — restart the app to apply')
+    log('Update installed — restart the app to apply', 'ok')
+  } catch (err) {
+    toast('Update failed: ' + err, true)
+    log(`Update install failed: ${err}`, 'err')
   }
 }
 
