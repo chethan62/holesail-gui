@@ -301,6 +301,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # update-manifest.mjs shells out to `npx tauri signer sign` — the CLI
+      # must exist. Without npm ci this fails with "could not determine
+      # executable to run" (the Aug-10 release never hit it: no signing
+      # secrets then, so the manifest step was skipped).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Sign artifacts + write update manifest
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
