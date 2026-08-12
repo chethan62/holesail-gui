@@ -149,14 +149,30 @@ jobs:
 
       - run: npm ci
 
-      - name: Prepare resources + build bundles
+      - name: Cache WiX tools (MSI bundling downloads ~150MB; flaky on GH runners)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\tauri
+          key: wix-tools-${{ runner.os }}-v1
+
+      - name: Prepare resources + build bundles (retry transient bundler failures)
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          set +e
           node scripts/prepare-resources.mjs
-          npx tauri build
+          # 'io: Peer disconnected' at the MSI bundle step is a runner-side
+          # network drop (2/3 runs on 2026-08-12); retry the whole build.
+          for attempt in 1 2 3; do
+            echo "build attempt $attempt"
+            npx tauri build && exit 0
+            sleep 10
+          done
+          echo "build failed after 3 attempts"
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:

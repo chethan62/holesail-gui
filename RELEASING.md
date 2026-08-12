@@ -35,9 +35,11 @@ everyone on that release.
    artifacts, writes `latest.json` + `.sig`, and creates the GitHub
    release with `--generate-notes` (`fetch-depth: 0` already
    configured).
-5. Verify the run: `gh run watch <id>` — the release job must complete
-   (watch for the transient `io: Peer disconnected` MSI-bundle flake on
-   Windows; re-run failed jobs rather than re-tagging).
+5. Verify the run: `gh run watch <id>` — the release job must complete.
+   The Windows MSI bundle step is the flakiest spot
+   (`io: Peer disconnected` mid-WiX — the job caches WiX tools and
+   retries the build 3×; re-run failed jobs rather than re-tagging if
+   anything still flakes).
 6. Verify the manifest:
    ```
    curl -sL https://github.com/chethan62/holesail-gui/releases/latest/download/latest.json
