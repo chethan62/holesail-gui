@@ -16,6 +16,7 @@
  *   ping                          -> "pong"
  *   server:start  {port, host?, secure?, key?, udp?}
  *   client:connect {key, port?, host?, udp?, secure?}
+ *   filemanager:start {path, host?, port?, secure?, key?, role?, username?, password?}
  *   session:stop  {id}
  *   session:pause {id}
  *   session:resume {id}
@@ -26,6 +27,7 @@
 'use strict'
 
 const Holesail = require('holesail')
+const Livefiles = require('livefiles')
 
 // Runtime shim: the bare runtime (Android backend) does not expose Node
 // globals — its builtins live under bare-* names. Node has them as
@@ -133,6 +135,50 @@ async function startServer(params) {
   return session
 }
 
+async function startFilemanager(params) {
+  const dir = params.path
+  if (typeof dir !== 'string' || dir.length === 0) {
+    throw new Error('Directory path is required')
+  }
+  // Mirrors the CLI (`holesail --filemanager <dir>`): a Livefiles HTTP
+  // file server + a holesail tunnel in front, both on the same local
+  // port. Pure JS deps (bare-fs/bare-http1) so it runs under the bare
+  // runtime too.
+  const port = Number(params.port) || 5409
+  const host = params.host || '127.0.0.1'
+  const fileServer = new Livefiles({
+    path: dir,
+    role: params.role,
+    username: params.username,
+    password: params.password,
+    host,
+    port
+  })
+  await fileServer.ready()
+  const fsInfo = fileServer.info
+  const hs = new Holesail({
+    server: true,
+    port: Number(fsInfo.port) || port,
+    host: fsInfo.host || host,
+    secure: params.secure !== false, // private by default
+    key: params.key || undefined,
+    udp: false // filemanager can't use UDP (CLI validateInput)
+  })
+  await hs.ready()
+  const id = String(nextId++)
+  const session = {
+    ...recordFromHs(hs, id),
+    type: 'filemanager',
+    dir,
+    fsRole: fsInfo.role || null,
+    fsUsername: fsInfo.username || null,
+    fsPassword: fsInfo.password || null
+  }
+  sessions.set(id, { hs, fileServer, ...session })
+  emitSession(session)
+  return session
+}
+
 async function connectClient(params) {
   // URL parsers normalize hs://s000… to hs://s000…/ — the trailing slash
   // becomes part of the key and derives a WRONG seed (a phantom tunnel
@@ -174,6 +220,12 @@ async function stopSession(id) {
   const entry = sessions.get(id)
   if (!entry) throw new Error(`No session with id ${id}`)
   await entry.hs.close()
+  // filemanager sessions own a Livefiles server next to the tunnel
+  if (entry.fileServer) {
+    try {
+      await entry.fileServer.close()
+    } catch {}
+  }
   sessions.delete(id)
   sendEvent('session:update', { id, state: 'stopped' })
   return { id, state: 'stopped' }
@@ -211,6 +263,8 @@ async function dispatch(method, params) {
       return startServer(params || {})
     case 'client:connect':
       return connectClient(params || {})
+    case 'filemanager:start':
+      return startFilemanager(params || {})
     case 'session:stop':
       return stopSession(params.id)
     case 'session:pause':

@@ -89,6 +89,21 @@
             <button type="submit" class="primary" id="share-start">Start sharing</button>
           </div>
         </form>
+
+        <form id="filemanager-form" class="grid-form fm-form">
+          <h3 class="full">Share a folder</h3>
+          <label class="full">
+            Folder path
+            <input id="fm-path" type="text" placeholder="/home/user/Downloads" required />
+          </label>
+          <label class="check">
+            <input id="fm-secure" type="checkbox" checked />
+            <span class="check-text">Private mode (secure)</span>
+          </label>
+          <div class="full">
+            <button type="submit" class="primary" id="fm-start">Share folder</button>
+          </div>
+        </form>
       </section>
 
       <section id="panel-connect" class="panel">

@@ -321,7 +321,8 @@ function updateUptimeNote() {
 
 function renderSession(container, s) {
   const card = el('div', 'session', 'session-' + s.id)
-  const type = s.type === 'server' ? 'Server' : 'Client'
+  const type =
+    s.type === 'filemanager' ? 'File manager' : s.type === 'server' ? 'Server' : 'Client'
   const mode = s.secure ? 'Private' : 'Public'
   const isPaused = s.state === 'paused'
   const meta = state.meta.get(s.id)
@@ -342,7 +343,7 @@ function renderSession(container, s) {
 
   // body: QR (servers only) + url + meta
   const body = el('div', 'card-body')
-  if (s.type === 'server') {
+  if (s.type === 'server' || s.type === 'filemanager') {
     const qrBox = el('div', 'qr')
     if (s.secure && !state.revealed.has(s.id)) {
       qrBox.textContent = 'QR hidden while key is masked'
@@ -380,6 +381,26 @@ function renderSession(container, s) {
   copy.addEventListener('click', () => copyText(urlText))
   urlRow.append(copy)
   urlCol.append(urlRow)
+
+  // filemanager sessions: show the shared directory + auth credentials
+  // (Livefiles defaults to Basic auth admin/admin — the owner needs both
+  // to relay to whoever they share the tunnel with)
+  if (s.type === 'filemanager') {
+    const fmRow = el('div', 'url-row')
+    fmRow.append(el('code', 'local-url', '', '📁 ' + (s.dir || '')))
+    if (s.fsUsername) {
+      fmRow.append(
+        el(
+          'span',
+          '',
+          '',
+          `user: ${s.fsUsername} · pass: ${s.fsPassword || ''}` +
+            (s.fsRole ? ` · role: ${s.fsRole}` : '')
+        )
+      )
+    }
+    urlCol.append(fmRow)
+  }
 
   // Client sessions expose a local HTTP proxy. Android Chrome refuses
   // literal 127.0.0.1 in some cases, but `localhost` always resolves to
@@ -756,6 +777,34 @@ async function startShare(event) {
   }
 }
 
+async function startFilemanagerShare(event) {
+  event.preventDefault()
+  const button = $('#fm-start')
+  const path = $('#fm-path').value.trim()
+  if (!path) {
+    toast('Enter a folder path', true)
+    return
+  }
+  setBusy(button, true)
+  try {
+    const session = await rpc(
+      'filemanager:start',
+      { path, secure: $('#fm-secure').checked },
+      90000
+    )
+    rememberSession(session.id, 'server', { path, secure: $('#fm-secure').checked })
+    log(`File manager sharing ${path} (${session.host}:${session.port})`, 'ok')
+    toast('Folder shared 📁')
+    addRecent(session.url)
+    $('#fm-path').value = ''
+  } catch (err) {
+    log('Failed to share folder: ' + err.message, 'err')
+    toast('Failed to share: ' + err.message, true)
+  } finally {
+    setBusy(button, false)
+  }
+}
+
 async function startConnect(event) {
   event.preventDefault()
   const button = $('#connect-start')
@@ -1121,6 +1170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch {}
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
+  $('#filemanager-form').addEventListener('submit', startFilemanagerShare)
   bindNodeScreen()
   // tunnel type toggle reveals the name field for permanent tunnels
   $('#share-type').addEventListener('change', () => {

@@ -791,3 +791,15 @@ button.primary:disabled {
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* filemanager form (Share a folder) — divider between the two share forms */
+.fm-form {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.fm-form h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--text);
+}

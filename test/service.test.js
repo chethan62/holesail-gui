@@ -145,6 +145,36 @@ async function main() {
     const list = await rpc('sessions:list', {})
     assert(list.length === 0, 'broken session was removed, worker did not die')
 
+    console.log('10) filemanager:start shares a directory through the tunnel')
+    const os = require('os')
+    const fs = require('fs')
+    const http = require('http')
+    const fmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-'))
+    fs.writeFileSync(path.join(fmDir, 'hello.txt'), 'filemanager test payload')
+    const fm = await rpc('filemanager:start', { path: fmDir, secure: true }, 90000)
+    assert(fm.type === 'filemanager', 'filemanager session started')
+    assert(fm.dir === fmDir, 'session records the shared directory')
+    const fmClient = await rpc('client:connect', { key: fm.url }, 90000)
+    assert(fmClient.type === 'client', 'client connected to the filemanager tunnel')
+    const page = await new Promise((resolve, reject) => {
+      http
+        .get(
+          { host: '127.0.0.1', port: fmClient.port, path: '/', auth: 'admin:admin' },
+          (res) => {
+            let data = ''
+            res.on('data', (c) => (data += c))
+            res.on('end', () => resolve({ status: res.statusCode, body: data }))
+          }
+        )
+        .on('error', reject)
+    })
+    assert(page.status === 200, 'file browser responds 200 through the tunnel')
+    assert(page.body.includes('hello.txt'), 'shared file is listed in the browser')
+    await rpc('session:stop', { id: fmClient.id })
+    await rpc('session:stop', { id: fm.id })
+    const fmAfter = await rpc('sessions:list', {})
+    assert(!fmAfter.some((s) => s.type === 'filemanager'), 'filemanager session stopped cleanly')
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)
