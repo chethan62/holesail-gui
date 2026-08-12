@@ -8,7 +8,19 @@ NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build --bundles appimage
 # artifact: src-tauri/target/release/bundle/appimage/holesail-gui_0.1.0_amd64.AppImage
 ```
 
-## Install (no root needed)
+## Install (one command)
+
+```bash
+scripts/install-linux.sh          # build + install, idempotent
+scripts/install-linux.sh --no-build   # skip build, install existing bundle
+```
+
+It builds the AppImage (with the FUSE-less/strip flags above), installs it to
+`~/Applications/`, copies `launch.sh` + the icon, and writes the desktop
+entry. Fails with a clear message if the AppImage is currently running
+("Text file busy").
+
+## Install (manual, no root needed)
 
 ```bash
 mkdir -p ~/Applications
