@@ -47,8 +47,7 @@ jobs:
       - name: Build debug binary with bare runtime
         run: |
           node scripts/prepare-resources.mjs --bare
-          cargo build
-        working-directory: src-tauri
+          cargo build --manifest-path src-tauri/Cargo.toml
 
       - name: Launch under Xvfb and assert the a11y tree
         run: |
@@ -60,7 +59,9 @@ jobs:
               ./src-tauri/target/debug/holesail-gui &
               APP_PID=$!
               python3 scripts/ci-ui-smoke.py --app-pid $APP_PID --timeout 120
+              RC=$?
               kill $APP_PID 2>/dev/null || true
+              exit $RC
             '
 
   linux:
