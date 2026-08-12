@@ -116,19 +116,21 @@ def main():
         return any(t for t in items() if text.lower() in t[2].lower())
 
     def entries():
-        # Editable text fields — role varies across webkit versions
-        # ('entry' on 2.4x, 'text'/'password' on 2.38), but STATE_EDITABLE
-        # is stable. Static paragraph text is not editable and can't
-        # inflate the count.
+        # Editable text fields — the role varies across webkit versions:
+        # 'entry' on 2.4x, 'text'/'password' on some 2.38 builds, and
+        # 'embedded' (named by placeholder) on the ubuntu-22.04 runner's
+        # webkit. For the editable roles use STATE_EDITABLE (static text
+        # can't inflate the count); 'embedded' needs a non-empty name.
         out = []
-        for node, role, _name in items():
-            if role not in ("entry", "text", "password", "textbox"):
-                continue
-            try:
-                if node.getState().contains(pyatspi.STATE_EDITABLE):
-                    out.append((role, _name))
-            except Exception:
-                pass
+        for node, role, name in items():
+            if role in ("entry", "text", "password", "textbox"):
+                try:
+                    if node.getState().contains(pyatspi.STATE_EDITABLE):
+                        out.append((role, name))
+                except Exception:
+                    pass
+            elif role == "embedded" and name:
+                out.append((role, name))
         return out
 
     def checkboxes():
