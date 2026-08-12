@@ -27,7 +27,6 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(30); // hung worker surfaces fast
-const RPC_TIMEOUT_LONG: Duration = Duration::from_secs(90); // session starts: cold DHT bootstrap
 const EXIT_GRACE: Duration = Duration::from_secs(3); // SIGTERM -> SIGKILL escalation on app quit
 /// A worker that stayed up this long is considered healthy; the respawn
 /// backoff resets so a later crash restarts fast again.

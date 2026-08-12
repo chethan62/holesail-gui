@@ -22,6 +22,34 @@ jobs:
       - name: npm run test:bare (bare runtime)
         run: npm run test:bare
 
+  clippy:
+    name: Clippy (src-tauri, -D warnings)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - run: npm ci
+
+      - name: Prepare resources (required by tauri build.rs)
+        run: node scripts/prepare-resources.mjs --bare
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
   ui-smoke:
     name: UI smoke (Xvfb + AT-SPI)
     needs: test
@@ -59,9 +87,12 @@ jobs:
               ./src-tauri/target/debug/holesail-gui &
               APP_PID=$!
               PYTHONUNBUFFERED=1 python3 scripts/ci-ui-smoke.py --app-pid $APP_PID --timeout 120
-              RC=$?
+              echo "--- single-instance diagnostics ---"
+              ./src-tauri/target/debug/holesail-gui --instances | tee /tmp/instances.txt
+              grep -q "single-instance owner" /tmp/instances.txt
+              timeout 30 ./src-tauri/target/debug/holesail-gui 2>&1 | tee /tmp/second.txt || true
+              grep -q "another instance is running" /tmp/second.txt
               kill $APP_PID 2>/dev/null || true
-              exit $RC
             '
 
   linux:
