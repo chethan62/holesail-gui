@@ -67,7 +67,16 @@ function toast(message, isError = false) {
 
 function setBusy(button, busy) {
   button.disabled = busy
-  button.textContent = busy ? 'Working…' : button.dataset.label
+  if (busy) {
+    // Lazy-capture the resting label on the FIRST busy so callers don't
+    // have to remember to set dataset.label. fm-start was missing it —
+    // after a share its text became `undefined`, leaving a small empty
+    // button (verified 2026-08-13: 28px-tall accent bar, 0 text pixels).
+    if (!button.dataset.label) button.dataset.label = button.textContent
+    button.textContent = 'Working…'
+  } else {
+    button.textContent = button.dataset.label || ''
+  }
 }
 
 /// Copy text to the clipboard. navigator.clipboard needs a secure context
@@ -1202,6 +1211,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   $('#share-start').dataset.label = 'Start sharing'
   $('#connect-start').dataset.label = 'Connect'
+  $('#fm-start').dataset.label = 'Share folder'
   $('#worker-restart').addEventListener('click', async () => {
     const btn = $('#worker-restart')
     btn.disabled = true
