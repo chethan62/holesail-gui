@@ -7,8 +7,16 @@
 // RPC with an optional per-call timeout override. Default 30s (a hung
 // worker surfaces fast); session-start calls (server:start, client:connect)
 // pass 90s because cold DHT bootstrap genuinely takes that long.
+// NOTE: Tauri v2's invoke rejects with the RAW error string (no .message),
+// so every rejection is normalized to a real Error here — callers can
+// rely on err.message (verified 2026-08-13: UI logged "Failed to share
+// folder: undefined" without this).
 export async function rpc(method, params, timeoutMs) {
-  return await window.__TAURI__.core.invoke('rpc', { method, params, timeoutMs })
+  try {
+    return await window.__TAURI__.core.invoke('rpc', { method, params, timeoutMs })
+  } catch (err) {
+    throw new Error(typeof err === 'string' ? err : (err && err.message) || String(err))
+  }
 }
 
 export async function workerDiagnostics() {
