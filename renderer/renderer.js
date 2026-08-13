@@ -199,12 +199,22 @@ function rememberSession(id, type, params) {
 async function reconnectSession(id) {
   const r = state.replay.get(id)
   if (!r) return
-  const method = r.type === 'server' ? 'server:start' : 'client:connect'
+  // filemanager sessions must reconnect through filemanager:start (they
+  // carry {path, secure}, not {port, host} — routing them to server:start
+  // used to fail with "Invalid port: undefined")
+  const method =
+    r.type === 'client'
+      ? 'client:connect'
+      : r.type === 'filemanager'
+        ? 'filemanager:start'
+        : 'server:start'
   try {
     const session = await rpc(method, r.params, 90000)
     state.replay.delete(id) // the new session has its own id
     log(
-      `Reconnected ${r.type === 'server' ? 'server' : 'client'} (${session.host}:${session.port})`,
+      `Reconnected ${
+        r.type === 'filemanager' ? 'file manager' : r.type === 'server' ? 'server' : 'client'
+      } (${session.host}:${session.port})`,
       'ok'
     )
     toast('Reconnected')
@@ -801,7 +811,7 @@ async function startFilemanagerShare(event) {
       { path, secure: $('#fm-secure').checked },
       90000
     )
-    rememberSession(session.id, 'server', { path, secure: $('#fm-secure').checked })
+    rememberSession(session.id, 'filemanager', { path, secure: $('#fm-secure').checked })
     log(`File manager sharing ${path} (${session.host}:${session.port})`, 'ok')
     toast('Folder shared 📁')
     addRecent(session.url)
@@ -968,7 +978,12 @@ function renderSaved() {
     head.append(startBtn)
     item.append(head)
 
-    const keyLine = el('code', '', '', t.kind === 'server' ? 'hs://s000' + t.key : t.key)
+    const keyLine = el(
+      'code',
+      '',
+      '',
+      t.kind === 'server' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : t.key
+    )
     const meta = el('div', 'meta')
     meta.append(metaItem('Port', t.port ?? 'auto'))
     if (t.host) meta.append(metaItem('Host', t.host))
