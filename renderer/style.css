@@ -11,6 +11,17 @@
   --red: #ef4444;
   --yellow: #eab308;
   --qr-bg: #ffffff;
+
+  /* Safe-area insets reported by the OS per device: notch/punch-hole
+     top, gesture-bar bottom, and landscape notch sides. Always 0 on
+     desktop and on non-edge-to-edge devices. Defined on :root so the
+     DEFAULT dark theme gets them too (previously scoped under
+     body[data-theme='light'], which left dark mode — the default — with
+     no insets on mobile). */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 body[data-theme='light'] {
@@ -25,15 +36,6 @@ body[data-theme='light'] {
   --green: #16a34a;
   --red: #dc2626;
   --yellow: #b45309;
-
-  /* Safe-area insets reported by the OS per device: notch/punch-hole
-     top, gesture-bar bottom, and landscape notch sides. Always 0 on
-     desktop and on non-edge-to-edge devices, so the desktop UI is
-     untouched. */
-  --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
-  --sal: env(safe-area-inset-left, 0px);
-  --sar: env(safe-area-inset-right, 0px);
 }
 
 * {
@@ -354,6 +356,27 @@ button.primary:disabled {
   cursor: not-allowed;
 }
 
+/* generic secondary button (node-required overlay + saved import). Was
+   missing entirely — node-retry / saved-import-cancel rendered as the
+   browser's default button. */
+.btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* sessions */
 .sessions {
   display: grid;
@@ -405,6 +428,10 @@ button.primary:disabled {
 .badge.public {
   background: rgba(148, 163, 184, 0.15);
   color: var(--text-dim);
+}
+.badge.proto {
+  background: rgba(139, 92, 246, 0.15);
+  color: #b3a4ff;
 }
 .session .meta {
   color: var(--text-dim);
@@ -603,6 +630,17 @@ button.primary:disabled {
 }
 .saved-item .saved-start {
   margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.saved-item .saved-start:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 #saved-import-json {
   width: 100%;
@@ -802,4 +840,34 @@ button.primary:disabled {
   margin: 0 0 4px;
   font-size: 15px;
   color: var(--text);
+}
+
+/* ------------------------------ polish --------------------------------- */
+
+/* smooth hover/active feedback on every control */
+button {
+  transition: color 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* keyboard focus: a visible ring on buttons (inputs already signal focus
+   via a border-color change) */
+button:focus-visible,
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* pressed state so clicks feel responsive */
+button.primary:active {
+  background: var(--accent-hover);
+}
+.icon-btn:active,
+.url-row button:active,
+.session .actions button:active,
+.saved-item .saved-actions button:active,
+.saved-toolbar button:active,
+.log-toolbar button:active {
+  color: var(--text);
+  border-color: var(--accent);
 }
