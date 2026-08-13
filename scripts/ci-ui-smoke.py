@@ -142,6 +142,10 @@ def main():
     ok &= wait_for("form entries", lambda: len(entries()) >= 4, 30)
     ok &= wait_for("controls (tunnel type, secure, UDP)", lambda: has_text("Tunnel") or len(checkboxes()) >= 2, 30)
     ok &= wait_for("share action button", lambda: has_text("Start sharing"), 30)
+    # filemanager "Share a folder" form: h3 heading + button surface by
+    # name; the folder-path input pushes the editable-entry count up
+    ok &= wait_for("filemanager form (Share a folder)", lambda: has_text("Share a folder") and has_text("Share folder"), 30)
+    ok &= wait_for("form entries incl. folder path", lambda: len(entries()) >= 5, 30)
     # event-log toolbar (persistent log + copy/clear) — the buttons are
     # real interactive nodes, so they must surface by name
     ok &= wait_for("log toolbar (Copy log)", lambda: has_text("Copy log"), 30)

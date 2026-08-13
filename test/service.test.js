@@ -175,6 +175,30 @@ async function main() {
     const fmAfter = await rpc('sessions:list', {})
     assert(!fmAfter.some((s) => s.type === 'filemanager'), 'filemanager session stopped cleanly')
 
+    console.log('11) filemanager:start rejects missing / non-directory paths')
+    const missingDir = path.join(os.tmpdir(), 'holesail-fm-missing-' + Date.now())
+    let missingErr = null
+    try {
+      await rpc('filemanager:start', { path: missingDir, secure: true }, 30000)
+    } catch (e) {
+      missingErr = e
+    }
+    assert(
+      missingErr && /Folder not found/.test(missingErr.message),
+      `missing folder rejected (${missingErr ? missingErr.message : 'no error'})`
+    )
+    const fileAsDir = path.join(fmDir, 'hello.txt')
+    let notDirErr = null
+    try {
+      await rpc('filemanager:start', { path: fileAsDir, secure: true }, 30000)
+    } catch (e) {
+      notDirErr = e
+    }
+    assert(
+      notDirErr && /Not a directory/.test(notDirErr.message),
+      `file-as-folder rejected (${notDirErr ? notDirErr.message : 'no error'})`
+    )
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

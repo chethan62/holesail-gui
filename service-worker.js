@@ -54,6 +54,20 @@ const net = (() => {
     return require('net')
   }
 })()
+const fs = (() => {
+  try {
+    return require('bare-fs')
+  } catch {
+    return require('fs')
+  }
+})()
+const path = (() => {
+  try {
+    return require('bare-path')
+  } catch {
+    return require('path')
+  }
+})()
 
 /// Ask the OS for a free local port (bind :0, read the assignment, close).
 function pickFreePort() {
@@ -140,6 +154,19 @@ async function startFilemanager(params) {
   if (typeof dir !== 'string' || dir.length === 0) {
     throw new Error('Directory path is required')
   }
+  // Validate BEFORE creating the file server: a typo'd folder currently
+  // failed deep inside Livefiles (or surfaced as a generic worker error)
+  // while the card still showed "running". Resolve + stat up front.
+  const resolved = path.resolve(dir)
+  let st
+  try {
+    st = fs.statSync(resolved)
+  } catch {
+    throw new Error(`Folder not found: ${resolved}`)
+  }
+  if (!st.isDirectory()) {
+    throw new Error(`Not a directory: ${resolved}`)
+  }
   // Mirrors the CLI (`holesail --filemanager <dir>`): a Livefiles HTTP
   // file server + a holesail tunnel in front, both on the same local
   // port. Pure JS deps (bare-fs/bare-http1) so it runs under the bare
@@ -147,7 +174,7 @@ async function startFilemanager(params) {
   const port = Number(params.port) || 5409
   const host = params.host || '127.0.0.1'
   const fileServer = new Livefiles({
-    path: dir,
+    path: resolved,
     role: params.role,
     username: params.username,
     password: params.password,
@@ -169,7 +196,7 @@ async function startFilemanager(params) {
   const session = {
     ...recordFromHs(hs, id),
     type: 'filemanager',
-    dir,
+    dir: resolved,
     fsRole: fsInfo.role || null,
     fsUsername: fsInfo.username || null,
     fsPassword: fsInfo.password || null

@@ -135,6 +135,18 @@ fn trim_to_cap(text: String, cap: usize) -> String {
     }
 }
 
+/// The event log can carry tunnel URLs / session params from log lines —
+/// keep it owner-only, like the saved-tunnels store (0600 on unix).
+fn restrict_log_perms(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 /// Append a renderer log line to the persistent event log so history
 /// survives restarts (bug reports). File: <app_config_dir>/event-log.txt,
 /// capped at 64 KiB (whole-line trim, see trim_to_cap).
@@ -148,11 +160,13 @@ fn log_append(app: AppHandle, line: String) {
     let Ok(mut cur) = std::fs::read_to_string(&path) else {
         let _ = std::fs::create_dir_all(&config_dir);
         let _ = std::fs::write(&path, format!("{line}\n"));
+        restrict_log_perms(&path);
         return;
     };
     cur.push_str(&line);
     cur.push('\n');
     let _ = std::fs::write(&path, trim_to_cap(cur, LOG_MAX_BYTES));
+    restrict_log_perms(&path);
 }
 
 /// The machine's primary LAN IPv4 address (e.g. 192.168.29.94). Server
