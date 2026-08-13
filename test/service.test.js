@@ -199,6 +199,62 @@ async function main() {
       `file-as-folder rejected (${notDirErr ? notDirErr.message : 'no error'})`
     )
 
+    console.log('12) session pause/resume cycle')
+    const prServer = await rpc('server:start', { port: TEST_PORT + 2, secure: true }, 90000)
+    const paused = await rpc('session:pause', { id: prServer.id })
+    assert(paused.state === 'paused', 'session:pause -> paused')
+    const pausedList = await rpc('sessions:list', {})
+    assert(
+      pausedList.find((s) => s.id === prServer.id).state === 'paused',
+      'sessions:list reports paused state'
+    )
+    const resumed = await rpc('session:resume', { id: prServer.id })
+    assert(resumed.state === 'running', 'session:resume -> running')
+    const resumedList = await rpc('sessions:list', {})
+    assert(
+      resumedList.find((s) => s.id === prServer.id).state === 'running',
+      'sessions:list reports running after resume'
+    )
+    await rpc('session:stop', { id: prServer.id })
+
+    console.log('13) lookup: online key resolves, offline key returns null')
+    const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
+    const online = await rpc('lookup', { key: lkServer.url }, 60000)
+    assert(online && typeof online === 'object', 'lookup of a live server returns its DHT record')
+    assert(online.port === lkServer.port, 'lookup record carries the server port')
+    assert(online.protocol === 'tcp', 'lookup record carries the protocol')
+    assert(online.secure === true, 'lookup record marks the tunnel secure')
+    // a random valid key nobody announced -> the worker normalizes the bare
+    // {secure:true} shell to null (offline is a state, NOT an error)
+    const deadKey = 'hs://s000' + 'a'.repeat(64)
+    const offline = await rpc('lookup', { key: deadKey }, 60000)
+    assert(offline === null, 'lookup of an unannounced key returns null (offline)')
+    // malformed public key -> thrown error (unlike a well-formed absent key)
+    let badErr = null
+    try {
+      await rpc('lookup', { key: 'hs://0000!!!not-z32!!!' }, 30000)
+    } catch (e) {
+      badErr = e
+    }
+    assert(badErr !== null, 'lookup of a malformed public key throws')
+    await rpc('session:stop', { id: lkServer.id })
+
+    console.log('14) filemanager accepts a fixed key (permanent folder shares)')
+    const fmKey = 'b'.repeat(64)
+    const fmDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-key-'))
+    fs.writeFileSync(path.join(fmDir2, 'f.txt'), 'x')
+    const fmKeyed = await rpc(
+      'filemanager:start',
+      { path: fmDir2, secure: true, key: fmKey },
+      90000
+    )
+    assert(fmKeyed.type === 'filemanager', 'filemanager started with a fixed key')
+    assert(
+      fmKeyed.url === 'hs://s000' + fmKey,
+      'filemanager url uses the fixed key (stable across restarts)'
+    )
+    await rpc('session:stop', { id: fmKeyed.id })
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

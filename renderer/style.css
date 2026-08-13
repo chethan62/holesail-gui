@@ -809,6 +809,48 @@ button.primary:disabled {
   border-color: var(--red);
   color: #fca5a5;
 }
+/* inline confirm toast (lookup offline prompt) */
+.toast .confirm-msg {
+  margin-right: 10px;
+}
+.toast button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.toast button.confirm-yes {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.toast button.confirm-yes:hover {
+  color: #fff;
+  background: var(--accent);
+}
+.toast button.confirm-no:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* saved-connection DHT reachability indicator */
+.net-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.net-status.online {
+  color: var(--green);
+}
+.net-status.offline {
+  color: var(--yellow);
+}
+.net-status.unknown {
+  color: var(--text-dim);
+}
 
 /* event log toolbar (copy / clear) */
 .log-toolbar {

@@ -300,8 +300,18 @@ async function dispatch(method, params) {
       return resumeSession(params.id)
     case 'sessions:list':
       return listSessions()
-    case 'lookup':
-      return Holesail.lookup(params.key)
+    // Holesail.lookup returns the server's DHT record ({host, port,
+    // protocol, secure}) when the key is announced. For a well-formed but
+    // UNANNOUNCED key it returns `{ secure: true/false }` — a bare shell
+    // (the `|| {}` fallback in Holesail.lookup masks the null from
+    // HolesailClient.ping). Offline is a STATE, not an error: normalize
+    // "record with no port" to null so the renderer can branch
+    // online/offline/unknown cleanly. Malformed keys still throw
+    // (Invalid key format), which surfaces as an RPC error -> 'unknown'.
+    case 'lookup': {
+      const res = await Holesail.lookup(params.key)
+      return res && Number.isInteger(res.port) ? res : null
+    }
     // test-only: throw an async error OUTSIDE the RPC promise chain
     // (uncaughtException, like a real socket/bind failure) attributed to a
     // session via its port — the error-containment regression test relies

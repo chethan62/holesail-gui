@@ -2,7 +2,6 @@
   "name": "holesail-gui",
   "version": "0.3.0",
   "description": "Desktop GUI for Holesail — share local ports and connect to P2P tunnels",
-  "main": "main.js",
   "author": "chethan62",
   "license": "MIT",
   "scripts": {

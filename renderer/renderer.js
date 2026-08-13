@@ -116,6 +116,31 @@ function maskKey(url) {
   return url.slice(0, 10) + '…' + url.slice(-8)
 }
 
+/// Yes/No confirm as a dismissable toast with two buttons — native
+/// confirm() is unreliable in Android WebView (pitfall #9), and the
+/// answer must be awaitable. Resolves true on Yes, false on No / auto-
+/// dismiss after 10s.
+function confirmInline(message) {
+  return new Promise((resolve) => {
+    const el = $('#toast')
+    el.classList.remove('hidden', 'err')
+    el.innerHTML = ''
+    const span = el('span', 'confirm-msg', '', message)
+    const yes = el('button', 'confirm-yes', '', 'Yes')
+    const no = el('button', 'confirm-no', '', 'No')
+    el.append(span, yes, no)
+    clearTimeout(toastTimer)
+    const done = (val) => {
+      clearTimeout(toastTimer)
+      el.classList.add('hidden')
+      resolve(val)
+    }
+    yes.addEventListener('click', () => done(true), { once: true })
+    no.addEventListener('click', () => done(false), { once: true })
+    toastTimer = setTimeout(() => done(false), 10000)
+  })
+}
+
 function fmtDuration(ms) {
   const s = Math.floor(ms / 1000)
   if (s < 60) return s + 's'
@@ -435,12 +460,19 @@ function renderSession(container, s) {
     urlCol.append(localRow)
   }
 
-  // Server sessions also expose the service on the LAN — a phone on the
-  // SAME network can skip the DHT entirely and hit the LAN URL directly
-  // (fast, and works even when hole-punching is blocked by the router).
-  // Only shown when the machine actually has a LAN address; the DHT
-  // connection string above remains the universal fallback.
-  if (s.type === 'server' && s.port && state.lanIp && state.lanIp !== '127.0.0.1') {
+  // Server AND filemanager sessions expose the service on the LAN — a
+  // phone on the SAME network can skip the DHT entirely and hit the LAN
+  // URL directly (fast, and works even when hole-punching is blocked by
+  // the router). Only shown when the machine actually has a LAN address;
+  // the DHT connection string above remains the universal fallback.
+  // (Livefiles binds the same local port the tunnel exposes, so a folder
+  // share is LAN-reachable identically to a plain port share.)
+  if (
+    (s.type === 'server' || s.type === 'filemanager') &&
+    s.port &&
+    state.lanIp &&
+    state.lanIp !== '127.0.0.1'
+  ) {
     const lanUrl = `http://${state.lanIp}:${s.port}/`
     const lanRow = el('div', 'url-row')
     lanRow.append(el('code', 'local-url', '', lanUrl))
@@ -824,6 +856,19 @@ async function startFilemanagerShare(event) {
   }
 }
 
+/// Reachability pre-flight: ping the key's DHT record (worker `lookup`).
+/// Returns { state } where state is 'online' (record found), 'offline'
+/// (no record — the tunnel can't establish), or 'unknown' (lookup
+/// itself failed / timed out — DHT flake, not proof the peer is down).
+async function lookupKey(key) {
+  try {
+    const res = await rpc('lookup', { key }, 45000)
+    return { state: res ? 'online' : 'offline', info: res }
+  } catch (err) {
+    return { state: 'unknown', error: err.message }
+  }
+}
+
 async function startConnect(event) {
   event.preventDefault()
   const button = $('#connect-start')
@@ -834,8 +879,26 @@ async function startConnect(event) {
     host: $('#connect-host').value.trim() || undefined,
     udp: $('#connect-udp').checked
   }
+  if (!params.key) return
   setBusy(button, true)
   try {
+    // holesail's ready() resolves even when the server is offline (the
+    // phantom-tunnel trap): the card would sit "running" while proxying to
+    // nothing. Ping the DHT record first so a dead key fails fast with a
+    // clear message instead.
+    const look = await lookupKey(params.key)
+    if (look.state === 'offline') {
+      const go = await confirmInline(
+        `No tunnel found for this key on the DHT (offline or invalid). Connect anyway?`
+      )
+      if (!go) {
+        log('Connect aborted — key not found on the DHT', 'warn')
+        return
+      }
+      log('Key not found on the DHT — connecting anyway (phantom tunnel possible)', 'warn')
+    } else if (look.state === 'online') {
+      log('Key reachable on the DHT (server announced)', 'ok')
+    }
     let tunnel = null
     if ($('#connect-save').checked) {
       // normalize the key before saving: the worker strips trailing
@@ -970,6 +1033,25 @@ function renderSaved() {
       badge(t.secure === false ? 'Public' : 'Private', t.secure === false ? 'public' : 'secure'),
       nameSpan
     )
+    // Saved CLIENT connections: is the remote server actually online?
+    // Ping the DHT (worker lookup) and show it — a saved connection to a
+    // dead/offline key silently fails to carry traffic otherwise.
+    if (t.kind === 'client') {
+      const net = el('span', 'net-status', '', '…')
+      net.title = 'Checking whether the remote server is announced on the DHT'
+      head.append(net)
+      lookupKey(t.key).then((look) => {
+        net.textContent =
+          look.state === 'online' ? '● online' : look.state === 'offline' ? '○ offline' : '? unknown'
+        net.classList.add(look.state)
+        net.title =
+          look.state === 'online'
+            ? 'Server announced on the DHT (reachable)'
+            : look.state === 'offline'
+              ? 'No DHT record — server is offline or the key is invalid'
+              : 'Lookup failed (DHT flake) — cannot tell'
+      })
+    }
     const startBtn = el('button', 'saved-start', '', savedSession(t) ? 'Stop' : 'Start')
     startBtn.addEventListener('click', () => {
       if (savedSession(t)) stopSaved(t)
