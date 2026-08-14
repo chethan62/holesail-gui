@@ -187,17 +187,30 @@ fn lan_address() -> String {
 struct SavedTunnel {
     id: String,
     name: String,
-    kind: String, // "server" | "client"
-    key: String,  // server: fixed key hex; client: full hs:// string
+    kind: String, // "server" | "client" | "filemanager"
+    key: String,  // server/filemanager: fixed key hex; client: full hs:// string
     port: Option<u16>,
     host: Option<String>,
+    /// Folder path for filemanager-kind tunnels (the Livefiles share root).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    /// Livefiles auth (filemanager kind): role / username / password.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    password: Option<String>,
     /// Secure (private) mode. Servers: controls the keypair derivation —
     /// private vs public derive DIFFERENT keys, so this must be persisted.
     /// Defaults to true for saved tunnels created before this field existed.
     #[serde(default = "default_true")]
     secure: bool,
+    #[serde(default)]
     udp: bool,
+    #[serde(default)]
     autostart: bool,
+    #[serde(default)]
     created_at: u64,
 }
 
@@ -476,6 +489,10 @@ mod tests {
             key: "k".repeat(64),
             port: Some(8080),
             host: Some("127.0.0.1".into()),
+            path: None,
+            role: None,
+            username: None,
+            password: None,
             secure: true,
             udp: false,
             autostart,
@@ -495,6 +512,10 @@ mod tests {
                 key: "k".repeat(64),
                 port: Some(1),
                 host: None,
+                path: None,
+                role: None,
+                username: None,
+                password: None,
                 secure: true,
                 udp: false,
                 autostart: false,
@@ -628,6 +649,48 @@ mod tests {
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].id, "a");
         assert!(back[0].secure);
+    }
+
+    #[test]
+    fn saved_filemanager_roundtrip_preserves_path_and_auth() {
+        let mut t = tunnel("fm", "filemanager", true);
+        t.path = Some("/home/user/Downloads".into());
+        t.role = Some("admin".into());
+        t.username = Some("admin".into());
+        t.password = Some("secret".into());
+        let json = serde_json::to_string(&t).unwrap();
+        let back: SavedTunnel = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.kind, "filemanager");
+        assert_eq!(back.path.as_deref(), Some("/home/user/Downloads"));
+        assert_eq!(back.role.as_deref(), Some("admin"));
+        assert_eq!(back.username.as_deref(), Some("admin"));
+        assert_eq!(back.password.as_deref(), Some("secret"));
+        // absent path on a legacy server entry parses as None
+        let legacy = serde_json::from_str::<SavedTunnel>(
+            r#"{"id":"x","name":"x","kind":"server","key":"kk","port":1,"host":null,"secure":true,"udp":false,"autostart":false,"createdAt":1}"#,
+        )
+        .unwrap();
+        assert!(legacy.path.is_none());
+        assert_eq!(legacy.kind, "server");
+    }
+
+    #[test]
+    fn saved_tunnel_missing_optional_fields_deserialize() {
+        // A caller omitting udp/autostart/createdAt (e.g. the filemanager
+        // save path before it sent udp) must NOT fail deserialization —
+        // serde defaults these to false/false/0. This was the root cause of
+        // "Failed to share folder: undefined" (missing `udp` field rejected
+        // the whole SavedTunnel, and the raw invoke string collapsed to
+        // undefined at the bridge).
+        let t = serde_json::from_str::<SavedTunnel>(
+            r#"{"id":"f","name":"f","kind":"filemanager","key":"kk","secure":true,"path":"/tmp/x"}"#,
+        )
+        .unwrap();
+        assert_eq!(t.kind, "filemanager");
+        assert_eq!(t.path.as_deref(), Some("/tmp/x"));
+        assert!(!t.udp);
+        assert!(!t.autostart);
+        assert_eq!(t.created_at, 0);
     }
 
     // ---- trim_to_cap (event log) ----

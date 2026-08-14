@@ -100,6 +100,25 @@
             <input id="fm-secure" type="checkbox" checked />
             <span class="check-text">Private mode (secure)</span>
           </label>
+          <label class="check full" id="fm-perm-wrap">
+            <input id="fm-perm" type="checkbox" />
+            <span class="check-text">Permanent (fixed key, auto-restart with app)</span>
+          </label>
+          <label id="fm-name-wrap" class="full" hidden>
+            Name
+            <input id="fm-name" type="text" placeholder="e.g. My Files" maxlength="40" />
+          </label>
+          <label class="full" id="fm-key-wrap" hidden>
+            Custom key (optional, min 32 hex chars)
+            <input
+              id="fm-key"
+              type="text"
+              placeholder="leave empty to auto-generate"
+              minlength="32"
+              pattern="[0-9a-fA-F]{32,}"
+              title="Custom keys must be at least 32 hex characters (0-9, a-f)"
+            />
+          </label>
           <div class="full">
             <button type="submit" class="primary" id="fm-start">Share folder</button>
           </div>

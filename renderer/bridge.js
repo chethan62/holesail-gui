@@ -48,23 +48,33 @@ export async function logAppend(line) {
 }
 
 // saved tunnels (temp/permanent) — persisted by the Rust backend
+// Same raw-invoke error trap as rpc(): Tauri v2 rejects with a bare string,
+// so a serde failure (e.g. a missing field) collapses to err.message ===
+// undefined at the call site. Wrap every one of these.
+async function invokeErr(method, args) {
+  try {
+    return await window.__TAURI__.core.invoke(method, args)
+  } catch (err) {
+    throw new Error(typeof err === 'string' ? err : (err && err.message) || String(err))
+  }
+}
 export async function savedList() {
-  return await window.__TAURI__.core.invoke('saved_list')
+  return await invokeErr('saved_list')
 }
 export async function savedSave(tunnel) {
-  return await window.__TAURI__.core.invoke('saved_save', { tunnel })
+  return await invokeErr('saved_save', { tunnel })
 }
 export async function savedDelete(id) {
-  return await window.__TAURI__.core.invoke('saved_delete', { id })
+  return await invokeErr('saved_delete', { id })
 }
 export async function savedDuplicate(id) {
-  return await window.__TAURI__.core.invoke('saved_duplicate', { id })
+  return await invokeErr('saved_duplicate', { id })
 }
 export async function savedExport() {
-  return await window.__TAURI__.core.invoke('saved_export')
+  return await invokeErr('saved_export')
 }
 export async function savedImport(json) {
-  return await window.__TAURI__.core.invoke('saved_import', { json })
+  return await invokeErr('saved_import', { json })
 }
 
 // recent keys — held by the Rust backend (OS keychain on desktop, 0600 file

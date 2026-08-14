@@ -836,18 +836,36 @@ async function startFilemanagerShare(event) {
     toast('Enter a folder path', true)
     return
   }
+  const isPerm = $('#fm-perm').checked
+  const key = $('#fm-key').value.trim() || undefined
+  const params = { path, secure: $('#fm-secure').checked, key }
   setBusy(button, true)
   try {
-    const session = await rpc(
-      'filemanager:start',
-      { path, secure: $('#fm-secure').checked },
-      90000
-    )
-    rememberSession(session.id, 'filemanager', { path, secure: $('#fm-secure').checked })
+    let tunnel = null
+    if (isPerm) {
+      if (!key) params.key = genKey()
+      tunnel = await savedSave({
+        id: '',
+        name: $('#fm-name').value.trim() || 'Permanent folder',
+        kind: 'filemanager',
+        key: params.key,
+        path: params.path,
+        secure: params.secure,
+        udp: false, // filemanager can't use UDP (CLI validateInput)
+        autostart: true,
+        createdAt: Date.now()
+      })
+    }
+    const session = await rpc('filemanager:start', params, 90000)
+    rememberSession(session.id, 'filemanager', { path, secure: params.secure, key: params.key })
     log(`File manager sharing ${path} (${session.host}:${session.port})`, 'ok')
     toast('Folder shared 📁')
     addRecent(session.url)
     $('#fm-path').value = ''
+    if (tunnel) {
+      await refreshSaved()
+      log(`Saved folder share "${tunnel.name}" — it will restart with the app`, 'ok')
+    }
   } catch (err) {
     log('Failed to share folder: ' + err.message, 'err')
     toast('Failed to share: ' + err.message, true)
@@ -961,9 +979,11 @@ async function refreshSaved() {
 function savedSession(t) {
   const serverUrl = t.kind === 'server' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : null
   const clientKey = t.kind === 'client' ? String(t.key || '').replace(/\/+$/, '') : null
+  const fmUrl = t.kind === 'filemanager' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : null
   for (const s of state.sessions.values()) {
     if (serverUrl && s.url === serverUrl) return s
     if (clientKey && s.url === clientKey) return s
+    if (fmUrl && s.url === fmUrl) return s
   }
   return null
 }
@@ -979,6 +999,18 @@ async function startSaved(t) {
         udp: t.udp,
         key: t.key
       })
+    } else if (t.kind === 'filemanager') {
+      if (!t.path) throw new Error('Saved folder share is missing its path')
+      session = await rpc('filemanager:start', {
+        path: t.path,
+        secure: t.secure !== false,
+        key: t.key,
+        host: t.host || undefined,
+        port: t.port ?? undefined,
+        role: t.role || undefined,
+        username: t.username || undefined,
+        password: t.password || undefined
+      }, 90000)
     } else {
       session = await rpc('client:connect', {
         key: t.key,
@@ -990,7 +1022,9 @@ async function startSaved(t) {
     rememberSession(session.id, t.kind, {
       ...(t.kind === 'server'
         ? { port: t.port, host: t.host || '127.0.0.1', secure: t.secure !== false, udp: t.udp, key: t.key }
-        : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp })
+        : t.kind === 'filemanager'
+          ? { path: t.path, secure: t.secure !== false, key: t.key }
+          : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp })
     })
     addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
@@ -1029,7 +1063,10 @@ function renderSaved() {
     const head = el('div', 'saved-head')
     const nameSpan = el('span', 'saved-name', '', t.name)
     head.append(
-      badge(t.kind === 'server' ? 'Server' : 'Client', t.kind),
+      badge(
+        t.kind === 'server' ? 'Server' : t.kind === 'filemanager' ? 'Folder' : 'Client',
+        t.kind
+      ),
       badge(t.secure === false ? 'Public' : 'Private', t.secure === false ? 'public' : 'secure'),
       nameSpan
     )
@@ -1064,10 +1101,13 @@ function renderSaved() {
       'code',
       '',
       '',
-      t.kind === 'server' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : t.key
+      t.kind === 'server' || t.kind === 'filemanager'
+        ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
+        : t.key
     )
     const meta = el('div', 'meta')
-    meta.append(metaItem('Port', t.port ?? 'auto'))
+    if (t.kind === 'filemanager') meta.append(metaItem('Folder', t.path ?? '?'))
+    else meta.append(metaItem('Port', t.port ?? 'auto'))
     if (t.host) meta.append(metaItem('Host', t.host))
     meta.append(metaItem('Auto-start', t.autostart ? 'on' : 'off'))
     item.append(keyLine, meta)
@@ -1285,6 +1325,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // save-connection checkbox reveals its name field
   $('#connect-save').addEventListener('change', () => {
     $('#connect-name-wrap').hidden = !$('#connect-save').checked
+  })
+  // permanent folder share reveals name + key fields
+  $('#fm-perm').addEventListener('change', () => {
+    const on = $('#fm-perm').checked
+    $('#fm-name-wrap').hidden = !on
+    $('#fm-key-wrap').hidden = !on
   })
   // saved panel
   $('#saved-export').addEventListener('click', exportAllSaved)
