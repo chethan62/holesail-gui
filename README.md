@@ -164,7 +164,10 @@ Tauri's `resource_dir()` resolves without bundler patching).
 
 **Flatpak** — manifest in `packaging/flatpak/` (built on the GNOME platform,
 which ships WebKitGTK 4.1 — the freedesktop `webkit2gtk-4.1` extension does
-not exist on flathub):
+not exist on flathub). The manifest builds `libayatana-appindicator` from
+source (intltool → libdbusmenu → ayatana-ido → libayatana-indicator →
+appindicator 0.5.94, the flathub shared-modules recipe) because the GNOME
+runtime does not ship the tray library and the app panics without it:
 
 ```bash
 flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47
@@ -172,8 +175,9 @@ flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47
 flatpak run io.holesail.gui
 ```
 
-> Note: the flatpak manifest is written but **not verified in this repo's CI
-> environment** (needs `flatpak-builder` + the SDK runtimes).
+> Note: built + launched successfully on a Linux dev box (2026-08-15) and
+> verified in CI via the `flatpak` job in `.github/workflows/build.yml`
+> (builds `holesail-gui.flatpak`, shipped with releases).
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
   respectively with the same resource layout — `tauri.macos.conf.json` and
   `tauri.windows.conf.json` bundle the platform's `bare`/`bare.exe` binary as

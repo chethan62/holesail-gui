@@ -974,11 +974,26 @@ fn find_worker(app: &AppHandle) -> Option<PathBuf> {
 /// the system `node` for dev checkouts and installs without the bundle.
 #[cfg(not(target_os = "android"))]
 fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    // bare-runtime-win32-* ships bin/bare.exe; prepare-resources.mjs
+    // preserves that name when bundling (see its --bare handling).
+    let bare_name = if cfg!(windows) { "bare.exe" } else { "bare" };
+    // Candidate dirs for the bundle: tauri's resource_dir, then the
+    // executable's own dir. Flatpak installs resources to
+    // /app/lib/holesail-gui/ (same dir as the binary) and resource_dir()
+    // can resolve elsewhere, so exe-relative is the reliable fallback.
+    let mut dirs: Vec<PathBuf> = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
-        // bare-runtime-win32-* ships bin/bare.exe; prepare-resources.mjs
-        // preserves that name when bundling (see its --bare handling).
-        let bare_name = if cfg!(windows) { "bare.exe" } else { "bare" };
-        let bare = dir.join(bare_name);
+        dirs.push(dir);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dirs.push(dir.to_path_buf());
+            // /app/lib/holesail-gui/bin/ (some layouts nest it)
+            dirs.push(dir.join("bin"));
+        }
+    }
+    for dir in &dirs {
+        let bare = dir.join(&bare_name);
         let worker = dir.join("service-worker.js");
         if bare.is_file() && worker.is_file() {
             return Ok((bare, worker));
@@ -1563,9 +1578,15 @@ pub fn run() {
             // Linux/Windows: make this binary the handler for hs:// links
             // (writes a per-user .desktop entry / registry key). macOS and
             // Android use the statically configured schemes instead.
+            // FLATPAK: skip — the sandbox home isn't writable for a
+            // .desktop entry, and the shipped flatpak .desktop file already
+            // declares x-scheme-handler/hs (deep-link register() would fail
+            // with "No such file or directory" and abort setup).
             #[cfg(desktop)]
-            if let Err(e) = app.deep_link().register("hs") {
-                eprintln!("Failed to register hs:// deep link: {e}");
+            if std::env::var_os("FLATPAK_ID").is_none() {
+                if let Err(e) = app.deep_link().register("hs") {
+                    eprintln!("Failed to register hs:// deep link: {e}");
+                }
             }
 
             // A missing or incompatible worker runtime (no node on desktop, no

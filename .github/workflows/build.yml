@@ -292,10 +292,64 @@ jobs:
           path: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
+  flatpak:
+    name: Flatpak (io.holesail.gui)
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri Linux dependencies + flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            flatpak flatpak-builder
+
+      - run: npm ci
+
+      - name: Build release binary + bundle (retry transient bundler failures)
+        run: |
+          set +e
+          node scripts/prepare-resources.mjs --bare
+          (cd dist-resources && tar -cf node_modules.tar node_modules)
+          # release build for the flatpak (simple buildsystem installs it)
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          # flatpak-builder: build the bundle. Runtime download is one-time;
+          # the module build (intltool/libdbusmenu/ayatana) is the long pole.
+          for attempt in 1 2 3; do
+            echo "flatpak build attempt $attempt"
+            cd packaging/flatpak && flatpak-builder --user --force-clean \
+              --disable-rofiles-fuse build-dir io.holesail.gui.yml && exit 0
+            cd ../..
+            sleep 10
+          done
+          echo "flatpak build failed after 3 attempts"
+          exit 1
+
+      - name: Export bundle artifact
+        run: |
+          cd packaging/flatpak
+          flatpak build-export --no-update-summary /tmp/hg-repo build-dir
+          flatpak build-update-repo /tmp/hg-repo
+          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            /tmp/hg-repo holesail-gui.flatpak io.holesail.gui
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: holesail-gui-flatpak
+          path: packaging/flatpak/holesail-gui.flatpak
+
   release:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, macos, android]
+    needs: [linux, windows, macos, android, flatpak]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -324,7 +378,8 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/release-assets
           find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
-            -o -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.apk' \) \
+            -o -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.apk' \
+            -o -name '*.flatpak' \) \
             -exec cp {} /tmp/release-assets/ \;
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/release-key
