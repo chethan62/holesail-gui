@@ -327,8 +327,19 @@ fn saved_path(app: &AppHandle) -> PathBuf {
         .join("saved-tunnels.json")
 }
 
-fn saved_persist(app: &AppHandle, store: &SavedStore) {
-    let data = serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into());
+/// Keychain service/account for the saved-tunnel store. Tunnel keys AND
+/// filemanager passwords are credentials, so on desktop the whole list lives
+/// in the OS keychain (encrypted at rest), not just the 0600 file.
+const SAVED_KEYRING_SERVICE: &str = "io.holesail.gui";
+const SAVED_KEYRING_ACCOUNT: &str = "saved-tunnels";
+
+fn saved_serialize(store: &SavedStore) -> String {
+    serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into())
+}
+
+/// Write the list to the 0600 file (the keychain fallback, and the only path
+/// on Android where no keyring daemon exists).
+fn saved_write_file(app: &AppHandle, data: &str) {
     let path = saved_path(app);
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -340,6 +351,53 @@ fn saved_persist(app: &AppHandle, store: &SavedStore) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     }
+}
+
+/// Load saved tunnels. Returns (list, from_keychain) — the flag lets the
+/// caller migrate a legacy plaintext file into the keychain on first launch
+/// after upgrade, without prompting every subsequent launch.
+#[cfg(desktop)]
+fn saved_load(app: &AppHandle) -> (Vec<SavedTunnel>, bool) {
+    if let Ok(entry) = keyring::Entry::new(SAVED_KEYRING_SERVICE, SAVED_KEYRING_ACCOUNT) {
+        if let Ok(s) = entry.get_password() {
+            if let Ok(v) = serde_json::from_str::<Vec<SavedTunnel>>(&s) {
+                return (v, true);
+            }
+        }
+    }
+    let from_file = std::fs::read_to_string(saved_path(app))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    (from_file, false)
+}
+
+#[cfg(not(desktop))]
+fn saved_load(app: &AppHandle) -> (Vec<SavedTunnel>, bool) {
+    let from_file = std::fs::read_to_string(saved_path(app))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    (from_file, false)
+}
+
+#[cfg(desktop)]
+fn saved_persist(app: &AppHandle, store: &SavedStore) {
+    let data = saved_serialize(store);
+    if let Ok(entry) = keyring::Entry::new(SAVED_KEYRING_SERVICE, SAVED_KEYRING_ACCOUNT) {
+        if entry.set_password(&data).is_ok() {
+            // Credentials now live encrypted in the keychain — drop the
+            // plaintext fallback file so a stale copy can't outlive it.
+            let _ = std::fs::remove_file(saved_path(app));
+            return;
+        }
+    }
+    saved_write_file(app, &data);
+}
+
+#[cfg(not(desktop))]
+fn saved_persist(app: &AppHandle, store: &SavedStore) {
+    saved_write_file(app, &saved_serialize(store));
 }
 
 /// Keep login autostart in sync with saved tunnels: on when any tunnel
@@ -639,6 +697,23 @@ mod tests {
         }
         assert_eq!(entry.get_password().unwrap_or_default(), "hello");
         let _ = entry.delete_credential();
+    }
+
+    /// The saved-tunnel store is a single keychain secret (encrypting tunnel
+    /// keys AND filemanager passwords together). Verify the serialize/parse
+    /// roundtrip shape the keychain path uses, including the password field.
+    #[test]
+    fn saved_serialize_roundtrip_carries_secrets() {
+        let mut fm = tunnel("fm", "filemanager", true);
+        fm.password = Some("s3cr3t".into());
+        fm.username = Some("admin".into());
+        let store = store_with(vec![fm]);
+        let json = saved_serialize(&store);
+        let back: Vec<SavedTunnel> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].password.as_deref(), Some("s3cr3t"));
+        assert_eq!(back[0].username.as_deref(), Some("admin"));
+        assert_eq!(back[0].key.len(), 64); // tunnel key rides along, encrypted at rest
     }
 
     #[test]
@@ -1322,13 +1397,18 @@ pub fn run() {
             app.manage(WorkerState(Mutex::new(None)));
             app.manage(StdinState(Mutex::new(None)));
             // Saved tunnels (temp/permanent) persisted under the app config
-            // dir; autostart follows the saved tunnels' preferences.
-            app.manage(SavedStore(Mutex::new(
-                std::fs::read_to_string(saved_path(app.handle()))
-                    .ok()
-                    .and_then(|s| serde_json::from_str(&s).ok())
-                    .unwrap_or_default(),
-            )));
+            // dir; autostart follows the saved tunnels' preferences. On
+            // desktop the list (tunnel keys + filemanager passwords) lives
+            // in the OS keychain; the 0600 file is the no-daemon fallback.
+            let (saved_list, from_keychain) = saved_load(app.handle());
+            app.manage(SavedStore(Mutex::new(saved_list)));
+            // One-time migration: if we loaded from the legacy plaintext
+            // file (or nothing), persist now so the credentials move into
+            // the keychain and the plaintext copy is removed.
+            #[cfg(desktop)]
+            if !from_keychain {
+                saved_persist(app.handle(), &app.state::<SavedStore>());
+            }
             autostart_sync(app.handle(), &app.state::<SavedStore>());
             app.manage(RecentStore(Mutex::new(recent_load(app.handle()))));
 
