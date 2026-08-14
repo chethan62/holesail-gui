@@ -52,6 +52,18 @@ fn backoff_delay(attempt: u32) -> Duration {
     BACKOFF[(attempt as usize).min(BACKOFF.len() - 1)]
 }
 
+/// Backoff bookkeeping on a worker exit: if the previous worker was healthy
+/// (lived >= HEALTHY_UPTIME), restart the ladder; otherwise advance it.
+/// Returns the attempt to pass to `schedule_respawn` (which will bump it
+/// again). Pure — unit-tested without a Tauri app.
+fn next_attempt(restart_attempt: u32, healthy: bool) -> u32 {
+    if healthy {
+        0
+    } else {
+        restart_attempt
+    }
+}
+
 struct Worker {
     child: Child,
 }
@@ -817,6 +829,97 @@ mod tests {
         let t = trim_to_cap(s, 10);
         assert_eq!(t, "ccc\n");
     }
+
+    // ---- worker lifecycle (backoff + respawn ladder) ----
+
+    #[test]
+    fn backoff_ladder_progression() {
+        // attempts 0..4 map to the fixed ladder; beyond clamps at the last
+        assert_eq!(backoff_delay(0), Duration::from_secs(1));
+        assert_eq!(backoff_delay(1), Duration::from_secs(2));
+        assert_eq!(backoff_delay(2), Duration::from_secs(5));
+        assert_eq!(backoff_delay(3), Duration::from_secs(10));
+        assert_eq!(backoff_delay(4), Duration::from_secs(30));
+        // clamped: every later crash repeats the 30s rung
+        assert_eq!(backoff_delay(5), Duration::from_secs(30));
+        assert_eq!(backoff_delay(100), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn next_attempt_advances_on_unhealthy_exit() {
+        // crash loop: each exit advances the ladder (0 -> 1 -> 2)
+        assert_eq!(next_attempt(0, false), 0);
+        assert_eq!(next_attempt(1, false), 1);
+        assert_eq!(next_attempt(2, false), 2);
+    }
+
+    #[test]
+    fn next_attempt_resets_after_healthy_uptime() {
+        // a worker that lived >= HEALTHY_UPTIME restarts the ladder
+        assert_eq!(next_attempt(4, true), 0);
+        assert_eq!(next_attempt(0, true), 0);
+    }
+
+    /// The Rust->worker stdio boundary is the fragile part (spawn, pipe,
+    /// newline JSON-RPC, reply routing). Spawn the REAL service-worker.js
+    /// (found relative to the test binary) and do a ping/pong roundtrip —
+    /// no DHT, no AppHandle, fast. Skipped if the worker isn't reachable
+    /// from the test layout (e.g. cargo test --lib in CI where the repo
+    /// root is two parents up from target/debug).
+    #[test]
+    fn worker_stdio_ping_roundtrip() {
+        let mut worker_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_default();
+        // <root>/src-tauri/target/debug/deps/lib-* -> walk up to the repo
+        // root, then into service-worker.js at the top level
+        for _ in 0..4 {
+            worker_path.pop();
+        }
+        worker_path.push("service-worker.js");
+        if !worker_path.is_file() {
+            eprintln!("skip: worker not at {worker_path:?} (unusual test layout)");
+            return;
+        }
+        let mut child = std::process::Command::new("node")
+            .arg(&worker_path)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn node worker");
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        // send ping, read the pong line
+        let mut writer = std::io::BufWriter::new(stdin);
+        use std::io::Write;
+        writer
+            .write_all(b"{\"id\":\"t1\",\"method\":\"ping\",\"params\":{}}\n")
+            .unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = String::new();
+        use std::io::BufRead;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut pong = None;
+        while std::time::Instant::now() < deadline {
+            line.clear();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                break;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if v.get("id").and_then(|i| i.as_str()) == Some("t1") {
+                    pong = v.get("result").and_then(|r| r.as_str()).map(String::from);
+                    break;
+                }
+            }
+        }
+        assert_eq!(pong.as_deref(), Some("pong"), "worker ping/pong over stdio");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 fn diag_record_spawn(app: &AppHandle) {
@@ -1077,10 +1180,7 @@ fn spawn_worker(app: &AppHandle) -> Result<(), String> {
                         .spawned_at
                         .map(|t| t.elapsed() >= HEALTHY_UPTIME)
                         .unwrap_or(false);
-                    if healthy {
-                        d.restart_attempt = 0;
-                    }
-                    let attempt = d.restart_attempt;
+                    let attempt = next_attempt(d.restart_attempt, healthy);
                     d.restart_attempt += 1;
                     d.running = false;
                     d.last_error = Some(format!("worker exited ({status})"));
