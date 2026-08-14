@@ -43,6 +43,10 @@ export async function lanAddress() {
   return await window.__TAURI__.core.invoke('lan_address')
 }
 
+export async function homeDir() {
+  return await window.__TAURI__.core.invoke('home_dir')
+}
+
 export async function logAppend(line) {
   return await window.__TAURI__.core.invoke('log_append', { line })
 }

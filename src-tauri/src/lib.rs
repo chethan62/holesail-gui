@@ -180,6 +180,13 @@ fn lan_address() -> String {
         .unwrap_or_else(|_| "127.0.0.1".into())
 }
 
+#[tauri::command]
+fn home_dir() -> String {
+    std::env::var_os("HOME")
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /* --------------------------- saved tunnels ---------------------------- */
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1244,6 +1251,27 @@ async fn rpc(
     if !WORKER_READY.load(Ordering::SeqCst) {
         return Err("Service worker is still starting up".to_string());
     }
+    // Trust boundary: this command is the only path from the sandboxed
+    // webview to the worker. The worker's own dispatch() already rejects
+    // unknown methods (its `default` arm throws), so an allowlist here is
+    // defense-in-depth, not a correctness requirement — but it means a
+    // compromised renderer can only ever reach the methods it legitimately
+    // uses, even if the worker's surface grows later. Keep this in sync
+    // with service-worker.js dispatch().
+    const ALLOWED: &[&str] = &[
+        "ping",
+        "server:start",
+        "client:connect",
+        "filemanager:start",
+        "session:stop",
+        "session:pause",
+        "session:resume",
+        "sessions:list",
+        "lookup",
+    ];
+    if !ALLOWED.contains(&method.as_str()) {
+        return Err(format!("Method not allowed: {method}"));
+    }
     let id = format!(
         "{}-{}",
         NEXT_RPC_ID.fetch_add(1, Ordering::Relaxed),
@@ -1465,6 +1493,7 @@ pub fn run() {
             take_pending_deep_links,
             version_info,
             lan_address,
+            home_dir,
             log_append,
             saved_list,
             saved_save,

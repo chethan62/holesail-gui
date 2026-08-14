@@ -85,6 +85,17 @@ function pickFreePort() {
 const sessions = new Map() // id -> { hs, type, url, port, host, secure, protocol, key, publicKey, state }
 let nextId = 1
 
+// Hard ceiling on concurrent tunnels. A single-user local GUI should never
+// need hundreds; this guards against fd/port exhaustion from a runaway
+// script or a UI bug that re-shares the same port in a loop.
+const MAX_SESSIONS = 50
+
+function assertCapacity() {
+  if (sessions.size >= MAX_SESSIONS) {
+    throw new Error(`Too many sessions (limit ${MAX_SESSIONS}) — stop some before starting more`)
+  }
+}
+
 /* ------------------------------ transport ------------------------------ */
 
 function send(obj) {
@@ -126,6 +137,7 @@ function emitSession(session) {
 }
 
 async function startServer(params) {
+  assertCapacity()
   const port = Number(params.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid port: ${params.port}`)
@@ -150,6 +162,7 @@ async function startServer(params) {
 }
 
 async function startFilemanager(params) {
+  assertCapacity()
   const dir = params.path
   if (typeof dir !== 'string' || dir.length === 0) {
     throw new Error('Directory path is required')
@@ -207,6 +220,7 @@ async function startFilemanager(params) {
 }
 
 async function connectClient(params) {
+  assertCapacity()
   // URL parsers normalize hs://s000… to hs://s000…/ — the trailing slash
   // becomes part of the key and derives a WRONG seed (a phantom tunnel
   // that never establishes, with no error). Strip it.

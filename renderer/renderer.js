@@ -13,6 +13,7 @@ import {
   onAppEvent,
   versionInfo,
   lanAddress,
+  homeDir,
   logAppend,
   savedList,
   savedSave,
@@ -114,6 +115,28 @@ function copyText(text) {
 function maskKey(url) {
   if (url.length <= 16) return url
   return url.slice(0, 10) + '…' + url.slice(-8)
+}
+
+/// True when `path` is the filesystem root, a home directory, or a home
+/// dir's immediate children — the sort of thing a fat-fingered share could
+/// accidentally expose over the DHT. Cross-platform (POSIX + Windows drive
+/// roots); never throws on weird input.
+function isBroadSharePath(p) {
+  const s = String(p || '').trim().replace(/[\\/]+$/, '')
+  if (!s) return false
+  // filesystem root: "/", "C:\", "C:/", "\\", etc.
+  if (s === '/' || s === '\\' || /^[a-zA-Z]:[\\/]?$/.test(s)) return true
+  // home dir itself
+  const home = (state.homeDir || '').replace(/[\\/]+$/, '')
+  if (home && (s === home || s.toLowerCase() === home.toLowerCase())) return true
+  // home dir's immediate children (e.g. ~/Documents, ~/.ssh, ~/Downloads)
+  // — the parent of `s` equals home
+  const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+  if (home && idx > 0) {
+    const parent = s.slice(0, idx)
+    if (parent === home || parent.toLowerCase() === home.toLowerCase()) return true
+  }
+  return false
 }
 
 /// Yes/No confirm as a dismissable toast with two buttons — native
@@ -836,6 +859,20 @@ async function startFilemanagerShare(event) {
     toast('Enter a folder path', true)
     return
   }
+  // Guardrail: sharing an entire home directory (or the filesystem root)
+  // over the DHT is almost never what a fat-fingered path intended. Cheap
+  // insurance — ask once before exposing something that broad.
+  const broad = isBroadSharePath(path)
+  if (broad) {
+    const go = await confirmInline(
+      `"${path}" is a broad path — this would expose it over the tunnel. Share it anyway?`
+    )
+    if (!go) {
+      log(`Folder share aborted — broad path "${path}"`, 'warn')
+      return
+    }
+    log(`Sharing broad path "${path}" (user confirmed)`, 'warn')
+  }
   const isPerm = $('#fm-perm').checked
   const key = $('#fm-key').value.trim() || undefined
   const params = { path, secure: $('#fm-secure').checked, key }
@@ -1313,6 +1350,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     state.lanIp = await lanAddress()
     renderSessions() // cards may have rendered before the fetch finished
+  } catch {}
+  // Home directory for the folder-share broad-path guardrail
+  try {
+    state.homeDir = await homeDir()
   } catch {}
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
