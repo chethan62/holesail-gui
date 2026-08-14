@@ -865,7 +865,10 @@ fn find_worker(app: &AppHandle) -> Option<PathBuf> {
 #[cfg(not(target_os = "android"))]
 fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     if let Ok(dir) = app.path().resource_dir() {
-        let bare = dir.join("bare");
+        // bare-runtime-win32-* ships bin/bare.exe; prepare-resources.mjs
+        // preserves that name when bundling (see its --bare handling).
+        let bare_name = if cfg!(windows) { "bare.exe" } else { "bare" };
+        let bare = dir.join(bare_name);
         let worker = dir.join("service-worker.js");
         if bare.is_file() && worker.is_file() {
             return Ok((bare, worker));

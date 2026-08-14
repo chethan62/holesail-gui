@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../dist-resources/service-worker.js": "service-worker.js",
+      "../dist-resources/node_modules": "node_modules",
+      "../dist-resources/bare.exe": "bare.exe"
+    }
+  }
+}

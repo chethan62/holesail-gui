@@ -179,7 +179,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set +e
-          node scripts/prepare-resources.mjs
+          # --bare bundles the win32 bare runtime + .bare-ABI native addons
+          # (tauri.windows.conf.json ships it as a resource), so installed
+          # builds don't need end users to have Node.js at all.
+          node scripts/prepare-resources.mjs --bare
           # 'io: Peer disconnected' at the MSI bundle step is a runner-side
           # network drop (2/3 runs on 2026-08-12); retry the whole build.
           for attempt in 1 2 3; do
@@ -217,7 +220,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          node scripts/prepare-resources.mjs
+          # --bare bundles the darwin bare runtime + .bare-ABI native addons
+          # (tauri.macos.conf.json ships it as a resource), so installed
+          # builds don't need end users to have Node.js at all.
+          node scripts/prepare-resources.mjs --bare
           npx tauri build
 
       - uses: actions/upload-artifact@v4

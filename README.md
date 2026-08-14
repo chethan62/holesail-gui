@@ -69,13 +69,14 @@ command. The GUI adds what the terminal can't:
 | Platform | Status | Deliverables |
 |---|---|---|
 | **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, flatpak manifest |
-| **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — needs Node 18+ on the machine |
+| **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
 | **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section |
-| macOS | code-compatible, untested here | `.dmg`/`.app` via `tauri build` on a Mac |
+| **macOS** | ✅ builds via CI (untested on real hardware) | `.dmg`/`.app` — bare runtime bundled, no Node needed |
 
-The three primary targets are built automatically by the GitHub Actions
-workflow in `.github/workflows/build.yml` (artifacts on every push /
-`workflow_dispatch`).
+All four targets are built automatically by the GitHub Actions workflow in
+`.github/workflows/build.yml` (artifacts on every push / `workflow_dispatch`);
+macOS just hasn't been verified end-to-end on real hardware the way Linux and
+Android have.
 
 ## Architecture
 
@@ -86,23 +87,25 @@ workflow in `.github/workflows/build.yml` (artifacts on every push /
 └──────────────────────────┘        └──────────────┬───────────────┘
                                                    │ stdio JSON-RPC
                                     ┌──────────────▼───────────────┐
-                                    │ service-worker.js (plain     │
-                                    │ Node — NOT Electron's Node)  │
+                                    │ service-worker.js (plain JS, │
+                                    │ Node or Bare — NOT Electron) │
                                     │  └── holesail npm package    │
                                     └──────────────────────────────┘
 ```
 
-Why a separate Node worker? `holesail` depends on native addons
-(`sodium-native`, `udx-native`) that are prebuilt for the **Node ABI**. Running
-them inside a webview/Electron process breaks on ABI mismatch. The worker runs
-under the system `node` binary, so the addons load as-is; the Rust backend only
-proxies JSON-RPC over stdio.
+Why a separate worker process? `holesail` depends on native addons
+(`sodium-native`, `udx-native`) that are prebuilt per-runtime-ABI. Running them
+inside a webview/Electron process breaks on ABI mismatch. The worker runs
+under its own process (Node in dev, the bundled **Bare** runtime in packaged
+builds — see below), so the addons load as-is; the Rust backend only proxies
+JSON-RPC over stdio.
 
 ## Requirements
 
-- **Node.js 18+** (`node` on PATH) — for development and for the
-  Windows/macOS packages; the **Linux** packages embed the Bare runtime, so
-  end users don't need Node at all
+- **Node.js 18+** (`node` on PATH) — for development (`npm run dev`) on every
+  platform. Packaged installers for **all four targets** (Linux, Windows,
+  macOS, Android) embed the **Bare** runtime instead, so end users don't need
+  Node.js installed at all — see [Build a release bundle](#build-a-release-bundle).
 - Rust toolchain (`cargo`) for Tauri
 - Linux: `webkit2gtk-4.1` + `gtk3` dev packages (Tauri prerequisites;
   see [Tauri docs](https://v2.tauri.app/start/prerequisites/))
@@ -172,14 +175,18 @@ flatpak run io.holesail.gui
 > Note: the flatpak manifest is written but **not verified in this repo's CI
 > environment** (needs `flatpak-builder` + the SDK runtimes).
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
-  respectively with the same resource layout.
+  respectively with the same resource layout — `tauri.macos.conf.json` and
+  `tauri.windows.conf.json` bundle the platform's `bare`/`bare.exe` binary as
+  a resource alongside the pruned `node_modules`.
 
-**Packaged-app requirements:** the GUI prefers the **bundled Bare runtime**
-(same engine as the Android build — no Node needed). Linux packages ship it;
-Windows/macOS installers still spawn `node` from PATH, so those end-user
-machines need Node.js 18+ installed (documented in the release notes).
-Switching Windows/macOS to the embedded runtime is future work once verified
-there.
+**Packaged-app requirements:** every platform's installer bundles the
+**Bare runtime** (same engine used for Android) instead of relying on system
+Node — `worker_command()` in `src-tauri/src/lib.rs` prefers the bundled
+`bare`/`bare.exe` next to `service-worker.js` and only falls back to spawning
+`node` from PATH when that bundle is missing (e.g. an unpackaged dev
+checkout, or a build produced without `--bare`). End users on Linux, Windows,
+macOS, and Android do not need Node.js installed. macOS bundling is
+CI-verified but not yet confirmed on real Apple hardware.
 
 ## Using the app
 

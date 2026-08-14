@@ -12,9 +12,12 @@
  *   --out <dir>    output directory (default: dist-resources)
  *   --target <t>   keep only prebuilds for this platform-arch, e.g.
  *                  linux-x64 (default: host) or android-arm64
- *   --bare         Android backend mode: also install bare-runtime-<target>,
- *                  copy its binary to <out>/bare, and keep only the .bare
- *                  addon prebuilds (drop the node-ABI .node files).
+ *   --bare         Bundled-runtime mode: also install bare-runtime-<target>,
+ *                  copy its binary to <out>/bare (<out>/bare.exe on
+ *                  win32-* targets), and keep only the .bare addon
+ *                  prebuilds (drop the node-ABI .node files). Used for
+ *                  Android, and for Linux/Windows/macOS desktop packages
+ *                  so end users don't need Node.js installed.
  */
 
 import { execSync } from 'node:child_process'
@@ -104,19 +107,30 @@ walk(path.join(out, 'node_modules'))
 // the os-gated bare-runtime-* package for a foreign platform (e.g.
 // android-arm64 from a linux host), so fetch it directly with npm pack.
 if (opt.bare) {
+  // bare-runtime-win32-* ships bin/bare.exe; every other platform ships
+  // bin/bare (no extension). The bundled resource keeps the same name so
+  // Windows can execute it directly (CreateProcess doesn't require the
+  // extension for a full path, but .exe keeps it consistent with how
+  // Windows tooling/AV expects a native binary to look).
+  const isWindows = opt.target.startsWith('win32-')
+  const binName = isWindows ? 'bare.exe' : 'bare'
+
   const runtimePkg = 'bare-runtime-' + opt.target
   const tgz = execSync(`npm pack ${runtimePkg}@${BARE_RUNTIME_VERSION} --silent`, { cwd: out })
     .toString()
     .trim()
   execSync(`tar -xzf ${tgz}`, { cwd: out })
-  cpSync(path.join(out, 'package', 'bin', 'bare'), path.join(out, 'bare'))
-  chmodSync(path.join(out, 'bare'), 0o755)
+  cpSync(path.join(out, 'package', 'bin', binName), path.join(out, binName))
+  chmodSync(path.join(out, binName), 0o755)
   // the runtime ships with debug info (~80MB); strip it best-effort
+  // (strip/llvm-strip may not understand a foreign-platform PE/Mach-O
+  // binary when cross-prepping, e.g. --target win32-x64 on a Linux CI
+  // runner — that's fine, the failure is silently swallowed below).
   try {
-    execSync(`llvm-strip --strip-all ${path.join(out, 'bare')}`, { stdio: 'ignore' })
+    execSync(`llvm-strip --strip-all ${path.join(out, binName)}`, { stdio: 'ignore' })
   } catch {
     try {
-      execSync(`strip ${path.join(out, 'bare')}`, { stdio: 'ignore' })
+      execSync(`strip ${path.join(out, binName)}`, { stdio: 'ignore' })
     } catch {
       console.log('warning: could not strip bare runtime binary')
     }
