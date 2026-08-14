@@ -993,7 +993,7 @@ fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
         }
     }
     for dir in &dirs {
-        let bare = dir.join(&bare_name);
+        let bare = dir.join(bare_name);
         let worker = dir.join("service-worker.js");
         if bare.is_file() && worker.is_file() {
             return Ok((bare, worker));
