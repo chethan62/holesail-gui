@@ -122,10 +122,14 @@ function maskKey(url) {
 /// accidentally expose over the DHT. Cross-platform (POSIX + Windows drive
 /// roots); never throws on weird input.
 function isBroadSharePath(p) {
-  const s = String(p || '').trim().replace(/[\\/]+$/, '')
+  const raw = String(p || '').trim()
+  if (!raw) return false
+  // filesystem root: "/", "\", "C:\", "C:/" — check BEFORE trimming
+  // trailing slashes, since a bare root trims down to '' and would
+  // otherwise fall through the empty-string guard below untested.
+  if (raw === '/' || raw === '\\' || /^[a-zA-Z]:[\\/]?$/.test(raw)) return true
+  const s = raw.replace(/[\\/]+$/, '')
   if (!s) return false
-  // filesystem root: "/", "C:\", "C:/", "\\", etc.
-  if (s === '/' || s === '\\' || /^[a-zA-Z]:[\\/]?$/.test(s)) return true
   // home dir itself
   const home = (state.homeDir || '').replace(/[\\/]+$/, '')
   if (home && (s === home || s.toLowerCase() === home.toLowerCase())) return true
