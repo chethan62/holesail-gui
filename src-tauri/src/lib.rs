@@ -1427,6 +1427,7 @@ async fn rpc(
         "session:pause",
         "session:resume",
         "sessions:list",
+        "session:stats",
         "lookup",
     ];
     if !ALLOWED.contains(&method.as_str()) {

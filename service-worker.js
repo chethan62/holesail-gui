@@ -82,8 +82,76 @@ function pickFreePort() {
   })
 }
 
-const sessions = new Map() // id -> { hs, type, url, port, host, secure, protocol, key, publicKey, state }
+const sessions = new Map() // id -> { hs, type, url, port, host, secure, protocol, key, publicKey, state, stats }
 let nextId = 1
+
+// Traffic counters live on the SAME `stats` object the holesail engine
+// threads into connPiper/createTcpProxy/pipeUdpFramedServer (it mutates
+// locCnt/remCnt/rejectCnt there — we add byte counters it never touches).
+// This survives upstream engine changes that swap internal plumbing,
+// because the engine always hands the piper the object we give it.
+//   stats.bytesUp   — bytes from the local service TO the tunnel (upload)
+//   stats.bytesDown — bytes from the tunnel TO the local service (download)
+//   stats.locCnt    — live TCP connections (engine-maintained)
+//   stats.rejectCnt — rejected connections (engine-maintained)
+const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
+
+// Wire per-session byte counters at the data boundaries we can actually
+// reach post-ready:
+//   SERVER — the hyperdht Server emits 'connection' per incoming tunnel
+//            stream: bytes read from it = download (remote -> local),
+//            bytes written to it = upload (local -> remote). This covers
+//            both TCP and UDP (UDP rides framed streams on the same DHT
+//            connection).
+//   CLIENT — the local TCP proxy (net.Server) emits 'connection' per local
+//            app socket: bytes read from it = upload, bytes written to it
+//            = download.
+//   UDP client — the dgram proxySocket: 'message' from local = upload,
+//            send() to local = download.
+// The engine's connPiper never counts bytes (only locCnt/remCnt/rejectCnt),
+// so we count at these choke points instead — no engine internals needed,
+// and it survives upstream plumbing changes.
+function wireDataCounters(entry) {
+  const dht = entry.hs && entry.hs.dht
+  if (!dht) return
+  const stats = entry.stats
+  const bump = (dir, n) => {
+    if (n > 0) stats[dir] = (stats[dir] || 0) + n
+  }
+  const wrapStream = (stream, upDir, downDir) => {
+    if (!stream || stream.__hgCounted) return
+    stream.__hgCounted = true
+    stream.on('data', (d) => bump(downDir, d ? d.length : 0))
+    if (typeof stream.write === 'function') {
+      const ow = stream.write.bind(stream)
+      stream.write = (buf, ...rest) => {
+        bump(upDir, typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0)
+        return ow(buf, ...rest)
+      }
+    }
+  }
+
+  // SERVER: every incoming tunnel connection
+  if (dht.server && typeof dht.server.on === 'function') {
+    dht.server.on('connection', (c) => wrapStream(c, 'bytesUp', 'bytesDown'))
+  }
+  // CLIENT TCP: every local app connection through the proxy
+  if (dht.proxy && typeof dht.proxy.on === 'function') {
+    dht.proxy.on('connection', (sock) => wrapStream(sock, 'bytesUp', 'bytesDown'))
+  }
+  // CLIENT UDP: the dgram socket
+  if (dht.proxySocket && typeof dht.proxySocket.on === 'function') {
+    const ps = dht.proxySocket
+    ps.on('message', (m) => bump('bytesUp', m ? m.length : 0))
+    if (typeof ps.send === 'function') {
+      const osend = ps.send.bind(ps)
+      ps.send = (buf, ...rest) => {
+        bump('bytesDown', typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0)
+        return osend(buf, ...rest)
+      }
+    }
+  }
+}
 
 // Hard ceiling on concurrent tunnels. A single-user local GUI should never
 // need hundreds; this guards against fd/port exhaustion from a runaway
@@ -153,12 +221,55 @@ function recordFromHs(hs, id) {
     url: info.url,
     key: info.key,
     publicKey: info.publicKey,
-    state: 'running'
+    state: 'running',
+    stats: { bytesUp: 0, bytesDown: 0 }
   }
 }
 
 function emitSession(session) {
   sendEvent('session:update', session)
+}
+
+// Session start hooks into the engine's stats object (TCP) + socket wraps
+// (UDP). Called right after the session is registered so counters live on
+// the object the engine mutates from the first byte.
+function wireSessionStats(entry) {
+  if (!entry || !entry.hs) return
+  const hs = entry.hs
+  // The engine assigns `this.stats = {}` inside HolesailServer/HolesailClient
+  // constructors, and by the time we wire (post-ready) `hs.dht` IS the
+  // server/client with its own stats object already threaded into the piper.
+  // Attach our byte counters to that live object so counts accumulate from
+  // the first byte — and remember it so the throttled emit reads the same
+  // object the engine mutates.
+  if (hs.dht && hs.dht.stats && typeof hs.dht.stats === 'object') {
+    entry.stats = hs.dht.stats
+    if (!('bytesUp' in entry.stats)) entry.stats.bytesUp = 0
+    if (!('bytesDown' in entry.stats)) entry.stats.bytesDown = 0
+  }
+  wireDataCounters(entry)
+}
+
+// Per-session traffic readout, throttled. The renderer holds the full
+// session record (including stats) and refreshes counters in place — the
+// payload here is the SAME shape as sessions:list entries.
+const statsTimers = new Map() // id -> timeout handle
+function armStatsEmit(entry) {
+  if (statsTimers.has(entry.id)) return
+  statsTimers.set(
+    entry.id,
+    setTimeout(() => {
+      statsTimers.delete(entry.id)
+      const current = sessions.get(entry.id)
+      if (!current) return
+      emitSession({
+        id: current.id,
+        stats: current.stats,
+        locCnt: current.stats.locCnt || 0,
+        rejectCnt: current.stats.rejectCnt || 0
+      })
+    }, STATS_EMIT_MS)
+  )
 }
 
 async function startServer(params) {
@@ -181,7 +292,10 @@ async function startServer(params) {
   await hs.ready()
   const id = String(nextId++)
   const session = recordFromHs(hs, id)
-  sessions.set(id, { hs, ...session })
+  const entry = { hs, ...session }
+  sessions.set(id, entry)
+  wireSessionStats(entry)
+  armStatsEmit(entry)
   emitSession(session)
   return session
 }
@@ -248,7 +362,10 @@ async function startFilemanager(params) {
     fsUsername: fsInfo.username || null,
     fsPassword: fsInfo.password || null
   }
-  sessions.set(id, { hs, fileServer, ...session })
+  const entry = { hs, fileServer, ...session }
+  sessions.set(id, entry)
+  wireSessionStats(entry)
+  armStatsEmit(entry)
   emitSession(session)
   return session
 }
@@ -286,7 +403,10 @@ async function connectClient(params) {
   await hs.ready()
   const id = String(nextId++)
   const session = recordFromHs(hs, id)
-  sessions.set(id, { hs, ...session })
+  const entry = { hs, ...session }
+  sessions.set(id, entry)
+  wireSessionStats(entry)
+  armStatsEmit(entry)
   emitSession(session)
   return session
 }
@@ -294,6 +414,13 @@ async function connectClient(params) {
 async function stopSession(id) {
   const entry = sessions.get(id)
   if (!entry) throw new Error(`No session with id ${id}`)
+  // stop the throttled stats emitter so no stale counter event lands after
+  // the card is gone (the renderer deletes sessions on 'stopped')
+  const t = statsTimers.get(id)
+  if (t) {
+    clearTimeout(t)
+    statsTimers.delete(id)
+  }
   await entry.hs.close()
   // filemanager sessions own a Livefiles server next to the tunnel
   if (entry.fileServer) {
@@ -328,6 +455,22 @@ function listSessions() {
   return [...sessions.values()].map(({ hs, ...s }) => s)
 }
 
+// Session-level traffic/connection readout, unpolled by the renderer (it
+// subscribes to the throttled session:update events instead) — kept as an
+// RPC for debugging and for clients that want a one-shot snapshot.
+function getSessionStats(id) {
+  const entry = sessions.get(id)
+  if (!entry) throw new Error(`No session with id ${id}`)
+  const stats = entry.stats || {}
+  return {
+    id,
+    bytesUp: stats.bytesUp || 0,
+    bytesDown: stats.bytesDown || 0,
+    locCnt: stats.locCnt || 0,
+    rejectCnt: stats.rejectCnt || 0
+  }
+}
+
 /* -------------------------------- rpc ---------------------------------- */
 
 async function dispatch(method, params) {
@@ -348,6 +491,8 @@ async function dispatch(method, params) {
       return resumeSession(params.id)
     case 'sessions:list':
       return listSessions()
+    case 'session:stats':
+      return getSessionStats(params.id)
     // Holesail.lookup returns the server's DHT record ({host, port,
     // protocol, secure}) when the key is announced. For a well-formed but
     // UNANNOUNCED key it returns `{ secure: true/false }` — a bare shell

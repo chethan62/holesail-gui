@@ -232,7 +232,50 @@ async function main() {
     )
     await rpc('session:stop', { id: prServer.id })
 
-    console.log('13) lookup: online key resolves, offline key returns null')
+    console.log('13) traffic stats: bytes flow through the tunnel and are counted')
+    const net2 = require('net')
+    const tServer = net2.createServer((sock) => {
+      // echo server: whatever the client sends comes back
+      sock.on('data', (d) => sock.write(d))
+    })
+    await new Promise((res) => tServer.listen(0, '127.0.0.1', res))
+    const tPort = tServer.address().port
+    const statsServer = await rpc('server:start', { port: tPort, secure: true }, 90000)
+    const statsClient = await rpc('client:connect', { key: statsServer.url }, 90000)
+    const probe = net2.connect({ host: '127.0.0.1', port: statsClient.port })
+    await new Promise((res, rej) => {
+      probe.on('connect', res)
+      probe.on('error', rej)
+    })
+    const payload = Buffer.alloc(64 * 1024, 0x61) // 64 KiB
+    probe.write(payload)
+    await new Promise((res) => probe.on('data', res)) // echo back
+    probe.end()
+    await sleep(900) // let the throttled stats events drain (500ms)
+    const srvStats = await rpc('session:stats', { id: statsServer.id })
+    const cliStats = await rpc('session:stats', { id: statsClient.id })
+    assert(
+      srvStats.bytesDown >= payload.length,
+      `server counted ${payload.length} bytes down (got ${srvStats.bytesDown})`
+    )
+    assert(
+      srvStats.bytesUp >= payload.length,
+      `server counted ${payload.length} bytes up (got ${srvStats.bytesUp})`
+    )
+    assert(
+      cliStats.bytesDown >= payload.length,
+      `client counted ${payload.length} bytes down (got ${cliStats.bytesDown})`
+    )
+    assert(
+      cliStats.bytesUp >= payload.length,
+      `client counted ${payload.length} bytes up (got ${cliStats.bytesUp})`
+    )
+    assert(srvStats.locCnt === 0, 'no lingering connections after close')
+    await rpc('session:stop', { id: statsClient.id })
+    await rpc('session:stop', { id: statsServer.id })
+    await new Promise((res) => tServer.close(res))
+
+    console.log('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
     const online = await rpc('lookup', { key: lkServer.url }, 60000)
     assert(online && typeof online === 'object', 'lookup of a live server returns its DHT record')
@@ -254,7 +297,7 @@ async function main() {
     assert(badErr !== null, 'lookup of a malformed public key throws')
     await rpc('session:stop', { id: lkServer.id })
 
-    console.log('14) filemanager accepts a fixed key (permanent folder shares)')
+    console.log('15) filemanager accepts a fixed key (permanent folder shares)')
     const fmKey = 'b'.repeat(64)
     const fmDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-key-'))
     fs.writeFileSync(path.join(fmDir2, 'f.txt'), 'x')

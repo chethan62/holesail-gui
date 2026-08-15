@@ -175,6 +175,20 @@ function fmtDuration(ms) {
   return h + 'h ' + (m % 60) + 'm'
 }
 
+// Human byte count: 0 B, 1.2 KB, 3.4 MB, 5.6 GB. Rounds to whole B below
+// 1 KB, one decimal from KB up.
+function fmtBytes(n) {
+  n = Number(n) || 0
+  if (n < 1024) return n + ' B'
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let u = -1
+  do {
+    n /= 1024
+    u++
+  } while (n >= 1024 && u < units.length - 1)
+  return (n >= 10 ? Math.round(n) : n.toFixed(1)) + ' ' + units[u]
+}
+
 /* DOM builder helpers — all text goes through textContent so untrusted
    values (connection strings, hosts, log lines) can never inject HTML. */
 function el(tag, className = '', id = '', text = '') {
@@ -232,12 +246,19 @@ function upsertSession(data) {
     const existing = state.sessions.get(data.id)
     if (existing) {
       Object.assign(existing, data) // events may carry only {id, state}
+      // stats-only events (throttled traffic readout) must not trigger a
+      // full card rebuild — just patch the live counters in place
+      if (data.stats && data.state === undefined) {
+        updateTrafficReadout(data.id)
+      } else {
+        renderSessions()
+      }
     } else {
       state.sessions.set(data.id, { ...data })
       if (!state.meta.has(data.id)) state.meta.set(data.id, { startedAt: Date.now() })
+      renderSessions()
     }
   }
-  renderSessions()
 }
 
 /// Remember the params that started a session so a dropped temporary
@@ -525,6 +546,22 @@ function renderSession(container, s) {
   up.append('Uptime: ', el('strong', 'up', '', uptime))
   metaRow.append(up)
   urlCol.append(metaRow)
+
+  // live traffic readout (from the worker's throttled session:update
+  // events — counts ride the engine's own stats object, so they keep
+  // working even if internal plumbing changes)
+  const stats = s.stats || {}
+  const trafficRow = el('div', 'traffic')
+  const upSpan = el('span', 't-up', 'traffic-up-' + s.id)
+  upSpan.append('▲ ', el('strong', '', '', fmtBytes(stats.bytesUp)))
+  const downSpan = el('span', 't-down', 'traffic-down-' + s.id)
+  downSpan.append('▼ ', el('strong', '', '', fmtBytes(stats.bytesDown)))
+  trafficRow.append(upSpan, ' · ', downSpan)
+  const connSpan = el('span', 't-conn', 'traffic-conn-' + s.id)
+  connSpan.textContent = (stats.locCnt ? stats.locCnt + ' conn' : '') + (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
+  if (connSpan.textContent) trafficRow.append(' · ', connSpan)
+  trafficRow.title = 'Upload / download through the tunnel · live connections'
+  urlCol.append(trafficRow)
   body.append(urlCol)
   card.append(body)
 
@@ -551,6 +588,27 @@ function renderSession(container, s) {
   card.append(actions)
 
   container.append(card)
+}
+
+/// Patch the traffic readout on an existing card in place (the worker
+/// sends ~2 stats events/sec/session; a full renderSessions() each time
+/// would rebuild QR codes and lose focus/scroll). The session record in
+/// state is already updated by the caller (upsertSession's Object.assign).
+function updateTrafficReadout(id) {
+  const s = state.sessions.get(id)
+  if (!s) return
+  const stats = s.stats || {}
+  const up = document.getElementById('traffic-up-' + id)
+  const down = document.getElementById('traffic-down-' + id)
+  const conn = document.getElementById('traffic-conn-' + id)
+  if (up) up.querySelector('strong').textContent = fmtBytes(stats.bytesUp)
+  if (down) down.querySelector('strong').textContent = fmtBytes(stats.bytesDown)
+  if (conn) {
+    const text =
+      (stats.locCnt ? stats.locCnt + ' conn' : '') +
+      (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
+    conn.textContent = text
+  }
 }
 
 /* ------------------------------ worker ---------------------------------- */
