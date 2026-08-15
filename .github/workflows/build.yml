@@ -292,69 +292,10 @@ jobs:
           path: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
-  flatpak:
-    name: Flatpak (io.holesail.gui)
-    needs: test
-    # DISABLED — source-module chain (ayatana-ido pc file) is broken in CI;
-    # revisit later. See commit history for the last attempt. Manual build:
-    # ./packaging/flatpak/build.sh
-    if: false
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Tauri Linux dependencies + flatpak tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
-            flatpak flatpak-builder
-          # The runner has no flathub remote by default; the GNOME runtime/SDK
-          # are required before flatpak-builder can resolve the manifest.
-          flatpak remote-add --user --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y --noninteractive flathub \
-            org.gnome.Platform//47 org.gnome.Sdk//47
-
-      - run: npm ci
-
-      - name: Build release binary + bundle (retry transient bundler failures)
-        run: |
-          set +e
-          node scripts/prepare-resources.mjs --bare
-          (cd dist-resources && tar -cf node_modules.tar node_modules)
-          # release build for the flatpak (simple buildsystem installs it)
-          cargo build --release --manifest-path src-tauri/Cargo.toml
-          # flatpak-builder: build the bundle. Runtime download is one-time;
-          # the module build (intltool/libdbusmenu/ayatana) is the long pole.
-          for attempt in 1 2 3; do
-            echo "flatpak build attempt $attempt"
-            cd packaging/flatpak && flatpak-builder --user --force-clean \
-              --disable-rofiles-fuse build-dir io.holesail.gui.yml && exit 0
-            cd ../..
-            sleep 10
-          done
-          echo "flatpak build failed after 3 attempts"
-          exit 1
-
-      - name: Export bundle artifact
-        run: |
-          cd packaging/flatpak
-          flatpak build-export --no-update-summary /tmp/hg-repo build-dir
-          flatpak build-update-repo /tmp/hg-repo
-          flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-            /tmp/hg-repo holesail-gui.flatpak io.holesail.gui
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: holesail-gui-flatpak
-          path: packaging/flatpak/holesail-gui.flatpak
+  # NOTE: a flatpak CI job was removed here (commit 5ebcf22). The
+  # source-module chain (ayatana-ido pc file not found by
+  # libayatana-indicator's cmake inside the GNOME SDK) is broken in CI;
+  # manual build still works: ./packaging/flatpak/build.sh
 
   release:
     name: GitHub Release
