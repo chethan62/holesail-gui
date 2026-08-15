@@ -25,6 +25,9 @@ network.
 
 ## Why does this exist? (the problem it solves)
 
+<details>
+<summary>The three usual headaches</summary>
+
 Exposing a local service to the internet usually means one of these
 headaches:
 
@@ -41,7 +44,12 @@ holesail sidesteps all three: both ends connect *outward* to the DHT
 then talk directly peer-to-peer with end-to-end encryption. **No relay
 server, no open firewall ports, no static IP.**
 
+</details>
+
 ## Why a GUI?
+
+<details>
+<summary>What the GUI adds over the CLI</summary>
 
 The CLI works, but tunnels are a *continuous* thing, not a one-shot
 command. The GUI adds what the terminal can't:
@@ -56,7 +64,12 @@ command. The GUI adds what the terminal can't:
 - **A phone app** — the same codebase runs on Android, so a phone can be
   a tunnel *server* too (e.g. share Termux/HTTP servers outward)
 
+</details>
+
 ## Typical uses
+
+<details>
+<summary>Real-world scenarios</summary>
 
 - Reach your home PC's apps (SearXNG, Jellyfin, dev servers) from your
   phone on mobile data
@@ -65,6 +78,8 @@ command. The GUI adds what the terminal can't:
   your PC
 - A private, key-based alternative to exposing services — nobody can
   connect without the connection string
+
+</details>
 
 ## Benefits (TL;DR)
 
@@ -97,6 +112,9 @@ Android have.
 
 ## Architecture
 
+<details>
+<summary>How the pieces fit</summary>
+
 ```
 ┌──────────────────────────┐        ┌──────────────────────────────┐
 │  Webview (renderer/)     │  IPC   │  Rust backend (src-tauri/)   │
@@ -117,7 +135,12 @@ under its own process (Node in dev, the bundled **Bare** runtime in packaged
 builds — see below), so the addons load as-is; the Rust backend only proxies
 JSON-RPC over stdio.
 
+</details>
+
 ## Requirements
+
+<details>
+<summary>Dev + end-user needs</summary>
 
 - **Node.js 18+** (`node` on PATH) — for development (`npm run dev`) on every
   platform. Packaged installers for **all four targets** (Linux, Windows,
@@ -126,6 +149,8 @@ JSON-RPC over stdio.
 - Rust toolchain (`cargo`) for Tauri
 - Linux: `webkit2gtk-4.1` + `gtk3` dev packages (Tauri prerequisites;
   see [Tauri docs](https://v2.tauri.app/start/prerequisites/))
+
+</details>
 
 ## Run (development)
 
@@ -146,6 +171,9 @@ The test talks to the exact same `service-worker.js` the GUI uses, so a green
 real tunnel).
 
 ## Build a release bundle
+
+<details>
+<summary>Linux (.deb/.rpm/AppImage/pacman/Flatpak)</summary>
 
 ```bash
 npm run build        # prepares resources, then tauri build (deb + rpm + AppImage on Linux)
@@ -195,6 +223,12 @@ flatpak run io.holesail.gui
 > Note: built + launched successfully on a Linux dev box (2026-08-15) and
 > verified in CI via the `flatpak` job in `.github/workflows/build.yml`
 > (builds `holesail-gui.flatpak`, shipped with releases).
+
+</details>
+
+<details>
+<summary>macOS / Windows</summary>
+
 - **macOS / Windows:** `npm run build` produces `.dmg`/`.app` and `.msi`/`.exe`
   respectively with the same resource layout — `tauri.macos.conf.json` and
   `tauri.windows.conf.json` bundle the platform's `bare`/`bare.exe` binary as
@@ -209,7 +243,12 @@ checkout, or a build produced without `--bare`). End users on Linux, Windows,
 macOS, and Android do not need Node.js installed. macOS bundling is
 CI-verified but not yet confirmed on real Apple hardware.
 
+</details>
+
 ## Using the app
+
+<details>
+<summary>Share, connect, saved tunnels, deep links, tray</summary>
 
 **Share a port** — pick a local port (e.g. 3000), optionally a custom 32+ hex char key,
 toggle private/public. A session card appears with the `hs://s000…` connection
@@ -238,7 +277,12 @@ Android, a boot receiver restores them after device reboots.
 
 **System tray** — closing the window hides the app (tunnels keep running) and a tray icon appears with *Show / Stop all tunnels / Quit*. Quit from the tray is the only way to fully exit while tunnels are active.
 
+</details>
+
 ## Android
+
+<details>
+<summary>APK build</summary>
 
 An Android project is scaffolded with `tauri android init` (already done — see
 `src-tauri/gen/android/`, regenerated on demand; the mobile capability lives in
@@ -304,6 +348,8 @@ arrives on the device — in both directions.
 > `/home/chethan/.reasonix/global-workspace/android-sdk` (not in `$HOME`,
 > which is read-only). `ANDROID_USER_HOME` must also point at a writable dir
 > or `sdkmanager`/gradle will fail.
+
+</details>
 
 ## Changelog
 
