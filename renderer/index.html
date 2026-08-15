@@ -70,6 +70,11 @@
             <input id="share-secure" type="checkbox" checked />
             <span class="check-text">Private mode (secure)</span>
           </label>
+          <div class="full warn-banner" id="share-public-warn" hidden>
+            ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
+            can connect, and traffic is <strong>plaintext</strong>. Only use this
+            for services you'd expose publicly anyway.
+          </div>
           <label class="check">
             <input id="share-udp" type="checkbox" />
             <span class="check-text">Use UDP</span>
@@ -114,6 +119,10 @@
             <input id="fm-secure" type="checkbox" checked />
             <span class="check-text">Private mode (secure)</span>
           </label>
+          <div class="full warn-banner" id="fm-public-warn" hidden>
+            ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
+            can reach this folder, and traffic is <strong>plaintext</strong>.
+          </div>
           <label class="full">
             Speed limit (KB/s, optional — 0 = unlimited)
             <input
@@ -170,6 +179,11 @@
             />
             <datalist id="recent-keys"></datalist>
           </label>
+          <div class="full warn-banner" id="connect-public-warn" hidden>
+            ⚠️ <strong>Public connection string (`hs://0000…`).</strong> This
+            tunnel is <strong>unencrypted</strong> — anyone with the key can
+            connect. Only connect to services you trust.
+          </div>
           <label>
             Local port (optional)
             <input id="connect-port" type="number" min="1" max="65535" placeholder="auto" />

@@ -919,6 +919,7 @@ function renderRecent() {
     chip.title = item
     chip.addEventListener('click', () => {
       $('#connect-key').value = item
+      updatePublicWarnings() // a public recent must show the warning too
     })
     chips.appendChild(chip)
     const opt = document.createElement('option')
@@ -957,6 +958,7 @@ function handleDeepLink(url) {
   if (input.value === url) return // already loaded (queued + live event)
   input.value = url
   switchTab('connect')
+  updatePublicWarnings() // a public hs://0000… deep link must show the warning
   toast('Connection string loaded — press Connect')
   log('Loaded connection string from deep link')
 }
@@ -980,6 +982,16 @@ async function stopAllTunnels() {
 }
 
 /* ------------------------------ actions ---------------------------------- */
+
+// Show/hide the public-mode warning banners. Share + folder forms warn
+// when Private mode is unchecked; the Connect form warns when the pasted
+// key is a public hs://0000… string.
+function updatePublicWarnings() {
+  $('#share-public-warn').hidden = $('#share-secure').checked
+  $('#fm-public-warn').hidden = $('#fm-secure').checked
+  const key = $('#connect-key').value.trim()
+  $('#connect-public-warn').hidden = !key.startsWith('hs://0000')
+}
 
 // Read a speed-limit input (KB/s) → bytes/sec for the worker. Empty/0 →
 // 0 (unlimited). Clamped to a sane ceiling (1 GB/s) so a typo can't set a
@@ -1623,11 +1635,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#connect-form').addEventListener('submit', startConnect)
   $('#filemanager-form').addEventListener('submit', startFilemanagerShare)
   bindDropZone()
+  updatePublicWarnings() // initial state (public keys from recents/deep links)
   bindNodeScreen()
   // tunnel type toggle reveals the name field for permanent tunnels
   $('#share-type').addEventListener('change', () => {
     $('#share-name-wrap').hidden = $('#share-type').value !== 'perm'
   })
+  // public-mode warnings
+  $('#share-secure').addEventListener('change', updatePublicWarnings)
+  $('#fm-secure').addEventListener('change', updatePublicWarnings)
+  $('#connect-key').addEventListener('input', updatePublicWarnings)
   // save-connection checkbox reveals its name field
   $('#connect-save').addEventListener('change', () => {
     $('#connect-name-wrap').hidden = !$('#connect-save').checked

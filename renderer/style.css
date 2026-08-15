@@ -974,3 +974,20 @@ button.primary:active {
   color: var(--text-dim, #94a3b8);
   font-size: 13px;
 }
+
+/* Public-mode warning banner (no encryption) */
+.warn-banner {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #eab308;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.warn-banner[hidden] {
+  display: none;
+}
+.warn-banner strong {
+  color: #fbbf24;
+}
