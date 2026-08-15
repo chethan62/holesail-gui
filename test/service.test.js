@@ -326,6 +326,10 @@ async function main() {
     }
     rl.off('line', onPeer)
     assert(peers.length >= 1, `session:peer fired for the connected client (got ${peers.length})`)
+    assert(
+      typeof peers[0].viaRelay === 'boolean',
+      `session:peer carries viaRelay routing info (got ${JSON.stringify(peers[0].viaRelay)})`
+    )
     await rpc('session:stop', { id: peerClient.id })
     await rpc('session:stop', { id: peerServer.id })
 

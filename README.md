@@ -370,6 +370,12 @@ arrives on the device — in both directions.
 - **Peer notifications**: when someone connects to one of your server
   tunnels, the app logs it and shows a toast (rate-limited) with a total
   connection count.
+- **Relay-routing badge**: if the DHT can't hole-punch and falls back to a
+  relay, the session card shows a "⇄ via relay" badge (higher latency) and
+  the peer's address is logged.
+- **Per-session bandwidth cap**: Speed limit (KB/s) on Share, Share-a-folder
+  and Connect forms caps combined upload+download throughput (token bucket);
+  persisted on saved tunnels; shown as "⏱ cap" on the card.
 
 </details>
 

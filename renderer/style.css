@@ -433,6 +433,10 @@ button.primary:disabled {
   background: rgba(139, 92, 246, 0.15);
   color: #b3a4ff;
 }
+.badge.relay {
+  background: rgba(234, 179, 8, 0.18);
+  color: #eab308;
+}
 .session .meta {
   color: var(--text-dim);
   font-size: 12px;

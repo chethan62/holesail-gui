@@ -242,7 +242,17 @@ function wireDataCounters(entry) {
   if (dht.server && typeof dht.server.on === 'function') {
     dht.server.on('connection', (c) => {
       wrapStream(c, 'bytesUp', 'bytesDown')
-      sendEvent('session:peer', { id: entry.id, at: Date.now() })
+      // routing info: relay != null means the DHT fell back to relaying
+      // (no direct hole-punch) — surface it so the UI can warn about
+      // latency. rawStream.remoteHost is the peer's real IP.
+      let viaRelay = false
+      let peerAddr = ''
+      try {
+        const rs = c.rawStream
+        if (rs && rs.remoteHost) peerAddr = String(rs.remoteHost)
+        viaRelay = !!c.relay
+      } catch {}
+      sendEvent('session:peer', { id: entry.id, at: Date.now(), viaRelay, peerAddr })
     })
   }
   // CLIENT TCP: every local app connection through the proxy

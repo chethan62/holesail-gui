@@ -234,6 +234,7 @@ function upsertSession(data) {
     state.revealed.delete(data.id)
     state.traffic.delete(data.id)
     state.conn.delete(data.id)
+    relaySessions.delete(data.id)
   } else {
     if (data.state === 'error') {
     // the worker killed just this session after an async error — show
@@ -274,7 +275,10 @@ function rememberSession(id, type, params) {
 // A peer connected to one of our server sessions. Total count lives in
 // state.conn (per session); the log line is the durable record and the
 // toast is rate-limited so a reconnect-happy peer doesn't spam.
+// viaRelay=true means the DHT couldn't hole-punch and fell back to a
+// relay — higher latency; surface it as a badge + log.
 let lastPeerToast = 0
+const relaySessions = new Set() // session ids that have seen a relayed peer
 function onPeerConnected(data) {
   const id = data && data.id
   if (!id) return
@@ -282,11 +286,23 @@ function onPeerConnected(data) {
   state.conn.set(id, count)
   const s = state.sessions.get(id)
   const what = s && s.type === 'filemanager' ? 'folder share' : 'tunnel'
-  log(`Peer connected to ${what} (${count} total)`, 'ok')
+  const viaRelay = data.viaRelay
+  const peer = data.peerAddr ? ' from ' + data.peerAddr : ''
+  if (viaRelay) {
+    relaySessions.add(id)
+    log(`Peer connected to ${what}${peer} (${count} total) — via relay, higher latency`, 'warn')
+  } else {
+    log(`Peer connected to ${what}${peer} (${count} total)`, 'ok')
+  }
   const now = Date.now()
   if (now - lastPeerToast > 4000) {
     lastPeerToast = now
-    toast(`Peer connected · ${count} total`)
+    toast(`Peer connected · ${count} total${viaRelay ? ' · via relay' : ''}`)
+  }
+  // the badge lives on the card; patch it in place if the card exists
+  const badgeEl = document.getElementById('relay-badge-' + id)
+  if (badgeEl) {
+    badgeEl.hidden = !viaRelay
   }
 }
 
@@ -452,6 +468,14 @@ function renderSession(container, s) {
     badge((s.protocol || 'tcp').toUpperCase(), 'proto'),
     el('span', 'state ' + (s.state || 'running'), '', s.state || 'running')
   )
+  // relay-routing badge: a peer connected via the DHT relay (no direct
+  // hole-punch) — higher latency than a direct path
+  if (s.type === 'server' || s.type === 'filemanager') {
+    const relayBadge = el('span', 'badge relay', 'relay-badge-' + s.id, '⇄ via relay')
+    relayBadge.hidden = !relaySessions.has(s.id)
+    relayBadge.title = 'Connection routed through the DHT relay — higher latency than direct'
+    head.append(relayBadge)
+  }
   card.append(head)
 
   // body: QR (servers only) + url + meta
