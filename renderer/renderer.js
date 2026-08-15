@@ -51,9 +51,7 @@ function log(message, cls = '', actions = []) {
   el.scrollTop = el.scrollHeight
   // Persist so the history survives restarts (bug reports). Best-effort:
   // a missing command (mobile) or full disk must never break the UI.
-  try {
-    logAppend(stamp)
-  } catch {}
+  logAppend(stamp).catch(() => {})
 }
 
 let toastTimer = null
@@ -443,7 +441,15 @@ function renderSession(container, s) {
     eye.addEventListener('click', () => {
       if (state.revealed.has(s.id)) state.revealed.delete(s.id)
       else state.revealed.add(s.id)
-      renderSessions()
+      // Targeted re-render of just this card (the QR is the expensive
+      // part of a full renderSessions() rebuild); keep focus/scroll.
+      const card = document.getElementById('session-' + s.id)
+      if (card) {
+        card.replaceChildren()
+        renderSession(card, s)
+      } else {
+        renderSessions()
+      }
     })
     urlRow.append(eye)
   }
@@ -455,17 +461,20 @@ function renderSession(container, s) {
 
   // filemanager sessions: show the shared directory + auth credentials
   // (Livefiles defaults to Basic auth admin/admin — the owner needs both
-  // to relay to whoever they share the tunnel with)
+  // to relay to whoever they share the tunnel with). The password is a
+  // credential: mask it behind the same reveal gate as the tunnel key.
   if (s.type === 'filemanager') {
     const fmRow = el('div', 'url-row')
     fmRow.append(el('code', 'local-url', '', '📁 ' + (s.dir || '')))
     if (s.fsUsername) {
+      const revealed = state.revealed.has(s.id)
+      const pass = revealed ? s.fsPassword || '' : '••••'
       fmRow.append(
         el(
           'span',
           '',
           '',
-          `user: ${s.fsUsername} · pass: ${s.fsPassword || ''}` +
+          `user: ${s.fsUsername} · pass: ${pass}` +
             (s.fsRole ? ` · role: ${s.fsRole}` : '')
         )
       )
