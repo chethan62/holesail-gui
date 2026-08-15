@@ -7,7 +7,9 @@ A desktop GUI for [Holesail](https://github.com/holesail/holesail) — the peer-
 TCP/UDP tunnel. Share any local port with the world, or connect to someone else's
 tunnel, from a friendly window instead of the CLI.
 
-Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worker**.
+Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worker**. Packaged builds bundle the [Bare](https://github.com/holepunchto/bare) runtime, so end users don't need Node.js installed.
+
+[![Latest release](https://img.shields.io/github/v/release/chethan62/holesail-gui?color=teal&label=release&sort=semver)](https://github.com/chethan62/holesail-gui/releases/latest)
 
 **Contents:** [What is this?](#what-is-this-tool) · [Why a GUI?](#why-a-gui) · [Benefits](#benefits-tldr) · [Platforms](#platforms) · [Architecture](#architecture) · [Requirements](#requirements) · [Run](#run-development) · [Test](#test) · [Build](#build-a-release-bundle) · [Using the app](#using-the-app) · [Android](#android) · [Changelog](#changelog) · [Known issues](#known-issues--limitations) · [FAQ](#faq--details) · [Security](#security-notes) · [License](#license)
 
@@ -100,15 +102,18 @@ command. The GUI adds what the terminal can't:
 
 | Platform | Status | Deliverables |
 |---|---|---|
-| **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, flatpak manifest |
+| **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak` |
 | **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
 | **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section |
 | **macOS** | ✅ builds via CI (untested on real hardware) | `.dmg`/`.app` — bare runtime bundled, no Node needed |
 
+Every platform ships a flatpak bundle from CI alongside the desktop installers; see [Build a release bundle](#build-a-release-bundle).
+
 All four targets are built automatically by the GitHub Actions workflow in
 `.github/workflows/build.yml` (artifacts on every push / `workflow_dispatch`);
 macOS just hasn't been verified end-to-end on real hardware the way Linux and
-Android have.
+Android have. The flatpak job builds the GNOME-platform bundle in CI too
+(artifacts on every push; verified release flow ships it with releases).
 
 ## Architecture
 
@@ -220,11 +225,9 @@ flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47
 flatpak run io.holesail.gui
 ```
 
-> Note: the flatpak builds manually on a Linux dev box, but CI does not
-> build it yet — the source-module chain (ayatana-ido `.pc` file not found
-> by libayatana-indicator's cmake inside the GNOME SDK) is broken on the
-> runner. The manifest + `build.sh` stay in the repo for when that's fixed.
-
+> The flatpak job builds this bundle in CI (GNOME Platform//47) and ships it
+> with releases; the build.sh flow above is for local/manual builds. Runtime
+> behavior on real desktops is still being validated.
 </details>
 
 <details>
@@ -355,6 +358,15 @@ arrives on the device — in both directions.
 ## Changelog
 
 <details>
+<summary><b>Unreleased</b> — custom app icon</summary>
+
+- Replaced the Tauri template icon with a custom flat two-color mark
+  (teal + yellow interlocking shapes, transparent background). Master
+  artwork: `src-tauri/icons/source.png`; regenerate all sizes via `tauri icon`.
+
+</details>
+
+<details id="v0.6.0">
 <summary><b>v0.6.0</b> — security hardening + flatpak restored</summary>
 
 - Worker-side broad-path guard: filemanager refuses `/`, `~`, home children (defense-in-depth behind the renderer confirm)
@@ -365,7 +377,7 @@ arrives on the device — in both directions.
 - README overhaul: TOC, benefits, known issues, FAQ — all collapsible
 </details>
 
-<details>
+<details id="v0.5.0">
 <summary><b>v0.5.0</b> — permanent folder shares + security hardening</summary>
 
 - **Permanent folder shares**: "Permanent" toggle on the Share-a-folder form (fixed key, saved with the tunnel, auto-restarts with the app)
@@ -375,7 +387,7 @@ arrives on the device — in both directions.
 - Bare runtime bundled on **Windows/macOS** too — no Node.js needed anywhere
 </details>
 
-<details>
+<details id="v0.4.0">
 <summary><b>v0.4.0</b> — DHT preflight + UI polish</summary>
 
 - Connect flow checks the DHT first — clear "no tunnel found" feedback instead of hanging
@@ -392,9 +404,8 @@ arrives on the device — in both directions.
 - **Public mode (`hs://0000…`) has no encryption** — treat it as an unauthenticated TCP relay; anyone with the key can connect
 - **No TCP-over-DHT portability guarantee** — like upstream holesail, tunnels are UDP-DHT based; some restrictive networks still block UDP hole-punching (rare; falls back through DHT relays automatically)
 - **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
-- **Flatpak in progress** — the manifest now builds cleanly (ayatana-ido
-  pc-file fix) and the CI job is back; the flatpak ships with releases
-  again. Runtime behavior on real desktops is still being validated.
+- **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
+  behavior on real desktops is still being validated
 - **No traffic shaping / bandwidth caps** — a busy tunnel can saturate a link
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
@@ -463,7 +474,9 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   and [sodium-native](https://github.com/holepunchto/sodium-native) — the
   encrypted DHT and networking stack underneath (MIT/Apache-2.0).
 - [Tauri](https://tauri.app) — the desktop/mobile framework (MIT/Apache-2.0).
-- The current app icon is the Tauri template icon (kept by user preference).
+- The app icon is a custom flat two-color mark (teal + yellow interlocking
+  shapes on transparent), designed for this project; master artwork in
+  `src-tauri/icons/source.png`, regenerable via `tauri icon`.
 
 ## License
 
