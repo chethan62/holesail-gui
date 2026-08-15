@@ -97,6 +97,11 @@ modules:
         # libayatana-indicator's #include <libayatana-ido/...> expects.
         mkdir -p /app/include/libayatana-ido3-0.4/libayatana-ido
         cp src/*.h /app/include/libayatana-ido3-0.4/libayatana-ido/ 2>/dev/null || true
+        # Mirror the .so and .pc from lib64 into lib — the runner's
+        # toolchain links against /app/lib while ayatana-ido's cmake
+        # installs to /app/lib64 (CI: 'cannot find -layatana-ido3-0.4').
+        mkdir -p /app/lib
+        cp /app/lib64/libayatana-ido3-0.4.so* /app/lib/ 2>/dev/null || true
         install -Dm644 /app/lib64/pkgconfig/libayatana-ido3-0.4.pc /app/lib/pkgconfig/libayatana-ido3-0.4.pc 2>/dev/null || \
         install -Dm644 /app/lib/pkgconfig/libayatana-ido3-0.4.pc /app/lib64/pkgconfig/libayatana-ido3-0.4.pc 2>/dev/null || true
     sources:
