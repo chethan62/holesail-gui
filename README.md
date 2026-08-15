@@ -9,6 +9,8 @@ tunnel, from a friendly window instead of the CLI.
 
 Built with **Tauri v2** (Rust + system webview) and a **plain-Node service worker**.
 
+**Contents:** [What is this?](#what-is-this-tool) · [Why a GUI?](#why-a-gui) · [Benefits](#benefits-tldr) · [Platforms](#platforms) · [Architecture](#architecture) · [Requirements](#requirements) · [Run](#run-development) · [Test](#test) · [Build](#build-a-release-bundle) · [Using the app](#using-the-app) · [Android](#android) · [Changelog](#changelog) · [Known issues](#known-issues--limitations) · [FAQ](#faq--details) · [Security](#security-notes) · [License](#license)
+
 ## What is this tool?
 
 **Holesail GUI is a window over [holesail](https://github.com/holesail/holesail): a
@@ -63,6 +65,21 @@ command. The GUI adds what the terminal can't:
   your PC
 - A private, key-based alternative to exposing services — nobody can
   connect without the connection string
+
+## Benefits (TL;DR)
+
+<details>
+<summary>Why use this over the alternatives</summary>
+
+- **No server in the middle** — traffic isn't routed through a third-party relay you have to trust (ngrok/cloudflare-style); it rides the public HyperDHT
+- **No router access, no static IP, no port forwarding** — works behind CGNAT and any NAT
+- **End-to-end encrypted** in secure mode (`hs://s000…`); the key *is* the address — nobody can connect without it
+- **Zero-config for end users** — packaged builds bundle the Bare runtime, no Node.js install
+- **Permanent tunnels with fixed keys** — set once, auto-restart on app launch, login, and device boot
+- **One codebase, four platforms** — Linux/Windows/macOS desktop + Android phone (phone can be a tunnel *server* too)
+- **Private-by-default UI** — keys in the OS keychain, sandboxed renderer, no telemetry
+</details>
+
 
 ## Platforms
 
@@ -307,6 +324,59 @@ arrives on the device — in both directions.
 - Saved-tab online/offline status badges, LAN URL row on server cards
 - Fixed reconnect routing for saved sessions, `hs://0000` display for insecure keys
 - UI polish: dark-mode safe-area fixes, badges, focus states
+</details>
+
+## Known issues & limitations
+
+<details>
+<summary>Current rough edges (honest list)</summary>
+
+- **Public mode (`hs://0000…`) has no encryption** — treat it as an unauthenticated TCP relay; anyone with the key can connect
+- **No TCP-over-DHT portability guarantee** — like upstream holesail, tunnels are UDP-DHT based; some restrictive networks still block UDP hole-punching (rare; falls back through DHT relays automatically)
+- **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
+- **Flatpak in progress** — manifest builds manually, but the CI job was removed (ayatana-ido pc-file issue); no flatpak bundle ships with releases yet
+- **No traffic shaping / bandwidth caps** — a busy tunnel can saturate a link
+- **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
+- **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
+- **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
+</details>
+
+## FAQ & details
+
+<details>
+<summary>How do I reach my PC from my phone?</summary>
+
+Share the port on the PC, copy the `hs://s000…` string, paste it into Connect on the phone (same app on Android, or the holesail CLI). The phone finds the PC over the DHT and tunnels the port — no port forwarding.
+</details>
+
+<details>
+<summary>Is the traffic really peer-to-peer?</summary>
+
+Yes — both ends register on the public HyperDHT and exchange connection info; the data path is direct. If a direct connection is impossible (double NAT), the DHT relays packets, still encrypted in secure mode.
+</details>
+
+<details>
+<summary>What does "secure" mode actually encrypt?</summary>
+
+`hs://s000…` keys derive an encryption key; the tunnel payloads are end-to-end encrypted. `hs://0000…` (public) is plaintext — only use it for services you'd expose publicly anyway.
+</details>
+
+<details>
+<summary>Why is there a separate worker process?</summary>
+
+The holesail engine uses native addons prebuilt for a specific runtime ABI. Running them inside a webview crashes on ABI mismatch. The worker process (Node in dev, bundled Bare runtime in packages) keeps them stable; the GUI just talks JSON-RPC over stdio.
+</details>
+
+<details>
+<summary>Does the tunnel survive app restart / reboot?</summary>
+
+Permanent tunnels: yes — desktop login autostart and the Android boot receiver restore them. Temporary tunnels get a fresh key each start and are not restored.
+</details>
+
+<details>
+<summary>What are the system requirements for end users?</summary>
+
+None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (Development needs Node 18+ and Rust.)
 </details>
 
 ## Security notes
