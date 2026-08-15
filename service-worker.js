@@ -96,6 +96,31 @@ function assertCapacity() {
   }
 }
 
+/// True when `p` is the filesystem root, a home directory, or a home
+/// dir's immediate child — refusing to share these over the DHT is the
+/// worker-side half of the renderer's broad-path guardrail. Mirrors the
+/// renderer's isBroadSharePath (cross-platform, never throws).
+function isBroadSharePath(p) {
+  const raw = String(p || '').trim()
+  if (!raw) return false
+  // filesystem root: "/", "\", "C:\", "C:/" — check BEFORE trimming
+  // trailing slashes (a bare root trims to '' and slips past otherwise)
+  if (raw === '/' || raw === '\\' || /^[a-zA-Z]:[\\/]?$/.test(raw)) return true
+  const s = raw.replace(/[\\/]+$/, '')
+  if (!s) return false
+  // home dir itself + its immediate children (~/Documents, ~/.ssh, ...)
+  const home = (process.env.HOME || process.env.USERPROFILE || '').replace(/[\\/]+$/, '')
+  if (home) {
+    if (s === home || s.toLowerCase() === home.toLowerCase()) return true
+    const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+    if (idx > 0) {
+      const parent = s.slice(0, idx)
+      if (parent === home || parent.toLowerCase() === home.toLowerCase()) return true
+    }
+  }
+  return false
+}
+
 /* ------------------------------ transport ------------------------------ */
 
 function send(obj) {
@@ -179,6 +204,15 @@ async function startFilemanager(params) {
   }
   if (!st.isDirectory()) {
     throw new Error(`Not a directory: ${resolved}`)
+  }
+  // Defense-in-depth: the renderer already confirms broad paths (/, home
+  // dir, home dir children) before sharing; refuse them here too so a
+  // scripted/compromised renderer can't silently expose the filesystem
+  // root or a user's home over the DHT.
+  if (isBroadSharePath(resolved)) {
+    throw new Error(
+      `Refusing to share a broad path (${resolved}) — share a specific folder instead`
+    )
   }
   // Mirrors the CLI (`holesail --filemanager <dir>`): a Livefiles HTTP
   // file server + a holesail tunnel in front, both on the same local

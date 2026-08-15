@@ -198,6 +198,21 @@ async function main() {
       notDirErr && /Not a directory/.test(notDirErr.message),
       `file-as-folder rejected (${notDirErr ? notDirErr.message : 'no error'})`
     )
+    // worker-side broad-path guard: / and the home dir must be refused
+    // even if a (compromised/scripted) renderer never confirmed them
+    const homeDir = os.homedir()
+    for (const broadPath of ['/', homeDir]) {
+      let broadErr = null
+      try {
+        await rpc('filemanager:start', { path: broadPath, secure: true }, 30000)
+      } catch (e) {
+        broadErr = e
+      }
+      assert(
+        broadErr && /Refusing to share a broad path/.test(broadErr.message),
+        `broad path ${broadPath} rejected (${broadErr ? broadErr.message : 'no error'})`
+      )
+    }
 
     console.log('12) session pause/resume cycle')
     const prServer = await rpc('server:start', { port: TEST_PORT + 2, secure: true }, 90000)
