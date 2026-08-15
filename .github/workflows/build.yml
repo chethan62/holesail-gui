@@ -295,6 +295,9 @@ jobs:
   flatpak:
     name: Flatpak (io.holesail.gui)
     needs: test
+    if: ${{ false }}  # DISABLED — source-module chain (ayatana-ido pc file) is
+                      # broken in CI; revisit later. See commit history for the
+                      # last attempt. Manual build: ./packaging/flatpak/build.sh
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -355,7 +358,7 @@ jobs:
   release:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, macos, android, flatpak]
+    needs: [linux, windows, macos, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
