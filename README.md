@@ -288,6 +288,27 @@ arrives on the device — in both directions.
 > which is read-only). `ANDROID_USER_HOME` must also point at a writable dir
 > or `sdkmanager`/gradle will fail.
 
+## Changelog
+
+<details>
+<summary><b>v0.5.0</b> — permanent folder shares + security hardening</summary>
+
+- **Permanent folder shares**: "Permanent" toggle on the Share-a-folder form (fixed key, saved with the tunnel, auto-restarts with the app)
+- Saved tunnels (keys + filemanager creds) now live in the **OS keychain** (0600 file fallback), not plaintext JSON
+- Broad-path guardrail: sharing `/`, `~`, or a home dir child asks for confirmation
+- Worker session cap (50) + RPC method allowlist
+- Bare runtime bundled on **Windows/macOS** too — no Node.js needed anywhere
+</details>
+
+<details>
+<summary><b>v0.4.0</b> — DHT preflight + UI polish</summary>
+
+- Connect flow checks the DHT first — clear "no tunnel found" feedback instead of hanging
+- Saved-tab online/offline status badges, LAN URL row on server cards
+- Fixed reconnect routing for saved sessions, `hs://0000` display for insecure keys
+- UI polish: dark-mode safe-area fixes, badges, focus states
+</details>
+
 ## Security notes
 
 - Private connection strings are credentials — treat them like SSH keys.
