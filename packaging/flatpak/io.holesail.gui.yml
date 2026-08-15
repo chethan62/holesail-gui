@@ -113,7 +113,20 @@ modules:
         path: shared-modules/libayatana-appindicator/0001-Make-introspection-configurable.patch
   - name: libayatana-indicator
     buildsystem: cmake-ninja
-    cleanup: ["/include", "/lib/pkgconfig", "/libexec", "/share"]
+    # NOTE: /lib/pkgconfig must NOT be cleaned — libayatana-appindicator
+    # needs ayatana-indicator3-0.4.pc at build time (flatpak runs each
+    # module's cleanup before the next builds; CI: 'Package
+    # ayatana-indicator3-0.4 not found').
+    cleanup: ["/include", "/libexec", "/share"]
+    # Mirror the .so and .pc from lib64 into lib (Ubuntu installs to
+    # lib64, the next module links/searches lib).
+    build-commands:
+      - |
+        cmake --install . >/dev/null
+        mkdir -p /app/lib
+        cp /app/lib64/libayatana-indicator3.so* /app/lib/ 2>/dev/null || true
+        install -Dm644 /app/lib64/pkgconfig/ayatana-indicator3-0.4.pc /app/lib/pkgconfig/ayatana-indicator3-0.4.pc 2>/dev/null || \
+        install -Dm644 /app/lib/pkgconfig/ayatana-indicator3-0.4.pc /app/lib64/pkgconfig/ayatana-indicator3-0.4.pc 2>/dev/null || true
     sources:
       - type: git
         url: https://github.com/AyatanaIndicators/libayatana-indicator.git
@@ -121,7 +134,9 @@ modules:
         commit: 611bb384b73fa6311777ba4c41381a06f5b99dad
   - name: libayatana-appindicator
     buildsystem: cmake-ninja
-    cleanup: ["/include", "/lib/pkgconfig"]
+    # last module in the chain: keep headers/pkgconfig (harmless, no
+    # consumer after this) — nothing to mirror, it's the final artifact
+    cleanup: []
     config-opts:
       - -DENABLE_BINDINGS_MONO=NO
       - -DENABLE_BINDINGS_VALA=NO
