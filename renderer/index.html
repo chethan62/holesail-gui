@@ -103,6 +103,9 @@
 
         <form id="filemanager-form" class="grid-form fm-form">
           <h3 class="full">Share a folder</h3>
+          <p class="hint full" id="fm-drop-hint">
+            Drop a folder here from your file manager, or type a path below.
+          </p>
           <label class="full">
             Folder path
             <input id="fm-path" type="text" placeholder="/home/user/Downloads" required />
@@ -272,6 +275,13 @@
           <button type="button" id="node-install" class="btn primary">Copy Node.js download link</button>
           <button type="button" id="node-retry" class="btn">Retry</button>
         </div>
+      </div>
+    </div>
+
+    <div id="drop-zone" class="drop-zone" hidden>
+      <div class="drop-zone-inner">
+        <strong>Drop folder to share it</strong>
+        <span>Private mode · instant tunnel</span>
       </div>
     </div>
 

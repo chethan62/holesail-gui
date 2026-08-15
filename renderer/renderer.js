@@ -1131,6 +1131,52 @@ async function lookupKey(key) {
   }
 }
 
+/// Drag-and-drop folder sharing: drop a directory from the OS file
+/// manager anywhere on the window → start a filemanager tunnel for it.
+/// The drop zone overlay shows during the drag; the path goes through
+/// the same startFilemanagerShare path (broad-path guardrail included).
+function bindDropZone() {
+  const zone = $('#drop-zone')
+  let depth = 0 // dragenter/dragleave fire per child element — track depth
+
+  const show = () => {
+    depth++
+    zone.hidden = false
+  }
+  const hide = () => {
+    depth = Math.max(0, depth - 1)
+    if (depth === 0) zone.hidden = true
+  }
+
+  window.addEventListener('dragenter', (e) => {
+    if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) show()
+  })
+  window.addEventListener('dragover', (e) => {
+    // required to allow the drop
+    if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+    }
+  })
+  window.addEventListener('dragleave', hide)
+  window.addEventListener('drop', (e) => {
+    e.preventDefault()
+    depth = 0
+    zone.hidden = true
+    const files = e.dataTransfer && e.dataTransfer.files
+    if (!files || !files.length) return
+    // only directories are shareable — a dropped file means the user
+    // grabbed the wrong thing; tell them clearly
+    const item = files[0]
+    if (item.type || !item.path) {
+      toast('Drop a folder, not a file', true)
+      return
+    }
+    // route through the exact same share flow as the form
+    $('#fm-path').value = item.path
+    startFilemanagerShare(new Event('submit'))
+  })
+}
+
 async function startConnect(event) {
   event.preventDefault()
   const button = $('#connect-start')
@@ -1576,6 +1622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#share-form').addEventListener('submit', startShare)
   $('#connect-form').addEventListener('submit', startConnect)
   $('#filemanager-form').addEventListener('submit', startFilemanagerShare)
+  bindDropZone()
   bindNodeScreen()
   // tunnel type toggle reveals the name field for permanent tunnels
   $('#share-type').addEventListener('change', () => {
