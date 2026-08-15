@@ -514,6 +514,12 @@ fn saved_export(store: State<SavedStore>) -> String {
     serde_json::to_string_pretty(&*store.0.lock().unwrap()).unwrap_or_else(|_| "[]".into())
 }
 
+/// Cap on how many saved tunnels the import path will accept. Matches the
+/// worker's MAX_SESSIONS philosophy: a pasted/huge/malformed export must
+/// not bloat the keychain-backed store without bound. (Legitimate users
+/// don't exceed this; the Saved tab is a small curated list.)
+const MAX_SAVED_TUNNELS: usize = 100;
+
 /// Core import: merge parsed tunnels by id (new ids for empty ones).
 /// Returns the new store length. Pure.
 fn saved_import_core(store: &SavedStore, json: &str) -> usize {
@@ -523,6 +529,9 @@ fn saved_import_core(store: &SavedStore, json: &str) -> usize {
     };
     let mut list = store.0.lock().unwrap();
     for mut t in parsed {
+        if list.len() >= MAX_SAVED_TUNNELS {
+            break; // stop importing, keep what fits
+        }
         if t.id.is_empty() {
             t.id = next_id();
         }

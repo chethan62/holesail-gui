@@ -57,7 +57,7 @@ writeFileSync(
       name: 'holesail-gui-resources',
       private: true,
       version: '0.0.0',
-      dependencies: { holesail: '^2.4.1' }
+      dependencies: { holesail: '^2.4.1', livefiles: '^1.1.0' }
     },
     null,
     2

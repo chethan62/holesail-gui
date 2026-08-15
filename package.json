@@ -17,7 +17,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "holesail": "^2.4.1"
+    "holesail": "^2.4.1",
+    "livefiles": "^1.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

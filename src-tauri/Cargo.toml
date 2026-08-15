@@ -4,6 +4,8 @@ version = "0.5.0"
 description = "Desktop GUI for Holesail — share local ports and connect to P2P tunnels"
 license = "MIT"
 edition = "2021"
+# floor_char_boundary (used in the event-log trim) stabilized in 1.91
+rust-version = "1.91"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
