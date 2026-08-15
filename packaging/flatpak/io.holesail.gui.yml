@@ -76,7 +76,12 @@ modules:
         path: shared-modules/libayatana-appindicator/0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
   - name: ayatana-ido
     buildsystem: cmake-ninja
-    cleanup: ["/include", "/lib/pkgconfig"]
+    # NOTE: /lib/pkgconfig is NOT in cleanup — libayatana-indicator's
+    # cmake needs libayatana-ido3-0.4.pc at build time (flatpak runs each
+    # module's cleanup before the next module builds). The shared-modules
+    # recipe deletes it, which is exactly why CI failed with
+    # "Package 'libayatana-ido3-0.4' not found".
+    cleanup: ["/include"]
     config-opts:
       - -DENABLE_INTROSPECTION=OFF
     sources:
