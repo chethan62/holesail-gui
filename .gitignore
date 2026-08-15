@@ -17,3 +17,11 @@ dist/
 opencode.json
 __pycache__/
 *.pyc
+
+# secrets — never commit
+*.key
+*.pem
+*.env
+.env*
+*secret*
+*credential*
