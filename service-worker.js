@@ -517,7 +517,7 @@ async function connectClient(params) {
   // URL parsers normalize hs://s000… to hs://s000…/ — the trailing slash
   // becomes part of the key and derives a WRONG seed (a phantom tunnel
   // that never establishes, with no error). Strip it.
-  let key = String(params.key || '').replace(/\/+$/, '')
+  const key = String(params.key || '').replace(/\/+$/, '')
   if (key.length === 0) {
     throw new Error('Connection string is required')
   }

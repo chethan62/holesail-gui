@@ -7,6 +7,7 @@
   "scripts": {
     "predev": "node scripts/prepare-resources.mjs",
     "dev": "tauri dev",
+    "lint": "eslint renderer/ service-worker.js test/ scripts/",
     "build": "node scripts/prepare-resources.mjs --bare && tauri build",
     "build:no-bundle": "node scripts/prepare-resources.mjs --bare && tauri build --no-bundle",
     "prepare:android": "node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android",
@@ -21,6 +22,7 @@
     "livefiles": "^1.1.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "eslint": "^10.8.1"
   }
 }

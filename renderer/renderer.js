@@ -237,17 +237,17 @@ function upsertSession(data) {
     relaySessions.delete(data.id)
   } else {
     if (data.state === 'error') {
-    // the worker killed just this session after an async error — show
-    // why, then the follow-up 'stopped' event removes the card
-    log(`Session errored: ${data.error || 'unknown error'}`, 'err')
-    // temporary tunnels don't auto-restore (only saved permanents do);
-    // offer a one-click reconnect while the params are still in memory
-    if (state.replay.has(data.id)) {
-      log('Tunnel dropped — reconnect?', 'warn', [
-        { label: '↻ Reconnect', onClick: () => reconnectSession(data.id) }
-      ])
+      // the worker killed just this session after an async error — show
+      // why, then the follow-up 'stopped' event removes the card
+      log(`Session errored: ${data.error || 'unknown error'}`, 'err')
+      // temporary tunnels don't auto-restore (only saved permanents do);
+      // offer a one-click reconnect while the params are still in memory
+      if (state.replay.has(data.id)) {
+        log('Tunnel dropped — reconnect?', 'warn', [
+          { label: '↻ Reconnect', onClick: () => reconnectSession(data.id) }
+        ])
+      }
     }
-  }
     const existing = state.sessions.get(data.id)
     if (existing) {
       Object.assign(existing, data) // events may carry only {id, state}

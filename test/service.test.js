@@ -125,7 +125,7 @@ async function main() {
     let threw = false
     try {
       await rpc('server:start', { port: 'not-a-port' })
-    } catch (err) {
+    } catch {
       threw = true
     }
     assert(threw, 'invalid port raises error')

@@ -13,8 +13,8 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, readdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const [dir, tag] = process.argv.slice(2)
 const keyIdx = process.argv.indexOf('--key')
