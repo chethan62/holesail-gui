@@ -82,25 +82,23 @@ modules:
     # builds. Deleting either breaks the chain (both failed in CI).
     config-opts:
       - -DENABLE_INTROSPECTION=OFF
-    # ayatana-ido 0.10.4's CMakeLists has NO install rule for a .pc file,
-    # but libayatana-indicator 0.9.4 requires it via pkg-config. Write the
-    # pc by hand (matching the upstream package version) so the next module
-    # can find it.
+    # ayatana-ido 0.10.4's cmake DOES install a .pc — but to
+    # /app/lib64/pkgconfig, which the next module's pkg-config doesn't
+    # search on this distro (it looks in /app/lib/pkgconfig). Mirror it
+    # into lib/pkgconfig, AND install the headers explicitly from the
+    # source tree (cmake's header install varies by version; CI failed
+    # with 'libayatana-ido.h: No such file' while local builds passed).
     build-commands:
       - |
         cmake --install . >/dev/null
-        install -Dm644 /dev/stdin /app/lib/pkgconfig/libayatana-ido3-0.4.pc <<'EOF'
-        prefix=/app
-        exec_prefix=${prefix}
-        libdir=${prefix}/lib
-        includedir=${prefix}/include
-
-        Name: ayatana-ido
-        Description: Ayatana Indicator Display Objects library
-        Version: 0.10.4
-        Libs: -L${libdir} -layatana-ido3-0.4
-        Cflags: -I${includedir}/ayatana-ido3-0.4
-        EOF
+        # Headers: ayatana-ido 0.10.4 has NO cmake header install rule —
+        # they live in src/*.h and must be installed into the
+        # include/libayatana-ido3-0.4/libayatana-ido/ layout that
+        # libayatana-indicator's #include <libayatana-ido/...> expects.
+        mkdir -p /app/include/libayatana-ido3-0.4/libayatana-ido
+        cp src/*.h /app/include/libayatana-ido3-0.4/libayatana-ido/ 2>/dev/null || true
+        install -Dm644 /app/lib64/pkgconfig/libayatana-ido3-0.4.pc /app/lib/pkgconfig/libayatana-ido3-0.4.pc 2>/dev/null || \
+        install -Dm644 /app/lib/pkgconfig/libayatana-ido3-0.4.pc /app/lib64/pkgconfig/libayatana-ido3-0.4.pc 2>/dev/null || true
     sources:
       - type: git
         url: https://github.com/AyatanaIndicators/ayatana-ido.git
