@@ -253,23 +253,33 @@ function wireSessionStats(entry) {
 // Per-session traffic readout, throttled. The renderer holds the full
 // session record (including stats) and refreshes counters in place — the
 // payload here is the SAME shape as sessions:list entries.
+// Re-arms itself every STATS_EMIT_MS so counters keep flowing for the
+// session's lifetime (a one-shot fire would freeze the UI after the first
+// update); stopSession / onAsyncError clear the timer.
 const statsTimers = new Map() // id -> timeout handle
 function armStatsEmit(entry) {
   if (statsTimers.has(entry.id)) return
-  statsTimers.set(
-    entry.id,
-    setTimeout(() => {
-      statsTimers.delete(entry.id)
-      const current = sessions.get(entry.id)
-      if (!current) return
-      emitSession({
-        id: current.id,
-        stats: current.stats,
-        locCnt: current.stats.locCnt || 0,
-        rejectCnt: current.stats.rejectCnt || 0
-      })
-    }, STATS_EMIT_MS)
-  )
+  const tick = () => {
+    statsTimers.delete(entry.id)
+    const current = sessions.get(entry.id)
+    if (!current) return
+    emitSession({
+      id: current.id,
+      stats: current.stats,
+      locCnt: current.stats.locCnt || 0,
+      rejectCnt: current.stats.rejectCnt || 0
+    })
+    armStatsEmit(current)
+  }
+  statsTimers.set(entry.id, setTimeout(tick, STATS_EMIT_MS))
+}
+
+function clearStatsEmit(id) {
+  const t = statsTimers.get(id)
+  if (t) {
+    clearTimeout(t)
+    statsTimers.delete(id)
+  }
 }
 
 async function startServer(params) {
@@ -416,11 +426,7 @@ async function stopSession(id) {
   if (!entry) throw new Error(`No session with id ${id}`)
   // stop the throttled stats emitter so no stale counter event lands after
   // the card is gone (the renderer deletes sessions on 'stopped')
-  const t = statsTimers.get(id)
-  if (t) {
-    clearTimeout(t)
-    statsTimers.delete(id)
-  }
+  clearStatsEmit(id)
   await entry.hs.close()
   // filemanager sessions own a Livefiles server next to the tunnel
   if (entry.fileServer) {
@@ -595,6 +601,7 @@ function onAsyncError(kind, err) {
     // UI always clears the card, then best-effort close the instance
     // (close() may itself hang on the broken resource).
     sessions.delete(session.id)
+    clearStatsEmit(session.id)
     sendEvent('session:update', {
       id: session.id,
       state: 'error',

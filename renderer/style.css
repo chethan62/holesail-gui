@@ -462,6 +462,18 @@ button.primary:disabled {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+.session .spark {
+  display: block;
+  width: 240px;
+  height: 32px;
+  margin: 2px 0 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  /* sparkline colors (read via getComputedStyle in drawSparkline) */
+  --spark-up: #2dd4bf;   /* teal — upload */
+  --spark-down: #eab308; /* yellow — download */
+}
 .url-row {
   display: flex;
   align-items: center;

@@ -275,6 +275,26 @@ async function main() {
     await rpc('session:stop', { id: statsServer.id })
     await new Promise((res) => tServer.close(res))
 
+    console.log('13b) stats events keep flowing (throttled re-arm, not one-shot)')
+    // start a fresh server and listen for session:update events carrying
+    // stats — with no traffic, counters stay at 0 but the EVENTS must
+    // keep arriving (the emitter re-arms itself every 500ms)
+    const evServer = await rpc('server:start', { port: TEST_PORT + 5, secure: true }, 90000)
+    const seen = []
+    const onLine = (line) => {
+      try {
+        const m = JSON.parse(line)
+        if (m.event === 'session:update' && m.data && m.data.id === evServer.id && m.data.stats) {
+          seen.push(m.data.stats)
+        }
+      } catch {}
+    }
+    rl.on('line', onLine)
+    await sleep(1600) // ~3 emit intervals
+    rl.off('line', onLine)
+    assert(seen.length >= 2, `stats events re-arm (got ${seen.length} in ~1.6s)`)
+    await rpc('session:stop', { id: evServer.id })
+
     console.log('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
     const online = await rpc('lookup', { key: lkServer.url }, 60000)

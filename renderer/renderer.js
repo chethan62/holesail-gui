@@ -219,7 +219,8 @@ const state = {
   recent: [], // recent keys, mirrored from the Rust keychain/file store
   replay: new Map(), // session id -> { type, params } for one-click reconnect
   lanIp: null, // this machine's LAN IPv4, for direct same-network access
-  workerOk: false
+  workerOk: false,
+  traffic: new Map() // id -> { up: number[], down: number[] } rolling history
 }
 
 // worker readiness handshake (worker:ready event); RPCs fail fast until set
@@ -230,6 +231,7 @@ function upsertSession(data) {
     state.sessions.delete(data.id)
     state.meta.delete(data.id)
     state.revealed.delete(data.id)
+    state.traffic.delete(data.id)
   } else {
     if (data.state === 'error') {
     // the worker killed just this session after an async error — show
@@ -561,6 +563,14 @@ function renderSession(container, s) {
   connSpan.textContent = (stats.locCnt ? stats.locCnt + ' conn' : '') + (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
   if (connSpan.textContent) trafficRow.append(' · ', connSpan)
   trafficRow.title = 'Upload / download through the tunnel · live connections'
+
+  // rolling traffic sparkline (30 samples of ~500ms each ≈ 15s window)
+  const spark = el('canvas', 'spark', 'spark-' + s.id)
+  spark.width = 240
+  spark.height = 32
+  spark.title = 'Recent throughput'
+  drawSparkline(spark, s.id)
+  urlCol.append(spark)
   urlCol.append(trafficRow)
   body.append(urlCol)
   card.append(body)
@@ -609,6 +619,53 @@ function updateTrafficReadout(id) {
       (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
     conn.textContent = text
   }
+  // record the per-interval delta and redraw the sparkline
+  const hist = state.traffic.get(id) || { up: [], down: [] }
+  const prev = state.sessions.get(id) && state.sessions.get(id).__prevStats
+  const upDelta = prev ? Math.max(0, stats.bytesUp - prev.bytesUp) : 0
+  const downDelta = prev ? Math.max(0, stats.bytesDown - prev.bytesDown) : 0
+  hist.up.push(upDelta)
+  hist.down.push(downDelta)
+  if (hist.up.length > 30) hist.up.shift()
+  if (hist.down.length > 30) hist.down.shift()
+  state.traffic.set(id, hist)
+  if (state.sessions.get(id)) state.sessions.get(id).__prevStats = { bytesUp: stats.bytesUp, bytesDown: stats.bytesDown }
+  const spark = document.getElementById('spark-' + id)
+  if (spark) drawSparkline(spark, id)
+}
+
+// Draw a compact dual-line sparkline of recent throughput (bytes per
+// ~500ms interval). Two teal/yellow lines like the app logo; auto-scales
+// to the max of both series so bursts stay visible. Dark-mode aware via
+// CSS variables (read from the canvas's computed style).
+function drawSparkline(canvas, id) {
+  const hist = state.traffic.get(id)
+  const up = hist ? hist.up : []
+  const down = hist ? hist.down : []
+  const ctx = canvas.getContext('2d')
+  const w = canvas.width
+  const h = canvas.height
+  ctx.clearRect(0, 0, w, h)
+  if (!up.length && !down.length) return
+  const max = Math.max(1, ...up, ...down)
+  const style = getComputedStyle(canvas)
+  const upColor = style.getPropertyValue('--spark-up').trim() || '#2dd4bf'
+  const downColor = style.getPropertyValue('--spark-down').trim() || '#eab308'
+  const draw = (series, color) => {
+    if (!series.length) return
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    series.forEach((v, i) => {
+      const x = (i / 29) * (w - 2) + 1
+      const y = h - 2 - (v / max) * (h - 4)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    ctx.stroke()
+  }
+  draw(up, upColor)
+  draw(down, downColor)
 }
 
 /* ------------------------------ worker ---------------------------------- */
