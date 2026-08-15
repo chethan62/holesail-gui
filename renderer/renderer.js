@@ -147,17 +147,17 @@ function isBroadSharePath(p) {
 /// dismiss after 10s.
 function confirmInline(message) {
   return new Promise((resolve) => {
-    const el = $('#toast')
-    el.classList.remove('hidden', 'err')
-    el.innerHTML = ''
+    const toastEl = $('#toast') // NOT the el() builder — avoid shadowing it
+    toastEl.classList.remove('hidden', 'err')
+    toastEl.innerHTML = ''
     const span = el('span', 'confirm-msg', '', message)
     const yes = el('button', 'confirm-yes', '', 'Yes')
     const no = el('button', 'confirm-no', '', 'No')
-    el.append(span, yes, no)
+    toastEl.append(span, yes, no)
     clearTimeout(toastTimer)
     const done = (val) => {
       clearTimeout(toastTimer)
-      el.classList.add('hidden')
+      toastEl.classList.add('hidden')
       resolve(val)
     }
     yes.addEventListener('click', () => done(true), { once: true })
@@ -826,8 +826,8 @@ async function startShare(event) {
     key
   }
   setBusy(button, true)
+  let tunnel = null // hoisted so the catch can roll back a persisted-but-failed save
   try {
-    let tunnel = null
     if (isPerm) {
       // permanent: fixed key (user-provided or generated once), saved to
       // the store so it auto-restarts with the same connection string
@@ -859,6 +859,12 @@ async function startShare(event) {
   } catch (err) {
     log('Failed to start server: ' + err.message, 'err')
     toast('Failed to start: ' + err.message, true)
+    if (tunnel) {
+      // roll back the persisted permanent tunnel — it never started
+      await savedDelete(tunnel.id).catch(() => {})
+      await refreshSaved()
+      log('Removed permanent tunnel that failed to start', 'warn')
+    }
   } finally {
     setBusy(button, false)
   }
@@ -890,8 +896,8 @@ async function startFilemanagerShare(event) {
   const key = $('#fm-key').value.trim() || undefined
   const params = { path, secure: $('#fm-secure').checked, key }
   setBusy(button, true)
+  let tunnel = null // hoisted so the catch can roll back a persisted-but-failed save
   try {
-    let tunnel = null
     if (isPerm) {
       if (!key) params.key = genKey()
       tunnel = await savedSave({
@@ -919,6 +925,12 @@ async function startFilemanagerShare(event) {
   } catch (err) {
     log('Failed to share folder: ' + err.message, 'err')
     toast('Failed to share: ' + err.message, true)
+    if (tunnel) {
+      // roll back the persisted permanent folder share — it never started
+      await savedDelete(tunnel.id).catch(() => {})
+      await refreshSaved()
+      log('Removed folder share that failed to start', 'warn')
+    }
   } finally {
     setBusy(button, false)
   }
@@ -949,6 +961,7 @@ async function startConnect(event) {
   }
   if (!params.key) return
   setBusy(button, true)
+  let tunnel = null // hoisted so the catch can roll back a persisted-but-failed save
   try {
     // holesail's ready() resolves even when the server is offline (the
     // phantom-tunnel trap): the card would sit "running" while proxying to
@@ -967,7 +980,6 @@ async function startConnect(event) {
     } else if (look.state === 'online') {
       log('Key reachable on the DHT (server announced)', 'ok')
     }
-    let tunnel = null
     if ($('#connect-save').checked) {
       // normalize the key before saving: the worker strips trailing
       // slashes (URL parsers add them), and the saved key must match the
@@ -1002,6 +1014,12 @@ async function startConnect(event) {
   } catch (err) {
     log('Failed to connect: ' + err.message, 'err')
     toast('Failed to connect: ' + err.message, true)
+    if (tunnel) {
+      // roll back the persisted saved connection — it never connected
+      await savedDelete(tunnel.id).catch(() => {})
+      await refreshSaved()
+      log('Removed saved connection that failed to start', 'warn')
+    }
   } finally {
     setBusy(button, false)
   }
