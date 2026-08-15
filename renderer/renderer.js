@@ -330,8 +330,9 @@ async function reconnectSession(id) {
     toast('Reconnected')
     addRecent(session.url)
   } catch (err) {
-    log('Reconnect failed: ' + err.message, 'err')
-    toast('Reconnect failed: ' + err.message, true)
+    const msg = humanError(err)
+    log('Reconnect failed: ' + msg, 'err')
+    toast('Reconnect failed: ' + msg, true)
   }
 }
 
@@ -427,8 +428,19 @@ async function installUpdate(version) {
 function renderSessions() {
   const container = $('#sessions')
   if (state.sessions.size === 0) {
+    // static template only — no user data interpolated, XSS-safe
     container.innerHTML =
-      '<p class="empty">No active sessions. Share a port or connect to a tunnel to get started.</p>'
+      '<div class="empty-state">' +
+      '<div class="empty-icon">🚀</div>' +
+      '<p class="empty-title">No active tunnels yet</p>' +
+      '<p class="empty-text">Share a local port or connect to someone else\'s tunnel to get started — no port forwarding, no static IP.</p>' +
+      '<div class="empty-actions">' +
+      '<button type="button" class="btn primary" id="empty-share">Share a port</button>' +
+      '<button type="button" class="btn" id="empty-connect">Connect to a tunnel</button>' +
+      '</div></div>'
+    // CTA buttons jump to the right tab
+    document.getElementById('empty-share').addEventListener('click', () => switchTab('share'))
+    document.getElementById('empty-connect').addEventListener('click', () => switchTab('connect'))
     updateUptimeNote()
     return
   }
@@ -983,6 +995,35 @@ async function stopAllTunnels() {
 
 /* ------------------------------ actions ---------------------------------- */
 
+// Map raw worker/engine error strings to plain-English messages with a
+// troubleshooting hint. Unknown errors pass through unchanged (honest).
+const ERROR_HINTS = [
+  [/Folder not found: (.+)/, (m) => `That folder doesn't exist: ${m[1]} — check the path and try again.`],
+  [/Not a directory: (.+)/, (m) => `That path is a file, not a folder: ${m[1]} — pick a directory.`],
+  [/Refusing to share a broad path/, () => `Sharing your whole drive or home folder is blocked for safety — share a specific subfolder instead.`],
+  [/Invalid port: (.+)/, (m) => `"${m[1]}" isn't a valid port — use a number between 1 and 65535.`],
+  [/A key should have a minimum length of 32/, () => `The custom key is too short — use at least 32 hex characters (0-9, a-f).`],
+  [/Invalid key format/, () => `That connection string isn't a valid hs:// key — double-check it (private keys start with hs://s000, public with hs://0000).`],
+  [/Connection string is required/, () => `Paste a connection string first (hs://s000… or hs://0000…).`],
+  [/Too many sessions/, () => `You've reached the 50-tunnel limit — stop a session before starting another.`],
+  [/Directory path is required/, () => `Enter a folder path or drop a folder to share it.`],
+  [/No session with id/, () => `That session is already gone — it may have been stopped or dropped.`],
+  [/EADDRINUSE|address already in use/, () => `Port already in use — the app usually picks a free one automatically; if this persists, stop the other process on that port.`],
+  [/ENOTFOUND|getaddrinfo|tunneling socket could not be established/, () => `Network error reaching the tunnel — check your internet connection and try again.`],
+  [/ECONNREFUSED/, () => `Connection refused — the service on the other end isn't accepting connections right now.`],
+  [/ETIMEDOUT|timed out|timeout/, () => `The connection timed out — the peer may be offline, or your network blocks the DHT (try mobile data if you're on a strict WiFi).`],
+  [/SIGTERM|worker exited/, () => `The tunnel backend stopped unexpectedly — restart it and try again.`]
+]
+
+function humanError(err) {
+  const msg = String((err && err.message) || err)
+  for (const [re, fn] of ERROR_HINTS) {
+    const m = msg.match(re)
+    if (m) return fn(m)
+  }
+  return msg
+}
+
 // Show/hide the public-mode warning banners. Share + folder forms warn
 // when Private mode is unchecked; the Connect form warns when the pasted
 // key is a public hs://0000… string.
@@ -1050,8 +1091,9 @@ async function startShare(event) {
     $('#share-port').value = ''
     $('#share-key').value = ''
   } catch (err) {
-    log('Failed to start server: ' + err.message, 'err')
-    toast('Failed to start: ' + err.message, true)
+    const msg = humanError(err)
+    log('Failed to start server: ' + msg, 'err')
+    toast('Failed to start: ' + msg, true)
     if (tunnel) {
       // roll back the persisted permanent tunnel — it never started
       await savedDelete(tunnel.id).catch(() => {})
@@ -1117,8 +1159,9 @@ async function startFilemanagerShare(event) {
       log(`Saved folder share "${tunnel.name}" — it will restart with the app`, 'ok')
     }
   } catch (err) {
-    log('Failed to share folder: ' + err.message, 'err')
-    toast('Failed to share: ' + err.message, true)
+    const msg = humanError(err)
+    log('Failed to share folder: ' + msg, 'err')
+    toast('Failed to share: ' + msg, true)
     if (tunnel) {
       // roll back the persisted permanent folder share — it never started
       await savedDelete(tunnel.id).catch(() => {})
@@ -1254,8 +1297,9 @@ async function startConnect(event) {
     $('#connect-save').checked = false
     $('#connect-name-wrap').hidden = true
   } catch (err) {
-    log('Failed to connect: ' + err.message, 'err')
-    toast('Failed to connect: ' + err.message, true)
+    const msg = humanError(err)
+    log('Failed to connect: ' + msg, 'err')
+    toast('Failed to connect: ' + msg, true)
     if (tunnel) {
       // roll back the persisted saved connection — it never connected
       await savedDelete(tunnel.id).catch(() => {})
