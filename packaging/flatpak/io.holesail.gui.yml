@@ -84,6 +84,25 @@ modules:
     cleanup: ["/include"]
     config-opts:
       - -DENABLE_INTROSPECTION=OFF
+    # ayatana-ido 0.10.4's CMakeLists has NO install rule for a .pc file,
+    # but libayatana-indicator 0.9.4 requires it via pkg-config. Write the
+    # pc by hand (matching the upstream package version) so the next module
+    # can find it.
+    build-commands:
+      - |
+        cmake --install . >/dev/null
+        install -Dm644 /dev/stdin /app/lib/pkgconfig/libayatana-ido3-0.4.pc <<'EOF'
+        prefix=/app
+        exec_prefix=${prefix}
+        libdir=${prefix}/lib
+        includedir=${prefix}/include
+
+        Name: ayatana-ido
+        Description: Ayatana Indicator Display Objects library
+        Version: 0.10.4
+        Libs: -L${libdir} -layatana-ido3-0.4
+        Cflags: -I${includedir}/ayatana-ido3-0.4
+        EOF
     sources:
       - type: git
         url: https://github.com/AyatanaIndicators/ayatana-ido.git
