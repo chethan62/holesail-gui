@@ -64,3 +64,17 @@ everyone on that release.
   `launch.sh` and the desktop entry stay valid across updates (the
   WebKit renderer fallback also lives in `main.rs`, so any launch path
   is covered).
+
+## Updater test pass (Windows/macOS) — TODO before next hardware release
+
+The updater is load-bearing but the Windows/macOS update path has never
+been exercised on real hardware. When a Windows or macOS machine is
+available:
+
+1. Install the previous release's .msi/.exe or .dmg/.app.
+2. Launch; confirm it checks the updater (event log shows
+   "Update available" or a version check).
+3. Optionally: `hole-sail-gui` version must be < latest.json version
+   for an update prompt to appear. Verify the in-app ⬆ button pulls
+   the new artifact, verifies the minisign signature, and relaunches.
+4. Log results in this file (date, platform, result).
