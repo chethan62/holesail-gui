@@ -1039,7 +1039,7 @@ async function startSaved(t) {
         secure: t.secure !== false, // public permanents must stay public
         udp: t.udp,
         key: t.key
-      })
+      }, 90000) // cold DHT bootstrap can take 90s — same as the Share tab
     } else if (t.kind === 'filemanager') {
       if (!t.path) throw new Error('Saved folder share is missing its path')
       session = await rpc('filemanager:start', {
@@ -1058,7 +1058,7 @@ async function startSaved(t) {
         port: t.port ?? undefined,
         host: t.host || undefined,
         udp: t.udp
-      })
+      }, 90000) // cold DHT bootstrap can take 90s — same as the Connect tab
     }
     rememberSession(session.id, t.kind, {
       ...(t.kind === 'server'
