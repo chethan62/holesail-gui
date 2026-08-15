@@ -11,10 +11,11 @@ import {
   takePendingDeepLinks,
   versionInfo,
   lanAddress,
-  homeDir
+  homeDir,
+  recentClear
 } from './bridge.js'
 import { initTheme } from './theme.js'
-import { initRecent, renderRecent, recentClear } from './recent.js'
+import { initRecent, renderRecent } from './recent.js'
 import { checkForUpdate } from './updater.js'
 import { renderSessions, updateUptimeNote } from './sessions.js'
 import { refreshSaved, exportAllSaved, applyImport, autostartSaved } from './saved.js'
