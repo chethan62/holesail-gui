@@ -295,9 +295,10 @@ jobs:
   flatpak:
     name: Flatpak (io.holesail.gui)
     needs: test
-    if: ${{ false }}  # DISABLED — source-module chain (ayatana-ido pc file) is
-                      # broken in CI; revisit later. See commit history for the
-                      # last attempt. Manual build: ./packaging/flatpak/build.sh
+    # DISABLED — source-module chain (ayatana-ido pc file) is broken in CI;
+    # revisit later. See commit history for the last attempt. Manual build:
+    # ./packaging/flatpak/build.sh
+    if: false
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
