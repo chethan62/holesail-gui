@@ -355,6 +355,17 @@ arrives on the device — in both directions.
 ## Changelog
 
 <details>
+<summary><b>v0.6.0</b> — security hardening + flatpak restored</summary>
+
+- Worker-side broad-path guard: filemanager refuses `/`, `~`, home children (defense-in-depth behind the renderer confirm)
+- Flatpak fixed (ayatana-ido pc-file cleanup) — CI job restored, bundle ships with releases again
+- `livefiles` declared as a direct dependency (was hoisting-dependent)
+- `rust-version = 1.91` pinned; saved-import capped at 100 tunnels (+test)
+- Fixed: `confirmInline` crash (both guardrails were dead code), ghost saved tunnels on failed start, filemanager password masking, `logAppend` unhandled rejection, saved-tunnel 90s timeout, `find_node` on Windows
+- README overhaul: TOC, benefits, known issues, FAQ — all collapsible
+</details>
+
+<details>
 <summary><b>v0.5.0</b> — permanent folder shares + security hardening</summary>
 
 - **Permanent folder shares**: "Permanent" toggle on the Share-a-folder form (fixed key, saved with the tunnel, auto-restarts with the app)
@@ -381,7 +392,9 @@ arrives on the device — in both directions.
 - **Public mode (`hs://0000…`) has no encryption** — treat it as an unauthenticated TCP relay; anyone with the key can connect
 - **No TCP-over-DHT portability guarantee** — like upstream holesail, tunnels are UDP-DHT based; some restrictive networks still block UDP hole-punching (rare; falls back through DHT relays automatically)
 - **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
-- **Flatpak in progress** — manifest builds manually, but the CI job was removed (ayatana-ido pc-file issue); no flatpak bundle ships with releases yet
+- **Flatpak in progress** — the manifest now builds cleanly (ayatana-ido
+  pc-file fix) and the CI job is back; the flatpak ships with releases
+  again. Runtime behavior on real desktops is still being validated.
 - **No traffic shaping / bandwidth caps** — a busy tunnel can saturate a link
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
