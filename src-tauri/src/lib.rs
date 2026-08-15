@@ -227,6 +227,10 @@ struct SavedTunnel {
     secure: bool,
     #[serde(default)]
     udp: bool,
+    /// Per-session bandwidth cap in bytes/sec (0 = unlimited). Persisted so
+    /// permanent/saved tunnels keep their cap across restarts.
+    #[serde(default)]
+    limit: u64,
     #[serde(default)]
     autostart: bool,
     #[serde(default)]

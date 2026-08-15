@@ -75,6 +75,17 @@
             <span class="check-text">Use UDP</span>
           </label>
           <label class="full">
+            Speed limit (KB/s, optional — 0 = unlimited)
+            <input
+              id="share-limit"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0 = unlimited"
+              title="Caps combined upload+download throughput for this tunnel"
+            />
+          </label>
+          <label class="full">
             Custom key (optional, min 32 hex chars)
             <input
               id="share-key"
@@ -99,6 +110,17 @@
           <label class="check">
             <input id="fm-secure" type="checkbox" checked />
             <span class="check-text">Private mode (secure)</span>
+          </label>
+          <label class="full">
+            Speed limit (KB/s, optional — 0 = unlimited)
+            <input
+              id="fm-limit"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0 = unlimited"
+              title="Caps combined upload+download throughput for this tunnel"
+            />
           </label>
           <label class="check full" id="fm-perm-wrap">
             <input id="fm-perm" type="checkbox" />
@@ -156,6 +178,17 @@
           <label class="check">
             <input id="connect-udp" type="checkbox" />
             <span class="check-text">Use UDP</span>
+          </label>
+          <label class="full">
+            Speed limit (KB/s, optional — 0 = unlimited)
+            <input
+              id="connect-limit"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0 = unlimited"
+              title="Caps combined upload+download throughput for this tunnel"
+            />
           </label>
           <label class="check full" id="connect-save-wrap">
             <input id="connect-save" type="checkbox" />

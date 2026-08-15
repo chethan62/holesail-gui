@@ -329,6 +329,50 @@ async function main() {
     await rpc('session:stop', { id: peerClient.id })
     await rpc('session:stop', { id: peerServer.id })
 
+    console.log('13d) bandwidth cap throttles a session')
+    // a 50 KB/s cap on a fast local loopback tunnel should visibly
+    // stretch the transfer time of 200 KB (uncapped it's near-instant)
+    const capServer = await rpc('server:start', { port: TEST_PORT + 7, secure: true, limit: 50 * 1024 }, 90000)
+    assert(capServer.limit === 50 * 1024, 'session reports the limit')
+    const capClient = await rpc('client:connect', { key: capServer.url }, 90000)
+    // echo server behind the tunnel
+    const net4 = require('net')
+    const echoServer = net4.createServer((sock) => sock.on('data', (d) => sock.write(d)))
+    await new Promise((res) => echoServer.listen(TEST_PORT + 7, '127.0.0.1', res))
+    const probe2 = net4.connect({ host: '127.0.0.1', port: capClient.port })
+    await new Promise((res, rej) => {
+      probe2.on('connect', res)
+      probe2.on('error', rej)
+    })
+    const total = 200 * 1024 // 200 KB
+    const start = Date.now()
+    // write in chunks so the limiter's queue/pause actually engages
+    for (let sent = 0; sent < total; ) {
+      const chunk = Math.min(16 * 1024, total - sent)
+      probe2.write(Buffer.alloc(chunk, 0x62))
+      sent += chunk
+      await sleep(10)
+    }
+    // drain the echo (the cap applies to BOTH directions, so reading is
+    // throttled too — wait until everything comes back)
+    let received = 0
+    while (received < total) {
+      const chunk = await new Promise((res) => probe2.once('data', (d) => res(d.length)))
+      received += chunk
+      if (Date.now() - start > 15000) break // safety
+    }
+    const elapsed = Date.now() - start
+    probe2.end()
+    const rate = (received / elapsed) * 1000
+    assert(received === total, `all ${total} bytes echoed (got ${received})`)
+    // 200 KB at 50 KB/s cap ≈ 4s+; assert it took meaningfully longer
+    // than the uncapped path would (and well above the cap's rate)
+    assert(rate <= 55 * 1024, `throughput capped (${Math.round(rate / 1024)} KB/s, limit 50 KB/s)`)
+    assert(elapsed > 2000, `transfer stretched by the cap (${elapsed}ms)`)
+    await rpc('session:stop', { id: capClient.id })
+    await rpc('session:stop', { id: capServer.id })
+    await new Promise((res) => echoServer.close(res))
+
     console.log('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
     const online = await rpc('lookup', { key: lkServer.url }, 60000)

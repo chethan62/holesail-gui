@@ -14,9 +14,9 @@
  *
  * Methods:
  *   ping                          -> "pong"
- *   server:start  {port, host?, secure?, key?, udp?}
- *   client:connect {key, port?, host?, udp?, secure?}
- *   filemanager:start {path, host?, port?, secure?, key?, role?, username?, password?}
+ *   server:start  {port, host?, secure?, key?, udp?, limit?}
+ *   client:connect {key, port?, host?, udp?, secure?, limit?}
+ *   filemanager:start {path, host?, port?, secure?, key?, role?, username?, password?, limit?}
  *   session:stop  {id}
  *   session:pause {id}
  *   session:resume {id}
@@ -111,6 +111,81 @@ const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
 // The engine's connPiper never counts bytes (only locCnt/remCnt/rejectCnt),
 // so we count at these choke points instead — no engine internals needed,
 // and it survives upstream plumbing changes.
+//
+// The same wrappers enforce the optional per-session bandwidth cap
+// (entry.limit, bytes/sec, 0 = unlimited) with a shared token bucket:
+//   read direction — when tokens run out, pause the source stream (server:
+//   the DHT stream; client: the local socket); the ticker resumes it.
+//   write direction — when tokens run out, queue the chunk and drain it
+//   (with partial writes) as tokens refill.
+// A single bucket caps COMBINED throughput (the use case behind the
+// feature: "a busy tunnel can saturate my link").
+
+function limiterFor(entry) {
+  if (!entry._lim) entry._lim = { tokens: 0, last: 0, queue: [], paused: [], timer: null }
+  return entry._lim
+}
+
+function startLimitTicker(entry) {
+  const lim = limiterFor(entry)
+  if (lim.timer) return
+  lim.last = Date.now()
+  const tick = () => {
+    if (!entry.limit || !sessions.has(entry.id)) {
+      lim.timer = null
+      return
+    }
+    const now = Date.now()
+    // bucket caps at 1s worth of budget; partial-write draining below
+    // guarantees no chunk ever deadlocks the queue
+    lim.tokens = Math.min(entry.limit, lim.tokens + (entry.limit * (now - lim.last)) / 1000)
+    lim.last = now
+    // drain queued writes (partial writes for chunks larger than budget)
+    while (lim.queue.length && lim.tokens > 0) {
+      const q = lim.queue[0]
+      if (q.len <= lim.tokens) {
+        lim.queue.shift()
+        lim.tokens -= q.len
+        try { q.fn(q.buf, ...q.rest) } catch {}
+      } else {
+        const take = Math.floor(lim.tokens)
+        lim.tokens = 0
+        const head = Buffer.isBuffer(q.buf) ? q.buf.subarray(0, take) : String(q.buf).slice(0, take)
+        q.buf = Buffer.isBuffer(q.buf) ? q.buf.subarray(take) : String(q.buf).slice(take)
+        q.len -= take
+        try { q.fn(head, ...q.rest) } catch {}
+      }
+    }
+    // resume paused source streams now that budget is available
+    if (lim.paused.length && lim.tokens > 0) {
+      for (const s of lim.paused) {
+        try { s.resume() } catch {}
+      }
+      lim.paused = []
+    }
+    lim.timer = setTimeout(tick, 200)
+  }
+  lim.timer = setTimeout(tick, 200)
+}
+
+function stopLimitTicker(entry) {
+  const lim = entry._lim
+  if (!lim) return
+  if (lim.timer) {
+    clearTimeout(lim.timer)
+    lim.timer = null
+  }
+  // unlimited: flush anything queued and un-pause everything immediately
+  while (lim.queue.length) {
+    const q = lim.queue.shift()
+    try { q.fn(q.buf, ...q.rest) } catch {}
+  }
+  for (const s of lim.paused) {
+    try { s.resume() } catch {}
+  }
+  lim.paused = []
+}
+
 function wireDataCounters(entry) {
   const dht = entry.hs && entry.hs.dht
   if (!dht) return
@@ -118,17 +193,47 @@ function wireDataCounters(entry) {
   const bump = (dir, n) => {
     if (n > 0) stats[dir] = (stats[dir] || 0) + n
   }
+  // consume() returns true when the byte count fits the budget (or there
+  // is no cap); false → caller must throttle (pause/queue)
+  const consume = (n) => {
+    if (!entry.limit) return true
+    const lim = limiterFor(entry)
+    if (lim.tokens >= n) {
+      lim.tokens -= n
+      return true
+    }
+    return false
+  }
+  const pauseForLimit = (stream) => {
+    const lim = limiterFor(entry)
+    if (!lim.paused.includes(stream)) lim.paused.push(stream)
+    try { stream.pause() } catch {}
+  }
   const wrapStream = (stream, upDir, downDir) => {
     if (!stream || stream.__hgCounted) return
     stream.__hgCounted = true
-    stream.on('data', (d) => bump(downDir, d ? d.length : 0))
+    stream.on('data', (d) => {
+      const n = d ? d.length : 0
+      bump(downDir, n)
+      if (entry.limit && n && !consume(n)) pauseForLimit(stream)
+    })
     if (typeof stream.write === 'function') {
       const ow = stream.write.bind(stream)
       stream.write = (buf, ...rest) => {
-        bump(upDir, typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0)
+        const n = typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0
+        bump(upDir, n)
+        if (entry.limit && n) {
+          if (consume(n)) return ow(buf, ...rest)
+          limiterFor(entry).queue.push({ len: n, buf, rest, fn: ow })
+          return false
+        }
         return ow(buf, ...rest)
       }
     }
+    stream.on('close', () => {
+      const lim = entry._lim
+      if (lim) lim.paused = lim.paused.filter((s) => s !== stream)
+    })
   }
 
   // SERVER: every incoming tunnel connection — count bytes AND tell the
@@ -144,7 +249,8 @@ function wireDataCounters(entry) {
   if (dht.proxy && typeof dht.proxy.on === 'function') {
     dht.proxy.on('connection', (sock) => wrapStream(sock, 'bytesUp', 'bytesDown'))
   }
-  // CLIENT UDP: the dgram socket
+  // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
+  // pacing is out of scope for the per-session cap)
   if (dht.proxySocket && typeof dht.proxySocket.on === 'function') {
     const ps = dht.proxySocket
     ps.on('message', (m) => bump('bytesUp', m ? m.length : 0))
@@ -296,6 +402,7 @@ async function startServer(params) {
   if (params.key !== undefined && params.key !== null && String(params.key).length < 32) {
     throw new Error('A key should have a minimum length of 32 chars for security purposes')
   }
+  const limit = normalizeLimit(params.limit)
   const hs = new Holesail({
     server: true,
     port,
@@ -307,12 +414,20 @@ async function startServer(params) {
   await hs.ready()
   const id = String(nextId++)
   const session = recordFromHs(hs, id)
-  const entry = { hs, ...session }
+  const entry = { hs, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
+  if (limit) startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
-  return session
+  return { ...session, limit }
+}
+
+function normalizeLimit(limit) {
+  if (limit === undefined || limit === null || limit === '') return 0
+  const n = Number(limit)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
 }
 
 async function startFilemanager(params) {
@@ -349,6 +464,7 @@ async function startFilemanager(params) {
   // runtime too.
   const port = Number(params.port) || 5409
   const host = params.host || '127.0.0.1'
+  const limit = normalizeLimit(params.limit)
   const fileServer = new Livefiles({
     path: resolved,
     role: params.role,
@@ -377,12 +493,13 @@ async function startFilemanager(params) {
     fsUsername: fsInfo.username || null,
     fsPassword: fsInfo.password || null
   }
-  const entry = { hs, fileServer, ...session }
+  const entry = { hs, fileServer, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
+  if (limit) startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
-  return session
+  return { ...session, limit }
 }
 
 async function connectClient(params) {
@@ -394,6 +511,7 @@ async function connectClient(params) {
   if (key.length === 0) {
     throw new Error('Connection string is required')
   }
+  const limit = normalizeLimit(params.limit)
   let port
   if (params.port !== undefined && params.port !== null && params.port !== '') {
     port = Number(params.port)
@@ -418,20 +536,22 @@ async function connectClient(params) {
   await hs.ready()
   const id = String(nextId++)
   const session = recordFromHs(hs, id)
-  const entry = { hs, ...session }
+  const entry = { hs, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
+  if (limit) startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
-  return session
+  return { ...session, limit }
 }
 
 async function stopSession(id) {
   const entry = sessions.get(id)
   if (!entry) throw new Error(`No session with id ${id}`)
-  // stop the throttled stats emitter so no stale counter event lands after
-  // the card is gone (the renderer deletes sessions on 'stopped')
+  // stop the throttled stats emitter + the bandwidth limiter so no stale
+  // event lands after the card is gone (the renderer deletes on 'stopped')
   clearStatsEmit(id)
+  stopLimitTicker(entry)
   await entry.hs.close()
   // filemanager sessions own a Livefiles server next to the tunnel
   if (entry.fileServer) {
@@ -475,6 +595,7 @@ function getSessionStats(id) {
   const stats = entry.stats || {}
   return {
     id,
+    limit: entry.limit || 0,
     bytesUp: stats.bytesUp || 0,
     bytesDown: stats.bytesDown || 0,
     locCnt: stats.locCnt || 0,
@@ -607,6 +728,7 @@ function onAsyncError(kind, err) {
     // (close() may itself hang on the broken resource).
     sessions.delete(session.id)
     clearStatsEmit(session.id)
+    stopLimitTicker(session)
     sendEvent('session:update', {
       id: session.id,
       state: 'error',

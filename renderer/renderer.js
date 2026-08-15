@@ -583,6 +583,9 @@ function renderSession(container, s) {
   const connSpan = el('span', 't-conn', 'traffic-conn-' + s.id)
   connSpan.textContent = (stats.locCnt ? stats.locCnt + ' conn' : '') + (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
   if (connSpan.textContent) trafficRow.append(' · ', connSpan)
+  if (s.limit) {
+    trafficRow.append(' · ⏱ ' + fmtBytes(s.limit) + '/s cap')
+  }
   trafficRow.title = 'Upload / download through the tunnel · live connections'
 
   // rolling traffic sparkline (30 samples of ~500ms each ≈ 15s window)
@@ -954,6 +957,17 @@ async function stopAllTunnels() {
 
 /* ------------------------------ actions ---------------------------------- */
 
+// Read a speed-limit input (KB/s) → bytes/sec for the worker. Empty/0 →
+// 0 (unlimited). Clamped to a sane ceiling (1 GB/s) so a typo can't set a
+// nonsense value.
+function readLimit(sel) {
+  const v = $(sel).value.trim()
+  if (!v) return 0
+  const kb = Number(v)
+  if (!Number.isFinite(kb) || kb <= 0) return 0
+  return Math.min(Math.round(kb * 1024), 1024 * 1024 * 1024)
+}
+
 async function startShare(event) {
   event.preventDefault()
   const button = $('#share-start')
@@ -964,6 +978,7 @@ async function startShare(event) {
     host: $('#share-host').value.trim() || '127.0.0.1',
     secure: $('#share-secure').checked,
     udp: $('#share-udp').checked,
+    limit: readLimit('#share-limit'),
     key
   }
   setBusy(button, true)
@@ -982,6 +997,7 @@ async function startShare(event) {
         host: params.host,
         secure: params.secure,
         udp: params.udp,
+        limit: params.limit,
         autostart: true,
         createdAt: Date.now()
       })
@@ -1035,7 +1051,7 @@ async function startFilemanagerShare(event) {
   }
   const isPerm = $('#fm-perm').checked
   const key = $('#fm-key').value.trim() || undefined
-  const params = { path, secure: $('#fm-secure').checked, key }
+  const params = { path, secure: $('#fm-secure').checked, limit: readLimit('#fm-limit'), key }
   setBusy(button, true)
   let tunnel = null // hoisted so the catch can roll back a persisted-but-failed save
   try {
@@ -1049,6 +1065,7 @@ async function startFilemanagerShare(event) {
         path: params.path,
         secure: params.secure,
         udp: false, // filemanager can't use UDP (CLI validateInput)
+        limit: params.limit,
         autostart: true,
         createdAt: Date.now()
       })
@@ -1098,7 +1115,8 @@ async function startConnect(event) {
     key: $('#connect-key').value.trim(),
     port: portVal ? Number(portVal) : undefined,
     host: $('#connect-host').value.trim() || undefined,
-    udp: $('#connect-udp').checked
+    udp: $('#connect-udp').checked,
+    limit: readLimit('#connect-limit')
   }
   if (!params.key) return
   setBusy(button, true)
@@ -1135,6 +1153,7 @@ async function startConnect(event) {
         host: params.host ?? null,
         secure: cleanKey.startsWith('hs://s000'),
         udp: params.udp,
+        limit: params.limit,
         autostart: true,
         createdAt: Date.now()
       })
@@ -1206,6 +1225,7 @@ async function startSaved(t) {
         host: t.host || '127.0.0.1',
         secure: t.secure !== false, // public permanents must stay public
         udp: t.udp,
+        limit: t.limit || 0,
         key: t.key
       }, 90000) // cold DHT bootstrap can take 90s — same as the Share tab
     } else if (t.kind === 'filemanager') {
@@ -1213,6 +1233,7 @@ async function startSaved(t) {
       session = await rpc('filemanager:start', {
         path: t.path,
         secure: t.secure !== false,
+        limit: t.limit || 0,
         key: t.key,
         host: t.host || undefined,
         port: t.port ?? undefined,
@@ -1225,15 +1246,16 @@ async function startSaved(t) {
         key: t.key,
         port: t.port ?? undefined,
         host: t.host || undefined,
-        udp: t.udp
+        udp: t.udp,
+        limit: t.limit || 0
       }, 90000) // cold DHT bootstrap can take 90s — same as the Connect tab
     }
     rememberSession(session.id, t.kind, {
       ...(t.kind === 'server'
-        ? { port: t.port, host: t.host || '127.0.0.1', secure: t.secure !== false, udp: t.udp, key: t.key }
+        ? { port: t.port, host: t.host || '127.0.0.1', secure: t.secure !== false, udp: t.udp, limit: t.limit || 0, key: t.key }
         : t.kind === 'filemanager'
-          ? { path: t.path, secure: t.secure !== false, key: t.key }
-          : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp })
+          ? { path: t.path, secure: t.secure !== false, limit: t.limit || 0, key: t.key }
+          : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp, limit: t.limit || 0 })
     })
     addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
