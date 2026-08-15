@@ -1009,14 +1009,24 @@ fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
 }
 
 /// Locate a usable `node` binary: known install locations first, then PATH.
+/// Platform-aware: on Windows the binary is `node.exe` (the bundled-bare
+/// path handles packaged installs; this is the dev/source-install fallback).
 #[cfg(not(target_os = "android"))]
 fn find_node() -> Option<PathBuf> {
-    let candidates = [
-        "/usr/bin/node",
-        "/usr/local/bin/node",
-        "/opt/homebrew/bin/node",
-        "/usr/bin/nodejs",
-    ];
+    let bin_name = if cfg!(windows) { "node.exe" } else { "node" };
+    let candidates: &[&str] = if cfg!(windows) {
+        &[
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files (x86)\nodejs\node.exe",
+        ]
+    } else {
+        &[
+            "/usr/bin/node",
+            "/usr/local/bin/node",
+            "/opt/homebrew/bin/node",
+            "/usr/bin/nodejs",
+        ]
+    };
     for c in candidates {
         if std::path::Path::new(c).is_file() {
             return Some(PathBuf::from(c));
@@ -1024,7 +1034,7 @@ fn find_node() -> Option<PathBuf> {
     }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            let cand = dir.join("node");
+            let cand = dir.join(bin_name);
             if cand.is_file() {
                 return Some(cand);
             }

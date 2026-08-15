@@ -220,9 +220,10 @@ flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47
 flatpak run io.holesail.gui
 ```
 
-> Note: built + launched successfully on a Linux dev box (2026-08-15) and
-> verified in CI via the `flatpak` job in `.github/workflows/build.yml`
-> (builds `holesail-gui.flatpak`, shipped with releases).
+> Note: the flatpak builds manually on a Linux dev box, but CI does not
+> build it yet — the source-module chain (ayatana-ido `.pc` file not found
+> by libayatana-indicator's cmake inside the GNOME SDK) is broken on the
+> runner. The manifest + `build.sh` stay in the repo for when that's fixed.
 
 </details>
 
