@@ -131,9 +131,14 @@ function wireDataCounters(entry) {
     }
   }
 
-  // SERVER: every incoming tunnel connection
+  // SERVER: every incoming tunnel connection — count bytes AND tell the
+  // UI a peer arrived (session:peer). The renderer logs/toasts it, so the
+  // tunnel owner knows when someone actually connects to their share.
   if (dht.server && typeof dht.server.on === 'function') {
-    dht.server.on('connection', (c) => wrapStream(c, 'bytesUp', 'bytesDown'))
+    dht.server.on('connection', (c) => {
+      wrapStream(c, 'bytesUp', 'bytesDown')
+      sendEvent('session:peer', { id: entry.id, at: Date.now() })
+    })
   }
   // CLIENT TCP: every local app connection through the proxy
   if (dht.proxy && typeof dht.proxy.on === 'function') {

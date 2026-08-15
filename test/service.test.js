@@ -295,6 +295,40 @@ async function main() {
     assert(seen.length >= 2, `stats events re-arm (got ${seen.length} in ~1.6s)`)
     await rpc('session:stop', { id: evServer.id })
 
+    console.log('13c) session:peer fires when a client connects to a server')
+    const peerServer = await rpc('server:start', { port: TEST_PORT + 6, secure: true }, 90000)
+    const peers = []
+    const onPeer = (line) => {
+      try {
+        const m = JSON.parse(line)
+        if (m.event === 'session:peer' && m.data && m.data.id === peerServer.id) peers.push(m.data)
+      } catch {}
+    }
+    rl.on('line', onPeer)
+    // connect a real client through the tunnel
+    const peerClient = await rpc('client:connect', { key: peerServer.url }, 90000)
+    // make sure a connection actually establishes (the client proxy
+    // listening isn't enough — the DHT connection happens on first use),
+    // so probe through the proxy against the server's local port
+    const net3 = require('net')
+    const peerProbe = net3.connect({ host: '127.0.0.1', port: peerClient.port })
+    await new Promise((res, rej) => {
+      peerProbe.on('connect', res)
+      peerProbe.on('error', rej)
+    })
+    peerProbe.end()
+    // the DHT connection can take longer under the bare runtime — poll
+    // for up to 8s for the peer event instead of a fixed sleep
+    let waited = 0
+    while (peers.length === 0 && waited < 8000) {
+      await sleep(250)
+      waited += 250
+    }
+    rl.off('line', onPeer)
+    assert(peers.length >= 1, `session:peer fired for the connected client (got ${peers.length})`)
+    await rpc('session:stop', { id: peerClient.id })
+    await rpc('session:stop', { id: peerServer.id })
+
     console.log('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
     const online = await rpc('lookup', { key: lkServer.url }, 60000)

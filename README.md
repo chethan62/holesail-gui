@@ -358,11 +358,18 @@ arrives on the device — in both directions.
 ## Changelog
 
 <details>
-<summary><b>Unreleased</b> — custom app icon</summary>
+<summary><b>Unreleased</b> — custom app icon + live traffic stats</summary>
 
 - Replaced the Tauri template icon with a custom flat two-color mark
   (teal + yellow interlocking shapes, transparent background). Master
   artwork: `src-tauri/icons/source.png`; regenerate all sizes via `tauri icon`.
+- **Live per-session traffic stats**: every tunnel card now shows
+  cumulative upload/download bytes, live connection count, and a rolling
+  throughput sparkline (teal = upload, yellow = download), refreshed ~2×/s
+  in place.
+- **Peer notifications**: when someone connects to one of your server
+  tunnels, the app logs it and shows a toast (rate-limited) with a total
+  connection count.
 
 </details>
 

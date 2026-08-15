@@ -220,7 +220,8 @@ const state = {
   replay: new Map(), // session id -> { type, params } for one-click reconnect
   lanIp: null, // this machine's LAN IPv4, for direct same-network access
   workerOk: false,
-  traffic: new Map() // id -> { up: number[], down: number[] } rolling history
+  traffic: new Map(), // id -> { up: number[], down: number[] } rolling history
+  conn: new Map() // id -> total peers connected (server sessions)
 }
 
 // worker readiness handshake (worker:ready event); RPCs fail fast until set
@@ -232,6 +233,7 @@ function upsertSession(data) {
     state.meta.delete(data.id)
     state.revealed.delete(data.id)
     state.traffic.delete(data.id)
+    state.conn.delete(data.id)
   } else {
     if (data.state === 'error') {
     // the worker killed just this session after an async error — show
@@ -267,6 +269,25 @@ function upsertSession(data) {
 /// tunnel can be restarted in one click (see the 'error' event path).
 function rememberSession(id, type, params) {
   state.replay.set(id, { type, params })
+}
+
+// A peer connected to one of our server sessions. Total count lives in
+// state.conn (per session); the log line is the durable record and the
+// toast is rate-limited so a reconnect-happy peer doesn't spam.
+let lastPeerToast = 0
+function onPeerConnected(data) {
+  const id = data && data.id
+  if (!id) return
+  const count = (state.conn.get(id) || 0) + 1
+  state.conn.set(id, count)
+  const s = state.sessions.get(id)
+  const what = s && s.type === 'filemanager' ? 'folder share' : 'tunnel'
+  log(`Peer connected to ${what} (${count} total)`, 'ok')
+  const now = Date.now()
+  if (now - lastPeerToast > 4000) {
+    lastPeerToast = now
+    toast(`Peer connected · ${count} total`)
+  }
 }
 
 async function reconnectSession(id) {
@@ -756,6 +777,11 @@ onEvent((msg) => {
   switch (msg.event) {
     case 'session:update':
       upsertSession(msg.data)
+      break
+    case 'session:peer':
+      // a peer connected to a server session — log + toast (rate-limited
+      // to avoid toast storms from a chatty peer reconnecting)
+      onPeerConnected(msg.data)
       break
     case 'worker:spawned':
       // fresh worker (boot or respawn): log only — actual syncing waits for
