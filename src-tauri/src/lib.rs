@@ -673,6 +673,32 @@ mod tests {
     }
 
     #[test]
+    fn import_respects_max_saved_tunnels_cap() {
+        // 120 fresh tunnels in the import JSON; only MAX_SAVED_TUNNELS (100)
+        // may land in the store — a huge/malformed export must not bloat it.
+        let store = store_with(vec![]);
+        let json = serde_json::json!(
+            (0..120)
+                .map(|i| serde_json::json!({
+                    "id": format!("t{i}"),
+                    "name": format!("t{i}"),
+                    "kind": "client",
+                    "key": "hs://x",
+                    "port": null,
+                    "secure": false,
+                    "udp": false,
+                    "autostart": false,
+                    "createdAt": i
+                }))
+                .collect::<Vec<_>>()
+        )
+        .to_string();
+        let len = saved_import_core(&store, &json);
+        assert_eq!(len, 100); // capped, not 120
+        assert_eq!(store.0.lock().unwrap().len(), 100);
+    }
+
+    #[test]
     fn legacy_json_without_secure_defaults_to_private() {
         // tunnels saved before the `secure` field existed must deserialize
         // as private (secure=true) — otherwise a public permanent server
