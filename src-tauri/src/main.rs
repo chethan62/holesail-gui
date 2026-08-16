@@ -51,7 +51,10 @@ mod instance_diag {
     }
 
     pub fn owner() -> Option<Owner> {
-        let out = Command::new("busctl").args(["--user", "list"]).output().ok()?;
+        let out = Command::new("busctl")
+            .args(["--user", "list"])
+            .output()
+            .ok()?;
         let text = String::from_utf8_lossy(&out.stdout);
         for line in text.lines() {
             if !line.contains(DBUS_NAME) {

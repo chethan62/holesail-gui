@@ -18,7 +18,11 @@ pub(crate) fn queue_deep_link(app: &AppHandle, url: String) {
     if !url.starts_with("hs://") {
         return;
     }
-    app.state::<PendingDeepLinks>().0.lock().unwrap().push(url.clone());
+    app.state::<PendingDeepLinks>()
+        .0
+        .lock()
+        .unwrap()
+        .push(url.clone());
     let _ = app.emit(
         "app:event",
         serde_json::json!({ "event": "deep-link:open", "data": { "url": url } }),
@@ -126,8 +130,8 @@ mod tests {
     #[test]
     fn trim_drops_whole_lines_from_front() {
         let s = "aaaa\nbbbb\ncccc\n".to_string(); // 15 bytes
-        // cap 10 -> keep_from 5 lands inside "bbbb"; the kept window
-        // "bb\ncccc\n" drops through its first newline -> "cccc\n"
+                                                  // cap 10 -> keep_from 5 lands inside "bbbb"; the kept window
+                                                  // "bb\ncccc\n" drops through its first newline -> "cccc\n"
         let t = trim_to_cap(s, 10);
         assert_eq!(t, "cccc\n");
         assert!(t.len() <= 10);

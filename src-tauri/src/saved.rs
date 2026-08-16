@@ -222,7 +222,11 @@ fn saved_duplicate_core(store: &SavedStore, id: &str) -> Option<SavedTunnel> {
 }
 
 #[tauri::command]
-pub(crate) fn saved_duplicate(app: AppHandle, store: State<SavedStore>, id: String) -> Option<SavedTunnel> {
+pub(crate) fn saved_duplicate(
+    app: AppHandle,
+    store: State<SavedStore>,
+    id: String,
+) -> Option<SavedTunnel> {
     let copy = saved_duplicate_core(&store, &id)?;
     saved_persist(&app, &store);
     Some(copy)
@@ -349,7 +353,10 @@ mod tests {
 
     #[test]
     fn delete_removes_by_id() {
-        let store = store_with(vec![tunnel("a", "server", false), tunnel("b", "client", false)]);
+        let store = store_with(vec![
+            tunnel("a", "server", false),
+            tunnel("b", "client", false),
+        ]);
         saved_remove(&store, "a");
         let list = store.0.lock().unwrap();
         assert_eq!(list.len(), 1);
@@ -398,21 +405,19 @@ mod tests {
         // 120 fresh tunnels in the import JSON; only MAX_SAVED_TUNNELS (100)
         // may land in the store — a huge/malformed export must not bloat it.
         let store = store_with(vec![]);
-        let json = serde_json::json!(
-            (0..120)
-                .map(|i| serde_json::json!({
-                    "id": format!("t{i}"),
-                    "name": format!("t{i}"),
-                    "kind": "client",
-                    "key": "hs://x",
-                    "port": null,
-                    "secure": false,
-                    "udp": false,
-                    "autostart": false,
-                    "createdAt": i
-                }))
-                .collect::<Vec<_>>()
-        )
+        let json = serde_json::json!((0..120)
+            .map(|i| serde_json::json!({
+                "id": format!("t{i}"),
+                "name": format!("t{i}"),
+                "kind": "client",
+                "key": "hs://x",
+                "port": null,
+                "secure": false,
+                "udp": false,
+                "autostart": false,
+                "createdAt": i
+            }))
+            .collect::<Vec<_>>())
         .to_string();
         let len = saved_import_core(&store, &json);
         assert_eq!(len, 100); // capped, not 120
@@ -432,7 +437,10 @@ mod tests {
 
     #[test]
     fn autostart_wants_true_when_any_tunnel_asks() {
-        let store = store_with(vec![tunnel("a", "server", false), tunnel("b", "client", true)]);
+        let store = store_with(vec![
+            tunnel("a", "server", false),
+            tunnel("b", "client", true),
+        ]);
         assert!(saved_wants_autostart(&store));
         let store2 = store_with(vec![tunnel("a", "server", false)]);
         assert!(!saved_wants_autostart(&store2));

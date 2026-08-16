@@ -7,7 +7,10 @@
   "scripts": {
     "predev": "node scripts/prepare-resources.mjs",
     "dev": "tauri dev",
-    "lint": "eslint renderer/ service-worker.js test/ scripts/",
+    "lint": "eslint renderer/ service-worker.js worker/ test/ scripts/",
+    "lint:fix": "eslint renderer/ service-worker.js worker/ test/ scripts/ --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "build": "node scripts/prepare-resources.mjs --bare && tauri build",
     "build:no-bundle": "node scripts/prepare-resources.mjs --bare && tauri build --no-bundle",
     "prepare:android": "node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android",
@@ -23,6 +26,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "eslint": "^10.8.1"
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6"
   }
 }

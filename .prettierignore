@@ -1,0 +1,11 @@
+# vendored / generated / build artifacts — never format
+node_modules/
+dist-resources/
+dist-resources-bare/
+dist-resources-android/
+dist-resources-android-x64/
+src-tauri/target/
+src-tauri/gen/
+renderer/vendor/
+packaging/
+package-lock.json

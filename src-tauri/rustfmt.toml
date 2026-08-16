@@ -1,0 +1,4 @@
+# Rust formatting — keep the default rustfmt style (the split code already
+# passes `cargo fmt --check`; this file exists so style is pinned and any
+# future contributor's `cargo fmt` produces identical output).
+max_width = 100

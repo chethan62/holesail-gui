@@ -13,9 +13,7 @@ use tauri::State;
 
 use std::io::Write;
 
-use crate::worker::{
-    Pending, PendingState, StdinState, NEXT_RPC_ID, RPC_TIMEOUT, WORKER_READY,
-};
+use crate::worker::{Pending, PendingState, StdinState, NEXT_RPC_ID, RPC_TIMEOUT, WORKER_READY};
 
 #[tauri::command]
 pub(crate) async fn rpc(
