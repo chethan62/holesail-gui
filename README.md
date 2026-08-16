@@ -357,8 +357,8 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details>
-<summary><b>Unreleased</b> — modular codebase + CI guardrails + UI/security polish</summary>
+<details id="v0.7.0">
+<summary><b>v0.7.0</b> — modular codebase + CI guardrails + UI/security polish</summary>
 
 - **Modular codebase** — the renderer (1,791-line monolith), Rust backend
   (1,694-line `lib.rs`), and service worker (769-line file) are each split
