@@ -152,6 +152,8 @@ modules:
       - install -Dm755 holesail-gui /app/lib/holesail-gui/holesail-gui
       - install -Dm755 bare /app/lib/holesail-gui/bare
       - install -Dm644 service-worker.js /app/lib/holesail-gui/service-worker.js
+      - install -d /app/lib/holesail-gui/worker
+      - install -Dm644 worker/*.js /app/lib/holesail-gui/worker/
       - tar -xf node_modules.tar -C /app/lib/holesail-gui/
       - install -Dm755 holesail-gui /app/bin/holesail-gui
       - install -Dm644 holesail-gui.desktop /app/share/applications/io.holesail.gui.desktop
@@ -163,6 +165,9 @@ modules:
         path: ../../dist-resources/bare
       - type: file
         path: ../../dist-resources/service-worker.js
+      - type: dir
+        path: ../../dist-resources/worker
+        dest: worker
       - type: file
         path: ../../dist-resources/node_modules.tar
       - type: file

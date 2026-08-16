@@ -3,6 +3,7 @@
   "bundle": {
     "resources": {
       "../dist-resources/service-worker.js": "service-worker.js",
+      "../dist-resources/worker": "worker",
       "../dist-resources/node_modules": "node_modules",
       "../dist-resources/bare.exe": "bare.exe"
     }

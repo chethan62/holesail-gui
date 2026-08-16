@@ -45,8 +45,9 @@ const out = path.join(root, opt.out)
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 
-// 1. worker script
+// 1. worker script + its modules
 cpSync(path.join(root, 'service-worker.js'), path.join(out, 'service-worker.js'))
+cpSync(path.join(root, 'worker'), path.join(out, 'worker'), { recursive: true })
 
 // 2. production-only node_modules — a clean install against a package.json
 //    that lists only the runtime dependency.

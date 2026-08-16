@@ -38,7 +38,7 @@ export default [
     }
   },
   {
-    files: ['service-worker.js', 'test/**/*.js'],
+    files: ['service-worker.js', 'worker/**/*.js', 'test/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',

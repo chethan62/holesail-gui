@@ -17,7 +17,7 @@ echo "==> building unpatched release binary"
 echo "==> copying release binary + resources"
 cp "$REPO_ROOT/src-tauri/target/release/holesail-gui" ./holesail-gui-bin
 rm -f ./resources.tar.zst
-(cd "$REPO_ROOT/dist-resources" && tar --zstd -cf "$OLDPWD/resources.tar.zst" service-worker.js node_modules bare)
+(cd "$REPO_ROOT/dist-resources" && tar --zstd -cf "$OLDPWD/resources.tar.zst" service-worker.js worker node_modules bare)
 cp "$REPO_ROOT/src-tauri/icons/128x128.png" ./holesail-gui.png
 
 echo "==> running makepkg"
