@@ -358,11 +358,20 @@ arrives on the device — in both directions.
 ## Changelog
 
 <details>
-<summary><b>Unreleased</b> — custom app icon + live traffic stats</summary>
+<summary><b>Unreleased</b> — modular codebase + CI guardrails + UI/security polish</summary>
 
-- Replaced the Tauri template icon with a custom flat two-color mark
-  (teal + yellow interlocking shapes, transparent background). Master
-  artwork: `src-tauri/icons/source.png`; regenerate all sizes via `tauri icon`.
+- **Modular codebase** — the renderer (1,791-line monolith), Rust backend
+  (1,694-line `lib.rs`), and service worker (769-line file) are each split
+  into focused acyclic modules (15 renderer ES modules, 7 Rust modules, 10
+  worker CommonJS modules). Same behavior, far easier to fix and extend.
+- **CI guardrails** — ESLint (`npm run lint`) and `rustfmt --check` now run
+  in CI; Prettier added as an opt-in formatter.
+- **Public-mode warning** — unchecking "Private mode" (or pasting a public
+  `hs://0000…` key) shows an amber "no encryption" banner.
+- **Plain-English errors** — worker/engine errors are mapped to readable
+  messages with a hint instead of raw strings; friendlier empty state with
+  a CTA.
+- **Drag-and-drop folder sharing** — drop a folder on the window to share it.
 - **Live per-session traffic stats**: every tunnel card now shows
   cumulative upload/download bytes, live connection count, and a rolling
   throughput sparkline (teal = upload, yellow = download), refreshed ~2×/s
@@ -376,6 +385,8 @@ arrives on the device — in both directions.
 - **Per-session bandwidth cap**: Speed limit (KB/s) on Share, Share-a-folder
   and Connect forms caps combined upload+download throughput (token bucket);
   persisted on saved tunnels; shown as "⏱ cap" on the card.
+- App icon replaced with a custom flat two-color mark (teal + yellow,
+  transparent background).
 
 </details>
 
@@ -419,7 +430,7 @@ arrives on the device — in both directions.
 - **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
-- **No traffic shaping / bandwidth caps** — a busy tunnel can saturate a link
+- **Bandwidth caps are per-session only** — the Speed-limit (KB/s) cap applies to a single tunnel's combined up+down; there's no global shaping or per-direction control yet
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
