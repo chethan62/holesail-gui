@@ -55,7 +55,9 @@ function wireDataCounters(entry) {
   const pauseForLimit = (stream) => {
     const lim = limiterFor(entry)
     if (!lim.paused.includes(stream)) lim.paused.push(stream)
-    try { stream.pause() } catch {}
+    try {
+      stream.pause()
+    } catch {}
   }
   const wrapStream = (stream, upDir, downDir) => {
     if (!stream || stream.__hgCounted) return
@@ -68,7 +70,12 @@ function wireDataCounters(entry) {
     if (typeof stream.write === 'function') {
       const ow = stream.write.bind(stream)
       stream.write = (buf, ...rest) => {
-        const n = typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0
+        const n =
+          typeof buf === 'string'
+            ? Buffer.byteLength(buf)
+            : buf
+              ? buf.length
+              : 0
         bump(upDir, n)
         if (entry.limit && n) {
           if (consume(n)) return ow(buf, ...rest)
@@ -100,12 +107,19 @@ function wireDataCounters(entry) {
         if (rs && rs.remoteHost) peerAddr = String(rs.remoteHost)
         viaRelay = !!c.relay
       } catch {}
-      sendEvent('session:peer', { id: entry.id, at: Date.now(), viaRelay, peerAddr })
+      sendEvent('session:peer', {
+        id: entry.id,
+        at: Date.now(),
+        viaRelay,
+        peerAddr
+      })
     })
   }
   // CLIENT TCP: every local app connection through the proxy
   if (dht.proxy && typeof dht.proxy.on === 'function') {
-    dht.proxy.on('connection', (sock) => wrapStream(sock, 'bytesUp', 'bytesDown'))
+    dht.proxy.on('connection', (sock) =>
+      wrapStream(sock, 'bytesUp', 'bytesDown')
+    )
   }
   // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
   // pacing is out of scope for the per-session cap)
@@ -115,7 +129,14 @@ function wireDataCounters(entry) {
     if (typeof ps.send === 'function') {
       const osend = ps.send.bind(ps)
       ps.send = (buf, ...rest) => {
-        bump('bytesDown', typeof buf === 'string' ? Buffer.byteLength(buf) : buf ? buf.length : 0)
+        bump(
+          'bytesDown',
+          typeof buf === 'string'
+            ? Buffer.byteLength(buf)
+            : buf
+              ? buf.length
+              : 0
+        )
         return osend(buf, ...rest)
       }
     }

@@ -7,8 +7,17 @@
 const { fs, path } = require('./runtime.js')
 const { sessions, nextSessionId } = require('./state.js')
 const { sendEvent } = require('./transport.js')
-const { assertCapacity, pickFreePort, isBroadSharePath } = require('./guards.js')
-const { wireSessionStats, armStatsEmit, clearStatsEmit, emitSession } = require('./stats.js')
+const {
+  assertCapacity,
+  pickFreePort,
+  isBroadSharePath
+} = require('./guards.js')
+const {
+  wireSessionStats,
+  armStatsEmit,
+  clearStatsEmit,
+  emitSession
+} = require('./stats.js')
 const { startLimitTicker, stopLimitTicker } = require('./limiter.js')
 
 const Holesail = require('holesail')
@@ -44,8 +53,14 @@ async function startServer(params) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid port: ${params.port}`)
   }
-  if (params.key !== undefined && params.key !== null && String(params.key).length < 32) {
-    throw new Error('A key should have a minimum length of 32 chars for security purposes')
+  if (
+    params.key !== undefined &&
+    params.key !== null &&
+    String(params.key).length < 32
+  ) {
+    throw new Error(
+      'A key should have a minimum length of 32 chars for security purposes'
+    )
   }
   const limit = normalizeLimit(params.limit)
   const hs = new Holesail({

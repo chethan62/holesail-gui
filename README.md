@@ -41,7 +41,7 @@ headaches:
   your traffic through a third-party server, add latency, and put a
   single company between you and your data
 
-holesail sidesteps all three: both ends connect *outward* to the DHT
+holesail sidesteps all three: both ends connect _outward_ to the DHT
 (no inbound ports, works behind any NAT), find each other by key, and
 then talk directly peer-to-peer with end-to-end encryption. **No relay
 server, no open firewall ports, no static IP.**
@@ -53,7 +53,7 @@ server, no open firewall ports, no static IP.**
 <details>
 <summary>What the GUI adds over the CLI</summary>
 
-The CLI works, but tunnels are a *continuous* thing, not a one-shot
+The CLI works, but tunnels are a _continuous_ thing, not a one-shot
 command. The GUI adds what the terminal can't:
 
 - **Permanent tunnels** — a fixed key that never changes and
@@ -64,7 +64,7 @@ command. The GUI adds what the terminal can't:
   keep running when the window is closed (desktop) and survive device
   reboots (Android boot receiver, desktop login autostart)
 - **A phone app** — the same codebase runs on Android, so a phone can be
-  a tunnel *server* too (e.g. share Termux/HTTP servers outward)
+  a tunnel _server_ too (e.g. share Termux/HTTP servers outward)
 
 </details>
 
@@ -90,22 +90,22 @@ command. The GUI adds what the terminal can't:
 
 - **No server in the middle** — traffic isn't routed through a third-party relay you have to trust (ngrok/cloudflare-style); it rides the public HyperDHT
 - **No router access, no static IP, no port forwarding** — works behind CGNAT and any NAT
-- **End-to-end encrypted** in secure mode (`hs://s000…`); the key *is* the address — nobody can connect without it
+- **End-to-end encrypted** in secure mode (`hs://s000…`); the key _is_ the address — nobody can connect without it
 - **Zero-config for end users** — packaged builds bundle the Bare runtime, no Node.js install
 - **Permanent tunnels with fixed keys** — set once, auto-restart on app launch, login, and device boot
-- **One codebase, four platforms** — Linux/Windows/macOS desktop + Android phone (phone can be a tunnel *server* too)
+- **One codebase, four platforms** — Linux/Windows/macOS desktop + Android phone (phone can be a tunnel _server_ too)
 - **Private-by-default UI** — keys in the OS keychain, sandboxed renderer, no telemetry
-</details>
 
+</details>
 
 ## Platforms
 
-| Platform | Status | Deliverables |
-|---|---|---|
-| **Linux** | ✅ fully working | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak` |
-| **Windows** | ✅ builds via CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
-| **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section |
-| **macOS** | ✅ builds via CI (untested on real hardware) | `.dmg`/`.app` — bare runtime bundled, no Node needed |
+| Platform    | Status                                       | Deliverables                                                 |
+| ----------- | -------------------------------------------- | ------------------------------------------------------------ |
+| **Linux**   | ✅ fully working                             | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak`              |
+| **Windows** | ✅ builds via CI                             | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
+| **Android** | ✅ backend works (bare runtime) — arm64 APK  | debug APK — see the [Android](#android) section              |
+| **macOS**   | ✅ builds via CI (untested on real hardware) | `.dmg`/`.app` — bare runtime bundled, no Node needed         |
 
 Every platform ships a flatpak bundle from CI alongside the desktop installers; see [Build a release bundle](#build-a-release-bundle).
 
@@ -228,6 +228,7 @@ flatpak run io.holesail.gui
 > The flatpak job builds this bundle in CI (GNOME Platform//47) and ships it
 > with releases; the build.sh flow above is for local/manual builds. Runtime
 > behavior on real desktops is still being validated.
+
 </details>
 
 <details>
@@ -257,7 +258,7 @@ CI-verified but not yet confirmed on real Apple hardware.
 **Share a port** — pick a local port (e.g. 3000), optionally a custom 32+ hex char key,
 toggle private/public. A session card appears with the `hs://s000…` connection
 string — hit **Copy** and send it to whoever needs access. Server cards also show
-a **Copy LAN URL** row (`http://<lan-ip>:<port>`) — a phone on the *same network*
+a **Copy LAN URL** row (`http://<lan-ip>:<port>`) — a phone on the _same network_
 can reach the service directly, no DHT involved.
 
 **Connect** — paste a connection string (`hs://s000…` private or `hs://0000…`
@@ -279,7 +280,7 @@ Android, a boot receiver restores them after device reboots.
 
 **Deep links (`hs://`)** — clicking a connection string link (or running `xdg-open "hs://…"`) opens the app with the Connect form pre-filled, even if it was hidden in the tray. The app registers itself as the handler for the `hs://` scheme on Linux/Windows at first run; on Android, the scheme is baked into the APK manifest. A second app launch while one is running routes to the existing instance instead of duplicating.
 
-**System tray** — closing the window hides the app (tunnels keep running) and a tray icon appears with *Show / Stop all tunnels / Quit*. Quit from the tray is the only way to fully exit while tunnels are active.
+**System tray** — closing the window hides the app (tunnels keep running) and a tray icon appears with _Show / Stop all tunnels / Quit_. Quit from the tray is the only way to fully exit while tunnels are active.
 
 </details>
 
@@ -320,7 +321,7 @@ own Android build):
      filesystem paths);
    - ships `bare` as a jniLibs library (`libholesail_bare.so`) — SELinux
      forbids apps (targetSdk ≥ 26) from exec'ing files in their own data dir,
-     but *does* allow exec of the extracted APK lib dir (`apk_data_file`);
+     but _does_ allow exec of the extracted APK lib dir (`apk_data_file`);
    - bundles `libc++_shared.so` (the `udx-native` addon links the C++ STL,
      which is not present on Android 10+) and forces
      `extractNativeLibs="true"` so those files land on disk at install.
@@ -421,6 +422,7 @@ arrives on the device — in both directions.
 - `rust-version = 1.91` pinned; saved-import capped at 100 tunnels (+test)
 - Fixed: `confirmInline` crash (both guardrails were dead code), ghost saved tunnels on failed start, filemanager password masking, `logAppend` unhandled rejection, saved-tunnel 90s timeout, `find_node` on Windows
 - README overhaul: TOC, benefits, known issues, FAQ — all collapsible
+
 </details>
 
 <details id="v0.5.0">
@@ -431,6 +433,7 @@ arrives on the device — in both directions.
 - Broad-path guardrail: sharing `/`, `~`, or a home dir child asks for confirmation
 - Worker session cap (50) + RPC method allowlist
 - Bare runtime bundled on **Windows/macOS** too — no Node.js needed anywhere
+
 </details>
 
 <details id="v0.4.0">
@@ -440,6 +443,7 @@ arrives on the device — in both directions.
 - Saved-tab online/offline status badges, LAN URL row on server cards
 - Fixed reconnect routing for saved sessions, `hs://0000` display for insecure keys
 - UI polish: dark-mode safe-area fixes, badges, focus states
+
 </details>
 
 ## Known issues & limitations
@@ -456,6 +460,7 @@ arrives on the device — in both directions.
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
+
 </details>
 
 ## FAQ & details

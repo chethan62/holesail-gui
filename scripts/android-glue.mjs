@@ -12,7 +12,15 @@
  * Run AFTER `tauri android init` and BEFORE `tauri android build`.
  */
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execSync } from 'node:child_process'
@@ -56,7 +64,10 @@ if (!existsSync(BUNDLE)) {
 // 1. ensure the android project exists
 if (!existsSync(path.join(GEN, 'settings.gradle'))) {
   console.log('gen/android missing — running tauri android init...')
-  execSync('npx tauri android init --ci --skip-targets-install', { cwd: root, stdio: 'inherit' })
+  execSync('npx tauri android init --ci --skip-targets-install', {
+    cwd: root,
+    stdio: 'inherit'
+  })
 }
 
 // 2. copy the bundle into the APK assets
@@ -68,7 +79,13 @@ cpSync(BUNDLE, assets, { recursive: true })
 // Rust side spawns it from the native lib dir, so the 60 MB duplicate in
 // assets would only bloat the APK
 rmSync(path.join(assets, 'bare'), { recursive: true, force: true })
-console.log('copied', BUNDLE, '->', assets, '(bare runtime excluded — jniLibs only)')
+console.log(
+  'copied',
+  BUNDLE,
+  '->',
+  assets,
+  '(bare runtime excluded — jniLibs only)'
+)
 
 // 2b. udx-native links against libc++_shared.so (the sodium addon does not).
 // The bare worker is spawned OUTSIDE the zygote linker namespace, so the
@@ -81,7 +98,11 @@ if (!ndkHome) {
 }
 const triple = NDK_TRIPLES[abi]
 if (!triple) {
-  console.error('Unknown --abi', abi, '(expected android-arm64|android-arm|android-x64|android-ia32)')
+  console.error(
+    'Unknown --abi',
+    abi,
+    '(expected android-arm64|android-arm|android-x64|android-ia32)'
+  )
   process.exit(1)
 }
 const libcxx = path.join(
@@ -135,7 +156,10 @@ function findNdkHome() {
 const manifestPath = path.join(GEN, 'app', 'src', 'main', 'AndroidManifest.xml')
 let manifest = readFileSync(manifestPath, 'utf8')
 if (!manifest.includes('extractNativeLibs')) {
-  manifest = manifest.replace('<application', '<application\n        android:extractNativeLibs="true"')
+  manifest = manifest.replace(
+    '<application',
+    '<application\n        android:extractNativeLibs="true"'
+  )
   writeFileSync(manifestPath, manifest)
   console.log('patched AndroidManifest.xml (extractNativeLibs=true)')
 } else {
@@ -307,9 +331,16 @@ console.log('wrote HoleService.kt in', mainActivity)
 // generated from the app icon and committed, so it survives regen.
 const iconDir = path.join(GEN, 'app', 'src', 'main', 'res', 'drawable')
 mkdirSync(iconDir, { recursive: true })
-const repoIcon = path.join(root, 'src-tauri', 'icons', 'android-notification.png')
+const repoIcon = path.join(
+  root,
+  'src-tauri',
+  'icons',
+  'android-notification.png'
+)
 if (!existsSync(repoIcon)) {
-  console.error('src-tauri/icons/android-notification.png not found — regenerate with magick')
+  console.error(
+    'src-tauri/icons/android-notification.png not found — regenerate with magick'
+  )
   process.exit(1)
 }
 cpSync(repoIcon, path.join(iconDir, 'ic_holesail_notification.png'))
@@ -418,7 +449,13 @@ if (!main.includes('onWebViewCreate')) {
 }
 
 // 5d. manifest: service declaration + permissions
-const manifestPath2 = path.join(GEN, 'app', 'src', 'main', 'AndroidManifest.xml')
+const manifestPath2 = path.join(
+  GEN,
+  'app',
+  'src',
+  'main',
+  'AndroidManifest.xml'
+)
 let manifest2 = readFileSync(manifestPath2, 'utf8')
 if (!manifest2.includes('HoleService')) {
   manifest2 = manifest2
@@ -508,11 +545,19 @@ if (!manifest2.includes('RECEIVE_BOOT_COMPLETED')) {
 
 function findMainActivityPackage(genDir) {
   // AGP 8+: the app package is the gradle `namespace`, not a manifest attr
-  const gradle = readFileSync(path.join(genDir, 'app', 'build.gradle.kts'), 'utf8')
+  const gradle = readFileSync(
+    path.join(genDir, 'app', 'build.gradle.kts'),
+    'utf8'
+  )
   const m = gradle.match(/namespace\s*=\s*"([\w.]+)"/)
   if (m) return m[1]
-  const manifest = readFileSync(path.join(genDir, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')
+  const manifest = readFileSync(
+    path.join(genDir, 'app', 'src', 'main', 'AndroidManifest.xml'),
+    'utf8'
+  )
   const mm = manifest.match(/package\s*=\s*"([\w.]+)"/)
   if (mm) return mm[1]
-  throw new Error('Could not determine app package from build.gradle.kts / AndroidManifest.xml')
+  throw new Error(
+    'Could not determine app package from build.gradle.kts / AndroidManifest.xml'
+  )
 }

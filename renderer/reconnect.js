@@ -24,7 +24,11 @@ export async function reconnectSession(id) {
     state.replay.delete(id) // the new session has its own id
     log(
       `Reconnected ${
-        r.type === 'filemanager' ? 'file manager' : r.type === 'server' ? 'server' : 'client'
+        r.type === 'filemanager'
+          ? 'file manager'
+          : r.type === 'server'
+            ? 'server'
+            : 'client'
       } (${session.host}:${session.port})`,
       'ok'
     )

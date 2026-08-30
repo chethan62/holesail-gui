@@ -12,7 +12,8 @@ const { spawn } = require('child_process')
 const readline = require('readline')
 const path = require('path')
 
-const WORKER = process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
+const WORKER =
+  process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
 const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binary
 const TEST_PORT = 43117 // hard-coded local port to expose
 const TIMEOUT_MS = 120000
@@ -73,22 +74,41 @@ async function main() {
     assert(pong === 'pong', 'ping -> pong')
 
     console.log('2) server:start on port ' + TEST_PORT)
-    const server = await rpc('server:start', { port: TEST_PORT, secure: true }, 90000)
+    const server = await rpc(
+      'server:start',
+      { port: TEST_PORT, secure: true },
+      90000
+    )
     assert(server.type === 'server', 'type is server')
     assert(server.port === TEST_PORT, 'port matches')
-    assert(typeof server.url === 'string' && server.url.startsWith('hs://s000'), 'private url hs://s000…')
+    assert(
+      typeof server.url === 'string' && server.url.startsWith('hs://s000'),
+      'private url hs://s000…'
+    )
     console.log('    url: ' + server.url)
 
     console.log('3) client:connect to that url')
     const client = await rpc('client:connect', { key: server.url }, 90000)
     assert(client.type === 'client', 'type is client')
     assert(client.secure === true, 'secure auto-detected from prefix')
-    assert(typeof client.url === 'string' && client.url.startsWith('hs://s000'), 'client url present')
+    assert(
+      typeof client.url === 'string' && client.url.startsWith('hs://s000'),
+      'client url present'
+    )
     console.log('    client url: ' + client.url)
 
-    console.log('4) trailing-slash key regression (hs://…/ must not corrupt the key)')
-    const slashed = await rpc('client:connect', { key: server.url + '/' }, 90000)
-    assert(slashed.url === server.url, 'slashed key strips to the same url (no phantom tunnel)')
+    console.log(
+      '4) trailing-slash key regression (hs://…/ must not corrupt the key)'
+    )
+    const slashed = await rpc(
+      'client:connect',
+      { key: server.url + '/' },
+      90000
+    )
+    assert(
+      slashed.url === server.url,
+      'slashed key strips to the same url (no phantom tunnel)'
+    )
     const stoppedSlashed = await rpc('session:stop', { id: slashed.id })
     assert(stoppedSlashed.state === 'stopped', 'slashed client stopped')
 
@@ -96,7 +116,9 @@ async function main() {
     const sessions = await rpc('sessions:list', {})
     assert(sessions.length === 2, 'two active sessions')
 
-    console.log('6) client free-port regression (empty port while the server port is taken)')
+    console.log(
+      '6) client free-port regression (empty port while the server port is taken)'
+    )
     // holesail's client mirrors the server's port when none is given; if
     // something local occupies it, the bind used to crash the worker as an
     // async EADDRINUSE. The worker must now bind a free port instead.
@@ -104,8 +126,14 @@ async function main() {
     const blocker = net.createServer()
     await new Promise((res) => blocker.listen(TEST_PORT, '127.0.0.1', res))
     const clash = await rpc('client:connect', { key: server.url }, 90000)
-    assert(clash.type === 'client', 'client connects despite the occupied default port')
-    assert(clash.port !== TEST_PORT, 'client landed on a free port, not the taken one')
+    assert(
+      clash.type === 'client',
+      'client connects despite the occupied default port'
+    )
+    assert(
+      clash.port !== TEST_PORT,
+      'client landed on a free port, not the taken one'
+    )
     const stoppedClash = await rpc('session:stop', { id: clash.id })
     assert(stoppedClash.state === 'stopped', 'free-port client stopped')
     await new Promise((res) => blocker.close(res))
@@ -131,7 +159,11 @@ async function main() {
     assert(threw, 'invalid port raises error')
 
     console.log('9) async session error kills only that session')
-    const survivor = await rpc('server:start', { port: TEST_PORT + 1, secure: true }, 90000)
+    const survivor = await rpc(
+      'server:start',
+      { port: TEST_PORT + 1, secure: true },
+      90000
+    )
     assert(survivor.type === 'server', 'survivor server started')
     // simulate a real async bind failure attributed to the SURVIVOR's port
     // (thrown on the next tick as an uncaughtException, like a socket
@@ -141,7 +173,10 @@ async function main() {
     assert(sim && sim.thrown === true, 'simulated error scheduled')
     await new Promise((res) => setTimeout(res, 800)) // let the containment settle
     const pongAfterSim = await rpc('ping', {})
-    assert(pongAfterSim === 'pong', 'worker still alive after a session-attributable error')
+    assert(
+      pongAfterSim === 'pong',
+      'worker still alive after a session-attributable error'
+    )
     const list = await rpc('sessions:list', {})
     assert(list.length === 0, 'broken session was removed, worker did not die')
 
@@ -151,15 +186,27 @@ async function main() {
     const http = require('http')
     const fmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-'))
     fs.writeFileSync(path.join(fmDir, 'hello.txt'), 'filemanager test payload')
-    const fm = await rpc('filemanager:start', { path: fmDir, secure: true }, 90000)
+    const fm = await rpc(
+      'filemanager:start',
+      { path: fmDir, secure: true },
+      90000
+    )
     assert(fm.type === 'filemanager', 'filemanager session started')
     assert(fm.dir === fmDir, 'session records the shared directory')
     const fmClient = await rpc('client:connect', { key: fm.url }, 90000)
-    assert(fmClient.type === 'client', 'client connected to the filemanager tunnel')
+    assert(
+      fmClient.type === 'client',
+      'client connected to the filemanager tunnel'
+    )
     const page = await new Promise((resolve, reject) => {
       http
         .get(
-          { host: '127.0.0.1', port: fmClient.port, path: '/', auth: 'admin:admin' },
+          {
+            host: '127.0.0.1',
+            port: fmClient.port,
+            path: '/',
+            auth: 'admin:admin'
+          },
           (res) => {
             let data = ''
             res.on('data', (c) => (data += c))
@@ -169,14 +216,23 @@ async function main() {
         .on('error', reject)
     })
     assert(page.status === 200, 'file browser responds 200 through the tunnel')
-    assert(page.body.includes('hello.txt'), 'shared file is listed in the browser')
+    assert(
+      page.body.includes('hello.txt'),
+      'shared file is listed in the browser'
+    )
     await rpc('session:stop', { id: fmClient.id })
     await rpc('session:stop', { id: fm.id })
     const fmAfter = await rpc('sessions:list', {})
-    assert(!fmAfter.some((s) => s.type === 'filemanager'), 'filemanager session stopped cleanly')
+    assert(
+      !fmAfter.some((s) => s.type === 'filemanager'),
+      'filemanager session stopped cleanly'
+    )
 
     console.log('11) filemanager:start rejects missing / non-directory paths')
-    const missingDir = path.join(os.tmpdir(), 'holesail-fm-missing-' + Date.now())
+    const missingDir = path.join(
+      os.tmpdir(),
+      'holesail-fm-missing-' + Date.now()
+    )
     let missingErr = null
     try {
       await rpc('filemanager:start', { path: missingDir, secure: true }, 30000)
@@ -215,7 +271,11 @@ async function main() {
     }
 
     console.log('12) session pause/resume cycle')
-    const prServer = await rpc('server:start', { port: TEST_PORT + 2, secure: true }, 90000)
+    const prServer = await rpc(
+      'server:start',
+      { port: TEST_PORT + 2, secure: true },
+      90000
+    )
     const paused = await rpc('session:pause', { id: prServer.id })
     assert(paused.state === 'paused', 'session:pause -> paused')
     const pausedList = await rpc('sessions:list', {})
@@ -232,7 +292,9 @@ async function main() {
     )
     await rpc('session:stop', { id: prServer.id })
 
-    console.log('13) traffic stats: bytes flow through the tunnel and are counted')
+    console.log(
+      '13) traffic stats: bytes flow through the tunnel and are counted'
+    )
     const net2 = require('net')
     const tServer = net2.createServer((sock) => {
       // echo server: whatever the client sends comes back
@@ -240,8 +302,16 @@ async function main() {
     })
     await new Promise((res) => tServer.listen(0, '127.0.0.1', res))
     const tPort = tServer.address().port
-    const statsServer = await rpc('server:start', { port: tPort, secure: true }, 90000)
-    const statsClient = await rpc('client:connect', { key: statsServer.url }, 90000)
+    const statsServer = await rpc(
+      'server:start',
+      { port: tPort, secure: true },
+      90000
+    )
+    const statsClient = await rpc(
+      'client:connect',
+      { key: statsServer.url },
+      90000
+    )
     const probe = net2.connect({ host: '127.0.0.1', port: statsClient.port })
     await new Promise((res, rej) => {
       probe.on('connect', res)
@@ -275,16 +345,27 @@ async function main() {
     await rpc('session:stop', { id: statsServer.id })
     await new Promise((res) => tServer.close(res))
 
-    console.log('13b) stats events keep flowing (throttled re-arm, not one-shot)')
+    console.log(
+      '13b) stats events keep flowing (throttled re-arm, not one-shot)'
+    )
     // start a fresh server and listen for session:update events carrying
     // stats — with no traffic, counters stay at 0 but the EVENTS must
     // keep arriving (the emitter re-arms itself every 500ms)
-    const evServer = await rpc('server:start', { port: TEST_PORT + 5, secure: true }, 90000)
+    const evServer = await rpc(
+      'server:start',
+      { port: TEST_PORT + 5, secure: true },
+      90000
+    )
     const seen = []
     const onLine = (line) => {
       try {
         const m = JSON.parse(line)
-        if (m.event === 'session:update' && m.data && m.data.id === evServer.id && m.data.stats) {
+        if (
+          m.event === 'session:update' &&
+          m.data &&
+          m.data.id === evServer.id &&
+          m.data.stats
+        ) {
           seen.push(m.data.stats)
         }
       } catch {}
@@ -292,21 +373,33 @@ async function main() {
     rl.on('line', onLine)
     await sleep(1600) // ~3 emit intervals
     rl.off('line', onLine)
-    assert(seen.length >= 2, `stats events re-arm (got ${seen.length} in ~1.6s)`)
+    assert(
+      seen.length >= 2,
+      `stats events re-arm (got ${seen.length} in ~1.6s)`
+    )
     await rpc('session:stop', { id: evServer.id })
 
     console.log('13c) session:peer fires when a client connects to a server')
-    const peerServer = await rpc('server:start', { port: TEST_PORT + 6, secure: true }, 90000)
+    const peerServer = await rpc(
+      'server:start',
+      { port: TEST_PORT + 6, secure: true },
+      90000
+    )
     const peers = []
     const onPeer = (line) => {
       try {
         const m = JSON.parse(line)
-        if (m.event === 'session:peer' && m.data && m.data.id === peerServer.id) peers.push(m.data)
+        if (m.event === 'session:peer' && m.data && m.data.id === peerServer.id)
+          peers.push(m.data)
       } catch {}
     }
     rl.on('line', onPeer)
     // connect a real client through the tunnel
-    const peerClient = await rpc('client:connect', { key: peerServer.url }, 90000)
+    const peerClient = await rpc(
+      'client:connect',
+      { key: peerServer.url },
+      90000
+    )
     // make sure a connection actually establishes (the client proxy
     // listening isn't enough — the DHT connection happens on first use),
     // so probe through the proxy against the server's local port
@@ -325,7 +418,10 @@ async function main() {
       waited += 250
     }
     rl.off('line', onPeer)
-    assert(peers.length >= 1, `session:peer fired for the connected client (got ${peers.length})`)
+    assert(
+      peers.length >= 1,
+      `session:peer fired for the connected client (got ${peers.length})`
+    )
     assert(
       typeof peers[0].viaRelay === 'boolean',
       `session:peer carries viaRelay routing info (got ${JSON.stringify(peers[0].viaRelay)})`
@@ -336,13 +432,21 @@ async function main() {
     console.log('13d) bandwidth cap throttles a session')
     // a 50 KB/s cap on a fast local loopback tunnel should visibly
     // stretch the transfer time of 200 KB (uncapped it's near-instant)
-    const capServer = await rpc('server:start', { port: TEST_PORT + 7, secure: true, limit: 50 * 1024 }, 90000)
+    const capServer = await rpc(
+      'server:start',
+      { port: TEST_PORT + 7, secure: true, limit: 50 * 1024 },
+      90000
+    )
     assert(capServer.limit === 50 * 1024, 'session reports the limit')
     const capClient = await rpc('client:connect', { key: capServer.url }, 90000)
     // echo server behind the tunnel
     const net4 = require('net')
-    const echoServer = net4.createServer((sock) => sock.on('data', (d) => sock.write(d)))
-    await new Promise((res) => echoServer.listen(TEST_PORT + 7, '127.0.0.1', res))
+    const echoServer = net4.createServer((sock) =>
+      sock.on('data', (d) => sock.write(d))
+    )
+    await new Promise((res) =>
+      echoServer.listen(TEST_PORT + 7, '127.0.0.1', res)
+    )
     const probe2 = net4.connect({ host: '127.0.0.1', port: capClient.port })
     await new Promise((res, rej) => {
       probe2.on('connect', res)
@@ -351,7 +455,7 @@ async function main() {
     const total = 200 * 1024 // 200 KB
     const start = Date.now()
     // write in chunks so the limiter's queue/pause actually engages
-    for (let sent = 0; sent < total; ) {
+    for (let sent = 0; sent < total;) {
       const chunk = Math.min(16 * 1024, total - sent)
       probe2.write(Buffer.alloc(chunk, 0x62))
       sent += chunk
@@ -361,7 +465,9 @@ async function main() {
     // throttled too — wait until everything comes back)
     let received = 0
     while (received < total) {
-      const chunk = await new Promise((res) => probe2.once('data', (d) => res(d.length)))
+      const chunk = await new Promise((res) =>
+        probe2.once('data', (d) => res(d.length))
+      )
       received += chunk
       if (Date.now() - start > 15000) break // safety
     }
@@ -371,24 +477,40 @@ async function main() {
     assert(received === total, `all ${total} bytes echoed (got ${received})`)
     // 200 KB at 50 KB/s cap ≈ 4s+; assert it took meaningfully longer
     // than the uncapped path would (and well above the cap's rate)
-    assert(rate <= 55 * 1024, `throughput capped (${Math.round(rate / 1024)} KB/s, limit 50 KB/s)`)
+    assert(
+      rate <= 55 * 1024,
+      `throughput capped (${Math.round(rate / 1024)} KB/s, limit 50 KB/s)`
+    )
     assert(elapsed > 2000, `transfer stretched by the cap (${elapsed}ms)`)
     await rpc('session:stop', { id: capClient.id })
     await rpc('session:stop', { id: capServer.id })
     await new Promise((res) => echoServer.close(res))
 
     console.log('14) lookup: online key resolves, offline key returns null')
-    const lkServer = await rpc('server:start', { port: TEST_PORT + 3, secure: true }, 90000)
+    const lkServer = await rpc(
+      'server:start',
+      { port: TEST_PORT + 3, secure: true },
+      90000
+    )
     const online = await rpc('lookup', { key: lkServer.url }, 60000)
-    assert(online && typeof online === 'object', 'lookup of a live server returns its DHT record')
-    assert(online.port === lkServer.port, 'lookup record carries the server port')
+    assert(
+      online && typeof online === 'object',
+      'lookup of a live server returns its DHT record'
+    )
+    assert(
+      online.port === lkServer.port,
+      'lookup record carries the server port'
+    )
     assert(online.protocol === 'tcp', 'lookup record carries the protocol')
     assert(online.secure === true, 'lookup record marks the tunnel secure')
     // a random valid key nobody announced -> the worker normalizes the bare
     // {secure:true} shell to null (offline is a state, NOT an error)
     const deadKey = 'hs://s000' + 'a'.repeat(64)
     const offline = await rpc('lookup', { key: deadKey }, 60000)
-    assert(offline === null, 'lookup of an unannounced key returns null (offline)')
+    assert(
+      offline === null,
+      'lookup of an unannounced key returns null (offline)'
+    )
     // malformed public key -> thrown error (unlike a well-formed absent key)
     let badErr = null
     try {
@@ -408,7 +530,10 @@ async function main() {
       { path: fmDir2, secure: true, key: fmKey },
       90000
     )
-    assert(fmKeyed.type === 'filemanager', 'filemanager started with a fixed key')
+    assert(
+      fmKeyed.type === 'filemanager',
+      'filemanager started with a fixed key'
+    )
     assert(
       fmKeyed.url === 'hs://s000' + fmKey,
       'filemanager url uses the fixed key (stable across restarts)'

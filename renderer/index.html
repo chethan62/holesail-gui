@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -22,14 +22,39 @@
         <span class="logo">⛵️</span>
         <span class="title">Holesail GUI</span>
         <span class="subtitle">peer-to-peer tunnels</span>
-        <span id="version-tag" class="version-tag" role="status" aria-live="polite"></span>
+        <span
+          id="version-tag"
+          class="version-tag"
+          role="status"
+          aria-live="polite"
+        ></span>
       </div>
       <div class="status">
-        <button id="theme-toggle" class="icon-btn" title="Toggle light/dark theme">🌓</button>
+        <button
+          id="theme-toggle"
+          class="icon-btn"
+          title="Toggle light/dark theme"
+        >
+          🌓
+        </button>
         <span id="worker-dot" class="dot"></span>
         <span id="worker-label" aria-live="polite">connecting…</span>
-        <button id="worker-restart" class="icon-btn" title="Restart service worker" hidden>↻</button>
-        <button id="update-check" class="icon-btn" title="Check for updates" hidden>⬆</button>
+        <button
+          id="worker-restart"
+          class="icon-btn"
+          title="Restart service worker"
+          hidden
+        >
+          ↻
+        </button>
+        <button
+          id="update-check"
+          class="icon-btn"
+          title="Check for updates"
+          hidden
+        >
+          ⬆
+        </button>
       </div>
     </header>
 
@@ -43,28 +68,48 @@
       <section id="panel-share" class="panel active">
         <h2>Expose a local application</h2>
         <p class="hint">
-          Share any locally running app on a specific port — no port forwarding or static IP
-          needed. Others reach it with the generated connection string.
+          Share any locally running app on a specific port — no port forwarding
+          or static IP needed. Others reach it with the generated connection
+          string.
         </p>
         <form id="share-form" class="grid-form">
           <label>
             Local port
-            <input id="share-port" type="number" min="1" max="65535" placeholder="e.g. 3000" required />
+            <input
+              id="share-port"
+              type="number"
+              min="1"
+              max="65535"
+              placeholder="e.g. 3000"
+              required
+            />
           </label>
           <label>
             Host
-            <input id="share-host" type="text" placeholder="127.0.0.1" value="127.0.0.1" />
+            <input
+              id="share-host"
+              type="text"
+              placeholder="127.0.0.1"
+              value="127.0.0.1"
+            />
           </label>
           <label class="full">
             Tunnel type
             <select id="share-type">
               <option value="temp">Temporary — new random key each time</option>
-              <option value="perm">Permanent — fixed key, auto-restarts with the app</option>
+              <option value="perm">
+                Permanent — fixed key, auto-restarts with the app
+              </option>
             </select>
           </label>
           <label id="share-name-wrap" class="full" hidden>
             Name
-            <input id="share-name" type="text" placeholder="e.g. My PC" maxlength="40" />
+            <input
+              id="share-name"
+              type="text"
+              placeholder="e.g. My PC"
+              maxlength="40"
+            />
           </label>
           <label class="check">
             <input id="share-secure" type="checkbox" checked />
@@ -72,8 +117,8 @@
           </label>
           <div class="full warn-banner" id="share-public-warn" hidden>
             ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
-            can connect, and traffic is <strong>plaintext</strong>. Only use this
-            for services you'd expose publicly anyway.
+            can connect, and traffic is <strong>plaintext</strong>. Only use
+            this for services you'd expose publicly anyway.
           </div>
           <label class="check">
             <input id="share-udp" type="checkbox" />
@@ -102,7 +147,9 @@
             />
           </label>
           <div class="full">
-            <button type="submit" class="primary" id="share-start">Start sharing</button>
+            <button type="submit" class="primary" id="share-start">
+              Start sharing
+            </button>
           </div>
         </form>
 
@@ -113,7 +160,12 @@
           </p>
           <label class="full">
             Folder path
-            <input id="fm-path" type="text" placeholder="/home/user/Downloads" required />
+            <input
+              id="fm-path"
+              type="text"
+              placeholder="/home/user/Downloads"
+              required
+            />
           </label>
           <label class="check">
             <input id="fm-secure" type="checkbox" checked />
@@ -136,11 +188,18 @@
           </label>
           <label class="check full" id="fm-perm-wrap">
             <input id="fm-perm" type="checkbox" />
-            <span class="check-text">Permanent (fixed key, auto-restart with app)</span>
+            <span class="check-text"
+              >Permanent (fixed key, auto-restart with app)</span
+            >
           </label>
           <label id="fm-name-wrap" class="full" hidden>
             Name
-            <input id="fm-name" type="text" placeholder="e.g. My Files" maxlength="40" />
+            <input
+              id="fm-name"
+              type="text"
+              placeholder="e.g. My Files"
+              maxlength="40"
+            />
           </label>
           <label class="full" id="fm-key-wrap" hidden>
             Custom key (optional, min 32 hex chars)
@@ -154,7 +213,9 @@
             />
           </label>
           <div class="full">
-            <button type="submit" class="primary" id="fm-start">Share folder</button>
+            <button type="submit" class="primary" id="fm-start">
+              Share folder
+            </button>
           </div>
         </form>
       </section>
@@ -162,7 +223,8 @@
       <section id="panel-connect" class="panel">
         <h2>Connect to a tunnel</h2>
         <p class="hint">
-          Paste a connection string (<code>hs://s000…</code> private or <code>hs://0000…</code>
+          Paste a connection string (<code>hs://s000…</code> private or
+          <code>hs://0000…</code>
           public). The secure flag is auto-detected from the prefix.
         </p>
         <form id="connect-form" class="grid-form">
@@ -186,7 +248,13 @@
           </div>
           <label>
             Local port (optional)
-            <input id="connect-port" type="number" min="1" max="65535" placeholder="auto" />
+            <input
+              id="connect-port"
+              type="number"
+              min="1"
+              max="65535"
+              placeholder="auto"
+            />
           </label>
           <label>
             Host (optional)
@@ -209,19 +277,30 @@
           </label>
           <label class="check full" id="connect-save-wrap">
             <input id="connect-save" type="checkbox" />
-            <span class="check-text">Save this connection (auto-reconnect on app launch)</span>
+            <span class="check-text"
+              >Save this connection (auto-reconnect on app launch)</span
+            >
           </label>
           <label class="full" id="connect-name-wrap" hidden>
             Name
-            <input id="connect-name" type="text" placeholder="e.g. My PC" maxlength="40" />
+            <input
+              id="connect-name"
+              type="text"
+              placeholder="e.g. My PC"
+              maxlength="40"
+            />
           </label>
           <div class="full" id="recent-row" hidden>
             <span class="recent-label">Recent:</span>
             <span id="recent-chips"></span>
-            <button type="button" id="recent-clear" class="link-btn">clear</button>
+            <button type="button" id="recent-clear" class="link-btn">
+              clear
+            </button>
           </div>
           <div class="full">
-            <button type="submit" class="primary" id="connect-start">Connect</button>
+            <button type="submit" class="primary" id="connect-start">
+              Connect
+            </button>
           </div>
         </form>
       </section>
@@ -229,24 +308,37 @@
       <section id="panel-saved" class="panel">
         <h2>Saved tunnels</h2>
         <p class="hint">
-          Permanent tunnels keep a fixed key and restart automatically with the app. Saved
-          connections reconnect on launch. Everything here survives app restarts (desktop:
-          also your PC reboots, when the app launches at login).
+          Permanent tunnels keep a fixed key and restart automatically with the
+          app. Saved connections reconnect on launch. Everything here survives
+          app restarts (desktop: also your PC reboots, when the app launches at
+          login).
         </p>
         <div class="full saved-toolbar">
-          <button type="button" id="saved-export" class="btn">Export all</button>
+          <button type="button" id="saved-export" class="btn">
+            Export all
+          </button>
           <button type="button" id="saved-import" class="btn">Import</button>
         </div>
         <div id="saved-list" class="saved-list">
-          <p class="empty">No saved tunnels yet. Use "Permanent" on the Share tab or
-            "Save this connection" on the Connect tab.</p>
+          <p class="empty">
+            No saved tunnels yet. Use "Permanent" on the Share tab or "Save this
+            connection" on the Connect tab.
+          </p>
         </div>
         <div class="full" id="saved-import-box" hidden>
           <label>Paste exported JSON</label>
-          <textarea id="saved-import-json" rows="6" spellcheck="false"></textarea>
+          <textarea
+            id="saved-import-json"
+            rows="6"
+            spellcheck="false"
+          ></textarea>
           <div>
-            <button type="button" id="saved-import-apply" class="primary">Import</button>
-            <button type="button" id="saved-import-cancel" class="btn">Cancel</button>
+            <button type="button" id="saved-import-apply" class="primary">
+              Import
+            </button>
+            <button type="button" id="saved-import-cancel" class="btn">
+              Cancel
+            </button>
           </div>
         </div>
       </section>
@@ -254,14 +346,25 @@
       <section id="sessions-section">
         <h2>Sessions <span id="uptime-note" class="uptime-note">—</span></h2>
         <div id="sessions" class="sessions">
-          <p class="empty">No active sessions. Share a port or connect to a tunnel to get started.</p>
+          <p class="empty">
+            No active sessions. Share a port or connect to a tunnel to get
+            started.
+          </p>
         </div>
       </section>
 
       <section id="log-section">
-        <h2 class="collapsible" id="log-toggle">Event log <span class="caret">▾</span></h2>
+        <h2 class="collapsible" id="log-toggle">
+          Event log <span class="caret">▾</span>
+        </h2>
         <div class="log-toolbar">
-          <button type="button" id="log-copy" title="Copy the on-screen log. Full history is saved to event-log.txt in the app config directory.">Copy log</button>
+          <button
+            type="button"
+            id="log-copy"
+            title="Copy the on-screen log. Full history is saved to event-log.txt in the app config directory."
+          >
+            Copy log
+          </button>
           <button type="button" id="log-clear">Clear</button>
         </div>
         <div id="log"><p class="empty">No events yet.</p></div>
@@ -271,10 +374,9 @@
         <strong>On this phone</strong>: permanent tunnels only restart after a
         reboot if the app is allowed to start automatically. Check
         Settings&nbsp;→&nbsp;Apps&nbsp;→&nbsp;holesail-gui&nbsp;→&nbsp;Auto-launch
-        (label varies by OEM — on OnePlus/OxygenOS it's under
-        "Other permissions") and enable it. Also use the
-        <code>localhost</code> URL on each card — some Android browsers refuse
-        <code>127.0.0.1</code>.
+        (label varies by OEM — on OnePlus/OxygenOS it's under "Other
+        permissions") and enable it. Also use the <code>localhost</code> URL on
+        each card — some Android browsers refuse <code>127.0.0.1</code>.
       </aside>
     </main>
 
@@ -282,11 +384,13 @@
       <div class="overlay-card">
         <h2>Node.js required</h2>
         <p id="node-required-msg">
-          This app needs Node.js (v18+) installed to run tunnels. Install it, then retry —
-          or restart the app (that also refreshes the PATH).
+          This app needs Node.js (v18+) installed to run tunnels. Install it,
+          then retry — or restart the app (that also refreshes the PATH).
         </p>
         <div class="overlay-actions">
-          <button type="button" id="node-install" class="btn primary">Copy Node.js download link</button>
+          <button type="button" id="node-install" class="btn primary">
+            Copy Node.js download link
+          </button>
           <button type="button" id="node-retry" class="btn">Retry</button>
         </div>
       </div>

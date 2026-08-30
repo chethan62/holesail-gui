@@ -3,12 +3,7 @@
 
 import { state, flags } from './state.js'
 import { $, log, fmtDuration, copyText } from './ui.js'
-import {
-  rpc,
-  onEvent,
-  workerDiagnostics,
-  workerRetrySpawn
-} from './bridge.js'
+import { rpc, onEvent, workerDiagnostics, workerRetrySpawn } from './bridge.js'
 import { upsertSession, onPeerConnected, renderSessions } from './sessions.js'
 import { autostartSaved } from './saved.js'
 
@@ -30,10 +25,13 @@ export function updateWorkerStatus(ok, label) {
       const restarts = diag.restart_attempt || 0
       const lbl = $('#worker-label')
       lbl.textContent =
-        restarts > 0 ? `worker online (${restarts} restart${restarts === 1 ? '' : 's'})` : 'worker online'
+        restarts > 0
+          ? `worker online (${restarts} restart${restarts === 1 ? '' : 's'})`
+          : 'worker online'
       const parts = []
       if (diag.uptime_ms) parts.push(`up ${fmtDuration(diag.uptime_ms)}`)
-      if (restarts > 0) parts.push(`${restarts} restart${restarts === 1 ? '' : 's'}`)
+      if (restarts > 0)
+        parts.push(`${restarts} restart${restarts === 1 ? '' : 's'}`)
       if (diag.last_error) parts.push(`last error: ${diag.last_error}`)
       lbl.title = parts.length ? parts.join(' · ') : 'worker online'
       if (!wasOk && restarts > 0) {
@@ -89,7 +87,9 @@ export async function retryNode() {
 
 export function bindNodeScreen() {
   // CSP blocks in-webview navigation; copy the link instead
-  $('#node-install').addEventListener('click', () => copyText('https://nodejs.org'))
+  $('#node-install').addEventListener('click', () =>
+    copyText('https://nodejs.org')
+  )
   $('#node-retry').addEventListener('click', retryNode)
 }
 
@@ -127,7 +127,11 @@ export function subscribeWorkerEvents() {
         flags.workerReady = true
         hideNodeRequired()
         syncWorker()
-          .then(() => autostartSaved().catch((err) => log('Autostart failed: ' + err.message, 'err')))
+          .then(() =>
+            autostartSaved().catch((err) =>
+              log('Autostart failed: ' + err.message, 'err')
+            )
+          )
           .catch((err) => {
             updateWorkerStatus(false, 'worker unavailable')
             log('Worker ready but did not answer: ' + err.message, 'err')
@@ -141,8 +145,14 @@ export function subscribeWorkerEvents() {
         break
       case 'worker:exit':
         flags.workerReady = false
-        updateWorkerStatus(false, `worker exited (code ${msg.data.code ?? 'signal'})`)
-        log(`Service worker exited with code ${msg.data.code ?? 'signal'}`, 'err')
+        updateWorkerStatus(
+          false,
+          `worker exited (code ${msg.data.code ?? 'signal'})`
+        )
+        log(
+          `Service worker exited with code ${msg.data.code ?? 'signal'}`,
+          'err'
+        )
         // the worker is gone — drop stale sessions so the UI reflects reality
         state.sessions.clear()
         state.meta.clear()
@@ -159,5 +169,7 @@ export function subscribeWorkerEvents() {
         showNodeRequired()
         break
     }
-  }).catch((err) => log('Failed to subscribe to worker events: ' + err.message, 'err'))
+  }).catch((err) =>
+    log('Failed to subscribe to worker events: ' + err.message, 'err')
+  )
 }

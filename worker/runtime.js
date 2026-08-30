@@ -21,7 +21,8 @@ const Buffer = (() => {
   }
 })()
 
-const setImmediate = globalThis.setImmediate || ((fn, ...args) => setTimeout(fn, 0, ...args))
+const setImmediate =
+  globalThis.setImmediate || ((fn, ...args) => setTimeout(fn, 0, ...args))
 
 const net = (() => {
   try {

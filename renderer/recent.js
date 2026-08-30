@@ -28,7 +28,10 @@ export async function initRecent() {
 }
 
 export function addRecent(label) {
-  state.recent = [label, ...state.recent.filter((x) => x !== label)].slice(0, 10)
+  state.recent = [label, ...state.recent.filter((x) => x !== label)].slice(
+    0,
+    10
+  )
   recentAdd(label).catch(() => {})
   renderRecent()
 }

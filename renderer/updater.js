@@ -74,7 +74,10 @@ export async function installUpdate(version) {
       if (e.data && e.data.chunkLength) {
         bytesDownloaded += e.data.chunkLength
         if (contentLength) {
-          const pct = Math.min(99, Math.round((bytesDownloaded / contentLength) * 100))
+          const pct = Math.min(
+            99,
+            Math.round((bytesDownloaded / contentLength) * 100)
+          )
           toast(`Downloading v${version}… ${pct}%`)
         }
       }
@@ -85,8 +88,14 @@ export async function installUpdate(version) {
   try {
     const meta = await core.invoke('plugin:updater|check')
     if (!meta || !meta.rid) throw new Error('no update available')
-    const bytesRid = await core.invoke('plugin:updater|download', { rid: meta.rid, onEvent: ch })
-    await core.invoke('plugin:updater|install', { updateRid: meta.rid, bytesRid })
+    const bytesRid = await core.invoke('plugin:updater|download', {
+      rid: meta.rid,
+      onEvent: ch
+    })
+    await core.invoke('plugin:updater|install', {
+      updateRid: meta.rid,
+      bytesRid
+    })
     // install() relaunches the app on desktop; landing here means no
     // relaunch happened (unexpected) — tell the user how to proceed
     toast('Update installed — restart the app to apply')

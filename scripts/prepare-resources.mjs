@@ -21,7 +21,15 @@
  */
 
 import { execSync } from 'node:child_process'
-import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -46,7 +54,10 @@ rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 
 // 1. worker script + its modules
-cpSync(path.join(root, 'service-worker.js'), path.join(out, 'service-worker.js'))
+cpSync(
+  path.join(root, 'service-worker.js'),
+  path.join(out, 'service-worker.js')
+)
 cpSync(path.join(root, 'worker'), path.join(out, 'worker'), { recursive: true })
 
 // 2. production-only node_modules — a clean install against a package.json
@@ -71,7 +82,10 @@ execSync('npm dedupe --omit=dev', { cwd: out, stdio: 'inherit' })
 
 // Drop packages that are dev tooling misdeclared as runtime deps upstream
 // (verified: nothing in holesail's runtime tree requires 'prettier').
-rmSync(path.join(out, 'node_modules', 'prettier'), { recursive: true, force: true })
+rmSync(path.join(out, 'node_modules', 'prettier'), {
+  recursive: true,
+  force: true
+})
 rmSync(path.join(out, 'node_modules', '.bin', 'prettier'), { force: true })
 
 // Native addons ship prebuilds for every platform (prebuildify convention).
@@ -95,7 +109,10 @@ const walk = (dir) => {
             }
           }
         }
-      } else if (entry.name !== 'node_modules' || path.basename(dir) !== 'node_modules') {
+      } else if (
+        entry.name !== 'node_modules' ||
+        path.basename(dir) !== 'node_modules'
+      ) {
         walk(full)
       }
     }
@@ -117,7 +134,10 @@ if (opt.bare) {
   const binName = isWindows ? 'bare.exe' : 'bare'
 
   const runtimePkg = 'bare-runtime-' + opt.target
-  const tgz = execSync(`npm pack ${runtimePkg}@${BARE_RUNTIME_VERSION} --silent`, { cwd: out })
+  const tgz = execSync(
+    `npm pack ${runtimePkg}@${BARE_RUNTIME_VERSION} --silent`,
+    { cwd: out }
+  )
     .toString()
     .trim()
   execSync(`tar -xzf ${tgz}`, { cwd: out })
@@ -128,7 +148,9 @@ if (opt.bare) {
   // binary when cross-prepping, e.g. --target win32-x64 on a Linux CI
   // runner — that's fine, the failure is silently swallowed below).
   try {
-    execSync(`llvm-strip --strip-all ${path.join(out, binName)}`, { stdio: 'ignore' })
+    execSync(`llvm-strip --strip-all ${path.join(out, binName)}`, {
+      stdio: 'ignore'
+    })
   } catch {
     try {
       execSync(`strip ${path.join(out, binName)}`, { stdio: 'ignore' })
@@ -160,4 +182,9 @@ function dirSize(dir) {
 
 const bytes = dirSize(out)
 const mb = (bytes / (1024 * 1024)).toFixed(1)
-console.log('prepared', out, mb + ' MB', opt.bare ? '(bare mode, target ' + opt.target + ')' : '')
+console.log(
+  'prepared',
+  out,
+  mb + ' MB',
+  opt.bare ? '(bare mode, target ' + opt.target + ')' : ''
+)

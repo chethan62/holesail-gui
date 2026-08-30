@@ -52,7 +52,8 @@ export function upsertSession(data) {
       }
     } else {
       state.sessions.set(data.id, { ...data })
-      if (!state.meta.has(data.id)) state.meta.set(data.id, { startedAt: Date.now() })
+      if (!state.meta.has(data.id))
+        state.meta.set(data.id, { startedAt: Date.now() })
       renderSessions()
     }
   }
@@ -74,7 +75,10 @@ export function onPeerConnected(data) {
   const peer = data.peerAddr ? ' from ' + data.peerAddr : ''
   if (viaRelay) {
     flags.relaySessions.add(id)
-    log(`Peer connected to ${what}${peer} (${count} total) — via relay, higher latency`, 'warn')
+    log(
+      `Peer connected to ${what}${peer} (${count} total) — via relay, higher latency`,
+      'warn'
+    )
   } else {
     log(`Peer connected to ${what}${peer} (${count} total)`, 'ok')
   }
@@ -106,8 +110,12 @@ export function renderSessions() {
       '<button type="button" class="btn" id="empty-connect">Connect to a tunnel</button>' +
       '</div></div>'
     // CTA buttons jump to the right tab
-    document.getElementById('empty-share').addEventListener('click', () => switchTab('share'))
-    document.getElementById('empty-connect').addEventListener('click', () => switchTab('connect'))
+    document
+      .getElementById('empty-share')
+      .addEventListener('click', () => switchTab('share'))
+    document
+      .getElementById('empty-connect')
+      .addEventListener('click', () => switchTab('connect'))
     updateUptimeNote()
     return
   }
@@ -130,14 +138,19 @@ export function updateUptimeNote() {
 function renderSession(container, s) {
   const card = el('div', 'session', 'session-' + s.id)
   const type =
-    s.type === 'filemanager' ? 'File manager' : s.type === 'server' ? 'Server' : 'Client'
+    s.type === 'filemanager'
+      ? 'File manager'
+      : s.type === 'server'
+        ? 'Server'
+        : 'Client'
   const mode = s.secure ? 'Private' : 'Public'
   const isPaused = s.state === 'paused'
   const meta = state.meta.get(s.id)
   const uptime = meta ? fmtDuration(Date.now() - meta.startedAt) : ''
 
   const urlText = s.url || ''
-  const displayUrl = s.secure && !state.revealed.has(s.id) ? maskKey(urlText) : urlText
+  const displayUrl =
+    s.secure && !state.revealed.has(s.id) ? maskKey(urlText) : urlText
 
   // head: badges + state
   const head = el('div', 'head')
@@ -150,9 +163,15 @@ function renderSession(container, s) {
   // relay-routing badge: a peer connected via the DHT relay (no direct
   // hole-punch) — higher latency than a direct path
   if (s.type === 'server' || s.type === 'filemanager') {
-    const relayBadge = el('span', 'badge relay', 'relay-badge-' + s.id, '⇄ via relay')
+    const relayBadge = el(
+      'span',
+      'badge relay',
+      'relay-badge-' + s.id,
+      '⇄ via relay'
+    )
     relayBadge.hidden = !flags.relaySessions.has(s.id)
-    relayBadge.title = 'Connection routed through the DHT relay — higher latency than direct'
+    relayBadge.title =
+      'Connection routed through the DHT relay — higher latency than direct'
     head.append(relayBadge)
   }
   card.append(head)
@@ -282,7 +301,9 @@ function renderSession(container, s) {
   downSpan.append('▼ ', el('strong', '', '', fmtBytes(stats.bytesDown)))
   trafficRow.append(upSpan, ' · ', downSpan)
   const connSpan = el('span', 't-conn', 'traffic-conn-' + s.id)
-  connSpan.textContent = (stats.locCnt ? stats.locCnt + ' conn' : '') + (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
+  connSpan.textContent =
+    (stats.locCnt ? stats.locCnt + ' conn' : '') +
+    (stats.rejectCnt ? ' · ' + stats.rejectCnt + ' rej' : '')
   if (connSpan.textContent) trafficRow.append(' · ', connSpan)
   if (s.limit) {
     trafficRow.append(' · ⏱ ' + fmtBytes(s.limit) + '/s cap')
@@ -310,7 +331,12 @@ function renderSession(container, s) {
       toast(err.message, true)
     }
   })
-  const stop = el('button', 'stop', '', s.type === 'server' ? 'Stop sharing' : 'Disconnect')
+  const stop = el(
+    'button',
+    'stop',
+    '',
+    s.type === 'server' ? 'Stop sharing' : 'Disconnect'
+  )
   stop.addEventListener('click', async () => {
     try {
       await rpc('session:stop', { id: s.id })
@@ -336,8 +362,14 @@ function updateTrafficReadout(id) {
   const up = document.getElementById('traffic-up-' + id)
   const down = document.getElementById('traffic-down-' + id)
   const conn = document.getElementById('traffic-conn-' + id)
-  if (up) { const s = up.querySelector('strong'); if (s) s.textContent = fmtBytes(stats.bytesUp) }
-  if (down) { const s = down.querySelector('strong'); if (s) s.textContent = fmtBytes(stats.bytesDown) }
+  if (up) {
+    const s = up.querySelector('strong')
+    if (s) s.textContent = fmtBytes(stats.bytesUp)
+  }
+  if (down) {
+    const s = down.querySelector('strong')
+    if (s) s.textContent = fmtBytes(stats.bytesDown)
+  }
   if (conn) {
     const text =
       (stats.locCnt ? stats.locCnt + ' conn' : '') +
@@ -354,7 +386,11 @@ function updateTrafficReadout(id) {
   if (hist.up.length > 30) hist.up.shift()
   if (hist.down.length > 30) hist.down.shift()
   state.traffic.set(id, hist)
-  if (state.sessions.get(id)) state.sessions.get(id).__prevStats = { bytesUp: stats.bytesUp, bytesDown: stats.bytesDown }
+  if (state.sessions.get(id))
+    state.sessions.get(id).__prevStats = {
+      bytesUp: stats.bytesUp,
+      bytesDown: stats.bytesDown
+    }
   const spark = document.getElementById('spark-' + id)
   if (spark) drawSparkline(spark, id)
 }

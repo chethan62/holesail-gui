@@ -77,11 +77,21 @@ export default [
     rules: {
       // matches the existing style
       semi: ['error', 'never'],
-      quotes: ['error', 'single', { avoidEscape: true, allowTemplateLiterals: true }],
+      quotes: [
+        'error',
+        'single',
+        { avoidEscape: true, allowTemplateLiterals: true }
+      ],
       'comma-dangle': ['error', 'only-multiline'],
-      indent: ['error', 2, { SwitchCase: 1 }],
+      // Indentation is owned by Prettier (npm run format). ESLint's AST
+      // indent rule conflicts with Prettier's output on continuations
+      // (chained ternaries etc.) — keep formatting in ONE place.
+      indent: 'off',
       // `({ hs, ...s }) => s` destructures to OMIT hs — legit idiom
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', ignoreRestSiblings: true }],
+      'no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true }
+      ],
       'no-undef': 'error',
       eqeqeq: ['error', 'always'],
       'no-var': 'error',

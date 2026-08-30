@@ -20,7 +20,8 @@ function sessionForError(err) {
   for (const id of sessions.keys()) {
     const entry = sessions.get(id)
     if (!entry) continue
-    if (errPort !== undefined && errPort !== null && entry.port === errPort) return entry
+    if (errPort !== undefined && errPort !== null && entry.port === errPort)
+      return entry
     if (entry.port && msg.includes(`:${entry.port}`)) return entry
   }
   return null
@@ -48,7 +49,9 @@ function onAsyncError(kind, err) {
   // unattributable error: the process may be in a broken state; report and
   // exit so the parent can respawn (permanent tunnels are restored by the
   // renderer on worker:spawned, temporary ones are lost by design)
-  sendEvent('worker:error', { message: `${kind}: ${String((err && err.message) || err)}` })
+  sendEvent('worker:error', {
+    message: `${kind}: ${String((err && err.message) || err)}`
+  })
   setImmediate(() => process.exit(1))
 }
 

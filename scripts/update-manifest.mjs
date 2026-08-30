@@ -21,7 +21,9 @@ const keyIdx = process.argv.indexOf('--key')
 const key = keyIdx > -1 ? process.argv[keyIdx + 1] : null
 
 if (!dir || !tag) {
-  console.error('usage: update-manifest.mjs <artifacts-dir> <vX.Y.Z> [--key <keyfile>]')
+  console.error(
+    'usage: update-manifest.mjs <artifacts-dir> <vX.Y.Z> [--key <keyfile>]'
+  )
   process.exit(2)
 }
 if (!/^v\d/.test(tag)) {
@@ -39,7 +41,9 @@ if (!key || !existsSync(key)) {
 
 const version = tag.replace(/^v/, '')
 const baseUrl = `https://github.com/chethan62/holesail-gui/releases/download/${tag}`
-const files = readdirSync(dir).filter((f) => !f.endsWith('.sig') && f !== 'latest.json')
+const files = readdirSync(dir).filter(
+  (f) => !f.endsWith('.sig') && f !== 'latest.json'
+)
 
 const platformFor = (name) => {
   // exact arch-specific mac dmg first, then generics
@@ -66,11 +70,10 @@ for (const f of files) {
   // env must stay: the keyfile is password-protected.
   const signEnv = { ...process.env }
   delete signEnv.TAURI_SIGNING_PRIVATE_KEY
-  const out = execFileSync(
-    'npx',
-    ['tauri', 'signer', 'sign', '-f', key, abs],
-    { encoding: 'utf8', env: signEnv }
-  )
+  const out = execFileSync('npx', ['tauri', 'signer', 'sign', '-f', key, abs], {
+    encoding: 'utf8',
+    env: signEnv
+  })
   // tauri signer prints a human-readable block (paths, prose) around the
   // actual minisign signature. The updater verifies the `signature` field
   // with minisign, so it must contain ONLY the base64 block printed after
@@ -97,5 +100,8 @@ const manifest = {
   pub_date: new Date().toISOString(),
   platforms: platformsObj
 }
-writeFileSync(join(dir, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n')
+writeFileSync(
+  join(dir, 'latest.json'),
+  JSON.stringify(manifest, null, 2) + '\n'
+)
 console.log(`wrote latest.json (${signed} platform(s))`)

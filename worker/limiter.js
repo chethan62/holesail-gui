@@ -10,7 +10,8 @@ const { Buffer } = require('./runtime.js')
 const { sessions } = require('./state.js')
 
 function limiterFor(entry) {
-  if (!entry._lim) entry._lim = { tokens: 0, last: 0, queue: [], paused: [], timer: null }
+  if (!entry._lim)
+    entry._lim = { tokens: 0, last: 0, queue: [], paused: [], timer: null }
   return entry._lim
 }
 
@@ -26,7 +27,10 @@ function startLimitTicker(entry) {
     const now = Date.now()
     // bucket caps at 1s worth of budget; partial-write draining below
     // guarantees no chunk ever deadlocks the queue
-    lim.tokens = Math.min(entry.limit, lim.tokens + (entry.limit * (now - lim.last)) / 1000)
+    lim.tokens = Math.min(
+      entry.limit,
+      lim.tokens + (entry.limit * (now - lim.last)) / 1000
+    )
     lim.last = now
     // drain queued writes (partial writes for chunks larger than budget)
     while (lim.queue.length && lim.tokens > 0) {
@@ -34,21 +38,29 @@ function startLimitTicker(entry) {
       if (q.len <= lim.tokens) {
         lim.queue.shift()
         lim.tokens -= q.len
-        try { q.fn(q.buf, ...q.rest) } catch {}
+        try {
+          q.fn(q.buf, ...q.rest)
+        } catch {}
       } else {
         const take = Math.floor(lim.tokens)
         lim.tokens = 0
         const isBuf = Buffer.isBuffer(q.buf)
-        const head = isBuf ? q.buf.subarray(0, take) : String(q.buf).slice(0, take)
+        const head = isBuf
+          ? q.buf.subarray(0, take)
+          : String(q.buf).slice(0, take)
         q.buf = isBuf ? q.buf.subarray(take) : String(q.buf).slice(take)
         q.len -= take
-        try { q.fn(head, ...q.rest) } catch {}
+        try {
+          q.fn(head, ...q.rest)
+        } catch {}
       }
     }
     // resume paused source streams now that budget is available
     if (lim.paused.length && lim.tokens > 0) {
       for (const s of lim.paused) {
-        try { s.resume() } catch {}
+        try {
+          s.resume()
+        } catch {}
       }
       lim.paused = []
     }
@@ -67,10 +79,14 @@ function stopLimitTicker(entry) {
   // unlimited: flush anything queued and un-pause everything immediately
   while (lim.queue.length) {
     const q = lim.queue.shift()
-    try { q.fn(q.buf, ...q.rest) } catch {}
+    try {
+      q.fn(q.buf, ...q.rest)
+    } catch {}
   }
   for (const s of lim.paused) {
-    try { s.resume() } catch {}
+    try {
+      s.resume()
+    } catch {}
   }
   lim.paused = []
 }

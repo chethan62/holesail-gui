@@ -79,7 +79,10 @@ export function copyText(text) {
       resolve(ok)
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => done(true), () => fallback(text, done))
+      navigator.clipboard.writeText(text).then(
+        () => done(true),
+        () => fallback(text, done)
+      )
     } else {
       fallback(text, done)
     }
@@ -148,13 +151,15 @@ export function isBroadSharePath(p) {
   if (!s) return false
   // home dir itself
   const home = (state.homeDir || '').replace(/[\\/]+$/, '')
-  if (home && (s === home || s.toLowerCase() === home.toLowerCase())) return true
+  if (home && (s === home || s.toLowerCase() === home.toLowerCase()))
+    return true
   // home dir's immediate children (e.g. ~/Documents, ~/.ssh, ~/Downloads)
   // — the parent of `s` equals home
   const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
   if (home && idx > 0) {
     const parent = s.slice(0, idx)
-    if (parent === home || parent.toLowerCase() === home.toLowerCase()) return true
+    if (parent === home || parent.toLowerCase() === home.toLowerCase())
+      return true
   }
   return false
 }
@@ -208,8 +213,12 @@ export function badge(text, kind) {
 /* ------------------------------ navigation ------------------------------ */
 
 export function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name))
-  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name))
+  document
+    .querySelectorAll('.tab')
+    .forEach((t) => t.classList.toggle('active', t.dataset.tab === name))
+  document
+    .querySelectorAll('.panel')
+    .forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name))
 }
 
 /* --------------------------- public-mode warning ------------------------- */

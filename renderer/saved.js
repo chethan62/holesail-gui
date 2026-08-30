@@ -33,9 +33,16 @@ export async function refreshSaved() {
 
 /// Is there a running session for this saved tunnel?
 export function savedSession(t) {
-  const serverUrl = t.kind === 'server' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : null
-  const clientKey = t.kind === 'client' ? String(t.key || '').replace(/\/+$/, '') : null
-  const fmUrl = t.kind === 'filemanager' ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key : null
+  const serverUrl =
+    t.kind === 'server'
+      ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
+      : null
+  const clientKey =
+    t.kind === 'client' ? String(t.key || '').replace(/\/+$/, '') : null
+  const fmUrl =
+    t.kind === 'filemanager'
+      ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
+      : null
   for (const s of state.sessions.values()) {
     if (serverUrl && s.url === serverUrl) return s
     if (clientKey && s.url === clientKey) return s
@@ -48,42 +55,72 @@ export async function startSaved(t) {
   try {
     let session
     if (t.kind === 'server') {
-      session = await rpc('server:start', {
-        port: t.port,
-        host: t.host || '127.0.0.1',
-        secure: t.secure !== false, // public permanents must stay public
-        udp: t.udp,
-        limit: t.limit || 0,
-        key: t.key
-      }, 90000) // cold DHT bootstrap can take 90s — same as the Share tab
+      session = await rpc(
+        'server:start',
+        {
+          port: t.port,
+          host: t.host || '127.0.0.1',
+          secure: t.secure !== false, // public permanents must stay public
+          udp: t.udp,
+          limit: t.limit || 0,
+          key: t.key
+        },
+        90000
+      ) // cold DHT bootstrap can take 90s — same as the Share tab
     } else if (t.kind === 'filemanager') {
       if (!t.path) throw new Error('Saved folder share is missing its path')
-      session = await rpc('filemanager:start', {
-        path: t.path,
-        secure: t.secure !== false,
-        limit: t.limit || 0,
-        key: t.key,
-        host: t.host || undefined,
-        port: t.port ?? undefined,
-        role: t.role || undefined,
-        username: t.username || undefined,
-        password: t.password || undefined
-      }, 90000)
+      session = await rpc(
+        'filemanager:start',
+        {
+          path: t.path,
+          secure: t.secure !== false,
+          limit: t.limit || 0,
+          key: t.key,
+          host: t.host || undefined,
+          port: t.port ?? undefined,
+          role: t.role || undefined,
+          username: t.username || undefined,
+          password: t.password || undefined
+        },
+        90000
+      )
     } else {
-      session = await rpc('client:connect', {
-        key: t.key,
-        port: t.port ?? undefined,
-        host: t.host || undefined,
-        udp: t.udp,
-        limit: t.limit || 0
-      }, 90000) // cold DHT bootstrap can take 90s — same as the Connect tab
+      session = await rpc(
+        'client:connect',
+        {
+          key: t.key,
+          port: t.port ?? undefined,
+          host: t.host || undefined,
+          udp: t.udp,
+          limit: t.limit || 0
+        },
+        90000
+      ) // cold DHT bootstrap can take 90s — same as the Connect tab
     }
     rememberSession(session.id, t.kind, {
       ...(t.kind === 'server'
-        ? { port: t.port, host: t.host || '127.0.0.1', secure: t.secure !== false, udp: t.udp, limit: t.limit || 0, key: t.key }
+        ? {
+            port: t.port,
+            host: t.host || '127.0.0.1',
+            secure: t.secure !== false,
+            udp: t.udp,
+            limit: t.limit || 0,
+            key: t.key
+          }
         : t.kind === 'filemanager'
-          ? { path: t.path, secure: t.secure !== false, limit: t.limit || 0, key: t.key }
-          : { key: t.key, port: t.port ?? undefined, host: t.host || undefined, udp: t.udp, limit: t.limit || 0 })
+          ? {
+              path: t.path,
+              secure: t.secure !== false,
+              limit: t.limit || 0,
+              key: t.key
+            }
+          : {
+              key: t.key,
+              port: t.port ?? undefined,
+              host: t.host || undefined,
+              udp: t.udp,
+              limit: t.limit || 0
+            })
     })
     addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
@@ -123,10 +160,17 @@ export function renderSaved() {
     const nameSpan = el('span', 'saved-name', '', t.name)
     head.append(
       badge(
-        t.kind === 'server' ? 'Server' : t.kind === 'filemanager' ? 'Folder' : 'Client',
+        t.kind === 'server'
+          ? 'Server'
+          : t.kind === 'filemanager'
+            ? 'Folder'
+            : 'Client',
         t.kind
       ),
-      badge(t.secure === false ? 'Public' : 'Private', t.secure === false ? 'public' : 'secure'),
+      badge(
+        t.secure === false ? 'Public' : 'Private',
+        t.secure === false ? 'public' : 'secure'
+      ),
       nameSpan
     )
     // Saved CLIENT connections: is the remote server actually online?
@@ -138,7 +182,11 @@ export function renderSaved() {
       head.append(net)
       lookupKey(t.key).then((look) => {
         net.textContent =
-          look.state === 'online' ? '● online' : look.state === 'offline' ? '○ offline' : '? unknown'
+          look.state === 'online'
+            ? '● online'
+            : look.state === 'offline'
+              ? '○ offline'
+              : '? unknown'
         net.classList.add(look.state)
         net.title =
           look.state === 'online'
@@ -148,7 +196,12 @@ export function renderSaved() {
               : 'Lookup failed (DHT flake) — cannot tell'
       })
     }
-    const startBtn = el('button', 'saved-start', '', savedSession(t) ? 'Stop' : 'Start')
+    const startBtn = el(
+      'button',
+      'saved-start',
+      '',
+      savedSession(t) ? 'Stop' : 'Start'
+    )
     startBtn.addEventListener('click', () => {
       if (savedSession(t)) stopSaved(t)
       else startSaved(t)
@@ -172,7 +225,12 @@ export function renderSaved() {
     item.append(keyLine, meta)
 
     const actions = el('div', 'saved-actions')
-    const autostart = el('button', '', '', t.autostart ? 'Auto-start: on' : 'Auto-start: off')
+    const autostart = el(
+      'button',
+      '',
+      '',
+      t.autostart ? 'Auto-start: on' : 'Auto-start: off'
+    )
     autostart.title = 'Restart automatically with the app'
     autostart.addEventListener('click', () => toggleAutostart(t))
 

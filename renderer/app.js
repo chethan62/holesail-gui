@@ -18,7 +18,12 @@ import { initTheme } from './theme.js'
 import { initRecent, renderRecent } from './recent.js'
 import { checkForUpdate } from './updater.js'
 import { renderSessions, updateUptimeNote } from './sessions.js'
-import { refreshSaved, exportAllSaved, applyImport, autostartSaved } from './saved.js'
+import {
+  refreshSaved,
+  exportAllSaved,
+  applyImport,
+  autostartSaved
+} from './saved.js'
 import {
   startShare,
   startConnect,
@@ -46,12 +51,16 @@ function bindLogToggle() {
   $('#log-toggle').addEventListener('click', () => {
     const el = $('#log')
     el.classList.toggle('collapsed')
-    $('#log-toggle .caret').textContent = el.classList.contains('collapsed') ? '▸' : '▾'
+    $('#log-toggle .caret').textContent = el.classList.contains('collapsed')
+      ? '▸'
+      : '▾'
   })
   // toolbar: copy the on-screen log for bug reports; clear empties the view
   // (the persistent event-log.txt keeps the full history)
   $('#log-copy').addEventListener('click', async () => {
-    const lines = [...$('#log').querySelectorAll('.log-line')].map((l) => l.textContent)
+    const lines = [...$('#log').querySelectorAll('.log-line')].map(
+      (l) => l.textContent
+    )
     if (lines.length === 0) {
       log('Log is empty')
       return
@@ -72,7 +81,12 @@ function bindShortcuts() {
         e.preventDefault()
         form.requestSubmit()
       }
-    } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.target.matches('input, textarea')) {
+    } else if (
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !e.target.matches('input, textarea')
+    ) {
       if (e.key === '1') switchTab('share')
       else if (e.key === '2') switchTab('connect')
       else if (e.key === '3') switchTab('saved')
@@ -225,7 +239,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   onAppEvent((msg) => {
     if (msg.event === 'deep-link:open') handleDeepLink(msg.data.url)
     else if (msg.event === 'tray:stop-all') stopAllTunnels()
-  }).catch((err) => log('Failed to subscribe to app events: ' + err.message, 'err'))
+  }).catch((err) =>
+    log('Failed to subscribe to app events: ' + err.message, 'err')
+  )
 
   // URLs delivered before this listener existed are drained from the
   // pending queue. The drain retries briefly — Rust setup() may still be

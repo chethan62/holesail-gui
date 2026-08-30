@@ -69,7 +69,8 @@ function handleLine(line) {
 }
 
 process.stdin.on('data', (chunk) => {
-  pending += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+  pending +=
+    typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
   let idx
   while ((idx = pending.indexOf('\n')) !== -1) {
     const line = pending.slice(0, idx)
@@ -96,7 +97,9 @@ async function shutdown() {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 process.on('uncaughtException', (err) => onAsyncError('uncaughtException', err))
-process.on('unhandledRejection', (err) => onAsyncError('unhandledRejection', err))
+process.on('unhandledRejection', (err) =>
+  onAsyncError('unhandledRejection', err)
+)
 
 /* ------------------------------ readiness ------------------------------ */
 

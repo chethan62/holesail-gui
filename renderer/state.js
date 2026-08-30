@@ -34,4 +34,3 @@ export const flags = {
 export function rememberSession(id, type, params) {
   state.replay.set(id, { type, params })
 }
-

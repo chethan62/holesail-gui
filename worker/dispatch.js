@@ -58,7 +58,10 @@ async function dispatch(method, params) {
     // on the next tick so the containment path actually triggers.
     case 'test:throw':
       setImmediate(() => {
-        throw Object.assign(new Error(`simulated bind failure on 127.0.0.1:${params.port}`), { port: params.port })
+        throw Object.assign(
+          new Error(`simulated bind failure on 127.0.0.1:${params.port}`),
+          { port: params.port }
+        )
       })
       return { thrown: true }
     default:

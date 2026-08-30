@@ -12,7 +12,9 @@ const MAX_SESSIONS = 50
 
 function assertCapacity() {
   if (sessions.size >= MAX_SESSIONS) {
-    throw new Error(`Too many sessions (limit ${MAX_SESSIONS}) — stop some before starting more`)
+    throw new Error(
+      `Too many sessions (limit ${MAX_SESSIONS}) — stop some before starting more`
+    )
   }
 }
 
@@ -42,16 +44,25 @@ function isBroadSharePath(p) {
   const s = raw.replace(/[\\/]+$/, '')
   if (!s) return false
   // home dir itself + its immediate children (~/Documents, ~/.ssh, ...)
-  const home = (process.env.HOME || process.env.USERPROFILE || '').replace(/[\\/]+$/, '')
+  const home = (process.env.HOME || process.env.USERPROFILE || '').replace(
+    /[\\/]+$/,
+    ''
+  )
   if (home) {
     if (s === home || s.toLowerCase() === home.toLowerCase()) return true
     const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
     if (idx > 0) {
       const parent = s.slice(0, idx)
-      if (parent === home || parent.toLowerCase() === home.toLowerCase()) return true
+      if (parent === home || parent.toLowerCase() === home.toLowerCase())
+        return true
     }
   }
   return false
 }
 
-module.exports = { MAX_SESSIONS, assertCapacity, pickFreePort, isBroadSharePath }
+module.exports = {
+  MAX_SESSIONS,
+  assertCapacity,
+  pickFreePort,
+  isBroadSharePath
+}

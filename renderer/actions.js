@@ -3,7 +3,15 @@
    sessions, saved, errors. */
 
 import { rememberSession } from './state.js'
-import { $, log, toast, setBusy, isBroadSharePath, confirmInline, updatePublicWarnings } from './ui.js'
+import {
+  $,
+  log,
+  toast,
+  setBusy,
+  isBroadSharePath,
+  confirmInline,
+  updatePublicWarnings
+} from './ui.js'
 import { rpc, savedSave, savedDelete } from './bridge.js'
 import { genKey, refreshSaved } from './saved.js'
 import { addRecent } from './recent.js'
@@ -60,12 +68,18 @@ export async function startShare(event) {
     }
     const session = await rpc('server:start', params, 90000)
     rememberSession(session.id, 'server', { ...params })
-    log(`Server started on ${session.host}:${session.port} (${session.protocol})`, 'ok')
+    log(
+      `Server started on ${session.host}:${session.port} (${session.protocol})`,
+      'ok'
+    )
     toast(isPerm ? 'Permanent sharing started 🔒' : 'Sharing started 🎉')
     addRecent(session.url)
     if (tunnel) {
       await refreshSaved()
-      log(`Saved as permanent tunnel "${tunnel.name}" — it will restart with the app`, 'ok')
+      log(
+        `Saved as permanent tunnel "${tunnel.name}" — it will restart with the app`,
+        'ok'
+      )
     }
     $('#share-port').value = ''
     $('#share-key').value = ''
@@ -108,7 +122,12 @@ export async function startFilemanagerShare(event) {
   }
   const isPerm = $('#fm-perm').checked
   const key = $('#fm-key').value.trim() || undefined
-  const params = { path, secure: $('#fm-secure').checked, limit: readLimit('#fm-limit'), key }
+  const params = {
+    path,
+    secure: $('#fm-secure').checked,
+    limit: readLimit('#fm-limit'),
+    key
+  }
   setBusy(button, true)
   let tunnel = null // hoisted so the catch can roll back a persisted-but-failed save
   try {
@@ -128,14 +147,21 @@ export async function startFilemanagerShare(event) {
       })
     }
     const session = await rpc('filemanager:start', params, 90000)
-    rememberSession(session.id, 'filemanager', { path, secure: params.secure, key: params.key })
+    rememberSession(session.id, 'filemanager', {
+      path,
+      secure: params.secure,
+      key: params.key
+    })
     log(`File manager sharing ${path} (${session.host}:${session.port})`, 'ok')
     toast('Folder shared 📁')
     addRecent(session.url)
     $('#fm-path').value = ''
     if (tunnel) {
       await refreshSaved()
-      log(`Saved folder share "${tunnel.name}" — it will restart with the app`, 'ok')
+      log(
+        `Saved folder share "${tunnel.name}" — it will restart with the app`,
+        'ok'
+      )
     }
   } catch (err) {
     const msg = humanError(err)
@@ -170,11 +196,20 @@ export function bindDropZone() {
   }
 
   window.addEventListener('dragenter', (e) => {
-    if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) show()
+    if (
+      e.dataTransfer &&
+      e.dataTransfer.types &&
+      e.dataTransfer.types.includes('Files')
+    )
+      show()
   })
   window.addEventListener('dragover', (e) => {
     // required to allow the drop
-    if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+    if (
+      e.dataTransfer &&
+      e.dataTransfer.types &&
+      e.dataTransfer.types.includes('Files')
+    ) {
       e.preventDefault()
     }
   })
@@ -226,7 +261,10 @@ export async function startConnect(event) {
         log('Connect aborted — key not found on the DHT', 'warn')
         return
       }
-      log('Key not found on the DHT — connecting anyway (phantom tunnel possible)', 'warn')
+      log(
+        'Key not found on the DHT — connecting anyway (phantom tunnel possible)',
+        'warn'
+      )
     } else if (look.state === 'online') {
       log('Key reachable on the DHT (server announced)', 'ok')
     }
@@ -251,12 +289,18 @@ export async function startConnect(event) {
     }
     const session = await rpc('client:connect', params, 90000)
     rememberSession(session.id, 'client', { ...params })
-    log(`Connected to ${session.host}:${session.port} (${session.protocol})`, 'ok')
+    log(
+      `Connected to ${session.host}:${session.port} (${session.protocol})`,
+      'ok'
+    )
     toast('Connected')
     addRecent(params.key)
     if (tunnel) {
       await refreshSaved()
-      log(`Saved connection "${tunnel.name}" — it will reconnect with the app`, 'ok')
+      log(
+        `Saved connection "${tunnel.name}" — it will reconnect with the app`,
+        'ok'
+      )
     }
     $('#connect-key').value = ''
     $('#connect-port').value = ''
