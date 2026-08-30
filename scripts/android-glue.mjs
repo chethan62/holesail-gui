@@ -347,6 +347,14 @@ if (!main.includes('HoleService.start')) {
 } else {
   console.log('MainActivity.kt already has foreground service wiring')
 }
+// Both replaces above are no-ops when the Tauri template drifts (e.g. a
+// wry version bumps the onCreate body or the imports) — the file would
+// then be rewritten UNCHANGED while still printing "patched". Fail loudly:
+// a stale MainActivity means the worker never starts in the background.
+if (!main.includes('HoleService.start(this)')) {
+  console.error('FATAL: MainActivity.kt patch did not land (template drift?)')
+  process.exit(1)
+}
 
 // 5e. safe-area insets: Android 15 enforces edge-to-edge and wry does not
 // feed real WindowInsets into the webview's env(safe-area-inset-*) (works

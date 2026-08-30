@@ -62,16 +62,21 @@ export async function installUpdate(version) {
     return
   }
   let contentLength = 0
+  let bytesDownloaded = 0
   const ch = new core.Channel()
   ch.onmessage = (e) => {
     if (!e) return
     if (e.event === 'Started') {
       contentLength = (e.data && e.data.contentLength) || 0
+      bytesDownloaded = 0
       toast(`Downloading v${version}…`)
     } else if (e.event === 'Progress') {
-      if (contentLength && e.data && e.data.chunkLength) {
-        const pct = Math.min(99, Math.round((e.data.chunkLength / contentLength) * 100))
-        toast(`Downloading v${version}… ${pct}%`)
+      if (e.data && e.data.chunkLength) {
+        bytesDownloaded += e.data.chunkLength
+        if (contentLength) {
+          const pct = Math.min(99, Math.round((bytesDownloaded / contentLength) * 100))
+          toast(`Downloading v${version}… ${pct}%`)
+        }
       }
     } else if (e.event === 'Finished') {
       toast(`v${version} downloaded — installing…`)

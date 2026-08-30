@@ -98,6 +98,9 @@ fn main() {
     // updater, dev binary), not just the launch.sh wrapper.
     #[cfg(target_os = "linux")]
     {
+        // SAFETY: called at the very start of main() before Tauri spawns any
+        // threads. The Rust docs warn set_var is unsound in multi-threaded
+        // programs; this block runs single-threaded before run().
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
 

@@ -100,7 +100,7 @@ async function startFilemanager(params) {
   // file server + a holesail tunnel in front, both on the same local
   // port. Pure JS deps (bare-fs/bare-http1) so it runs under the bare
   // runtime too.
-  const port = Number(params.port) || 5409
+  const port = Number(params.port) > 0 ? Number(params.port) : 5409
   const host = params.host || '127.0.0.1'
   const limit = normalizeLimit(params.limit)
   const fileServer = new Livefiles({
@@ -221,7 +221,11 @@ async function resumeSession(id) {
 }
 
 function listSessions() {
-  return [...sessions.values()].map(({ hs, ...s }) => s)
+  // Strip BOTH engine instances (holesail + the Livefiles file server):
+  // they're non-serializable object graphs that would otherwise ride along
+  // in every sessions:list RPC response (payload bomb + junk in renderer
+  // state). Sessions map back to their instances via sessions.get(id).
+  return [...sessions.values()].map(({ hs, fileServer, ...s }) => s)
 }
 
 // Session-level traffic/connection readout, unpolled by the renderer (it

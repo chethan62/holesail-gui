@@ -38,8 +38,9 @@ function startLimitTicker(entry) {
       } else {
         const take = Math.floor(lim.tokens)
         lim.tokens = 0
-        const head = Buffer.isBuffer(q.buf) ? q.buf.subarray(0, take) : String(q.buf).slice(0, take)
-        q.buf = Buffer.isBuffer(q.buf) ? q.buf.subarray(take) : String(q.buf).slice(take)
+        const isBuf = Buffer.isBuffer(q.buf)
+        const head = isBuf ? q.buf.subarray(0, take) : String(q.buf).slice(0, take)
+        q.buf = isBuf ? q.buf.subarray(take) : String(q.buf).slice(take)
         q.len -= take
         try { q.fn(head, ...q.rest) } catch {}
       }

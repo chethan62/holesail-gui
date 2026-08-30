@@ -86,16 +86,30 @@ pub(crate) fn log_append(app: AppHandle, line: String) {
     let Ok(config_dir) = app.path().app_config_dir() else {
         return;
     };
+    let _ = std::fs::create_dir_all(&config_dir);
     let path = config_dir.join("event-log.txt");
-    let Ok(mut cur) = std::fs::read_to_string(&path) else {
-        let _ = std::fs::create_dir_all(&config_dir);
-        let _ = std::fs::write(&path, format!("{line}\n"));
-        restrict_log_perms(&path);
-        return;
-    };
-    cur.push_str(&line);
-    cur.push('\n');
-    let _ = std::fs::write(&path, trim_to_cap(cur, LOG_MAX_BYTES));
+    // Append-only write: avoid reading the entire file on every call.
+    // The periodic trim (below) keeps the file bounded.
+    {
+        use std::io::Write;
+        let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        else {
+            return;
+        };
+        let _ = writeln!(f, "{line}");
+    }
+    // Trim when the file exceeds the cap. This is rare (only after 64 KiB
+    // of log lines), so the read-modify-write is acceptable here.
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > LOG_MAX_BYTES as u64 {
+            if let Ok(cur) = std::fs::read_to_string(&path) {
+                let _ = std::fs::write(&path, trim_to_cap(cur, LOG_MAX_BYTES));
+            }
+        }
+    }
     restrict_log_perms(&path);
 }
 

@@ -336,8 +336,8 @@ function updateTrafficReadout(id) {
   const up = document.getElementById('traffic-up-' + id)
   const down = document.getElementById('traffic-down-' + id)
   const conn = document.getElementById('traffic-conn-' + id)
-  if (up) up.querySelector('strong').textContent = fmtBytes(stats.bytesUp)
-  if (down) down.querySelector('strong').textContent = fmtBytes(stats.bytesDown)
+  if (up) { const s = up.querySelector('strong'); if (s) s.textContent = fmtBytes(stats.bytesUp) }
+  if (down) { const s = down.querySelector('strong'); if (s) s.textContent = fmtBytes(stats.bytesDown) }
   if (conn) {
     const text =
       (stats.locCnt ? stats.locCnt + ' conn' : '') +

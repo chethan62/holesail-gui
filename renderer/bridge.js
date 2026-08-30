@@ -10,13 +10,17 @@
 // NOTE: Tauri v2's invoke rejects with the RAW error string (no .message),
 // so every rejection is normalized to a real Error here — callers can
 // rely on err.message (verified 2026-08-13: UI logged "Failed to share
-// folder: undefined" without this).
-export async function rpc(method, params, timeoutMs) {
+// folder: undefined" without this). Shared by rpc() and all saved-* calls.
+async function invokeWrapped(method, args) {
   try {
-    return await window.__TAURI__.core.invoke('rpc', { method, params, timeoutMs })
+    return await window.__TAURI__.core.invoke(method, args)
   } catch (err) {
     throw new Error(typeof err === 'string' ? err : (err && err.message) || String(err))
   }
+}
+
+export async function rpc(method, params, timeoutMs) {
+  return await invokeWrapped('rpc', { method, params, timeoutMs })
 }
 
 export async function workerDiagnostics() {
@@ -52,15 +56,8 @@ export async function logAppend(line) {
 }
 
 // saved tunnels (temp/permanent) — persisted by the Rust backend
-// Same raw-invoke error trap as rpc(): Tauri v2 rejects with a bare string,
-// so a serde failure (e.g. a missing field) collapses to err.message ===
-// undefined at the call site. Wrap every one of these.
 async function invokeErr(method, args) {
-  try {
-    return await window.__TAURI__.core.invoke(method, args)
-  } catch (err) {
-    throw new Error(typeof err === 'string' ? err : (err && err.message) || String(err))
-  }
+  return await invokeWrapped(method, args)
 }
 export async function savedList() {
   return await invokeErr('saved_list')
