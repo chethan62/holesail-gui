@@ -357,6 +357,28 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.7.1">
+<summary><b>v0.7.1</b> — reliability fixes: append-only event log, updater progress, payload hygiene</summary>
+
+- **Append-only event log** — `log_append` no longer reads + rewrites the whole
+  file on every log line; it appends and only trims once the 64 KiB cap is
+  exceeded (was O(n²) on long sessions).
+- **Updater progress fixed** — the download percentage now accumulates chunk
+  lengths across `Progress` events instead of reporting each chunk as a
+  fraction of the total (it previously jumped straight to ~99%).
+- **Sessions payload strip** — `sessions:list` no longer serializes the
+  Livefiles file-server instance alongside the holesail engine; non-serializable
+  engine graphs stay out of every RPC response.
+- **Filemanager port guard** — a `0`/negative/NaN port now consistently falls
+  back to the default 5409 instead of misbehaving.
+- **Android glue drift guard** — the boot/foreground-service patch now fails
+  loudly if the Tauri template drifted, instead of silently rewriting
+  `MainActivity.kt` unchanged while claiming success.
+- **Shared error-wrap helper** — `rpc()` and every `saved-*` call now go
+  through one `invokeWrapped()` that normalizes Tauri's raw-string rejections.
+
+</details>
+
 <details id="v0.7.0">
 <summary><b>v0.7.0</b> — modular codebase + CI guardrails + UI/security polish</summary>
 
