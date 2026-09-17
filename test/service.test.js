@@ -296,9 +296,14 @@ async function main() {
       '13) traffic stats: bytes flow through the tunnel and are counted'
     )
     const net2 = require('net')
+    const req = Buffer.alloc(8 * 1024, 0x61) // 8 KiB up
+    const reply = Buffer.alloc(64 * 1024, 0x62) // 64 KiB down
+    // DELIBERATELY asymmetric: echo the request AND push 64 KiB back. A
+    // symmetric echo hides swapped up/down counters (both sides read the
+    // same number) — this is the only shape that catches a direction bug.
     const tServer = net2.createServer((sock) => {
-      // echo server: whatever the client sends comes back
       sock.on('data', (d) => sock.write(d))
+      sock.once('data', () => sock.write(reply))
     })
     await new Promise((res) => tServer.listen(0, '127.0.0.1', res))
     const tPort = tServer.address().port
@@ -317,28 +322,37 @@ async function main() {
       probe.on('connect', res)
       probe.on('error', rej)
     })
-    const payload = Buffer.alloc(64 * 1024, 0x61) // 64 KiB
-    probe.write(payload)
-    await new Promise((res) => probe.on('data', res)) // echo back
+    const expectedDown = req.length + reply.length // 72 KiB comes back
+    probe.write(req)
+    // read the whole reply back (echo 8 KiB + the 64 KiB push)
+    let got = 0
+    while (got < expectedDown) {
+      got += await new Promise((res) =>
+        probe.once('data', (d) => res(d.length))
+      )
+    }
     probe.end()
     await sleep(900) // let the throttled stats events drain (500ms)
     const srvStats = await rpc('session:stats', { id: statsServer.id })
     const cliStats = await rpc('session:stats', { id: statsClient.id })
     assert(
-      srvStats.bytesDown >= payload.length,
-      `server counted ${payload.length} bytes down (got ${srvStats.bytesDown})`
+      srvStats.bytesDown >= req.length,
+      `server counted ${req.length} bytes down (got ${srvStats.bytesDown})`
     )
     assert(
-      srvStats.bytesUp >= payload.length,
-      `server counted ${payload.length} bytes up (got ${srvStats.bytesUp})`
+      srvStats.bytesUp >= expectedDown,
+      `server counted ${expectedDown} bytes up (got ${srvStats.bytesUp})`
+    )
+    // DIRECTION, not just totals: the client uploaded exactly the 8 KiB it
+    // sent, and downloaded the 72 KiB that came back. Swapped counters
+    // (up=72K/down=8K) fail here — see stats.js wrapStream arg order.
+    assert(
+      cliStats.bytesUp >= req.length && cliStats.bytesUp <= req.length + 4096,
+      `client upload is the ${req.length} bytes it sent (got ${cliStats.bytesUp})`
     )
     assert(
-      cliStats.bytesDown >= payload.length,
-      `client counted ${payload.length} bytes down (got ${cliStats.bytesDown})`
-    )
-    assert(
-      cliStats.bytesUp >= payload.length,
-      `client counted ${payload.length} bytes up (got ${cliStats.bytesUp})`
+      cliStats.bytesDown >= expectedDown,
+      `client download is the ${expectedDown} bytes it received (got ${cliStats.bytesDown})`
     )
     assert(srvStats.locCnt === 0, 'no lingering connections after close')
     await rpc('session:stop', { id: statsClient.id })

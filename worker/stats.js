@@ -115,10 +115,16 @@ function wireDataCounters(entry) {
       })
     })
   }
-  // CLIENT TCP: every local app connection through the proxy
+  // CLIENT TCP: every local app connection through the proxy. NOTE the
+  // wrapper here sees the APP's socket (createTcpProxy accept side), so
+  // the directions are inverted relative to the server case above: bytes
+  // READ from it are what the app sent (upload), bytes WRITTEN to it came
+  // from the tunnel (download). wrapStream bumps downDir on 'data' and
+  // upDir on write, hence the swapped argument order — passing
+  // ('bytesUp','bytesDown') here reported the client's up/down reversed.
   if (dht.proxy && typeof dht.proxy.on === 'function') {
     dht.proxy.on('connection', (sock) =>
-      wrapStream(sock, 'bytesUp', 'bytesDown')
+      wrapStream(sock, 'bytesDown', 'bytesUp')
     )
   }
   // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
