@@ -18,7 +18,7 @@
 const { Buffer } = require('./runtime.js')
 const { sessions, statsTimers } = require('./state.js')
 const { sendEvent } = require('./transport.js')
-const { limiterFor } = require('./limiter.js')
+const { limiterFor, queueWrite, MAX_QUEUE_BYTES } = require('./limiter.js')
 
 const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
 
@@ -78,9 +78,39 @@ function wireDataCounters(entry) {
               : 0
         bump(upDir, n)
         if (entry.limit && n) {
+          const lim = limiterFor(entry)
+          // Already given up on (the overflow below dropped this session):
+          // the transfer has already failed and its connection is being torn
+          // down, so DISCARD. Two things this must not do — both found live
+          // by running the suite repeatedly:
+          //   * throw again: the containment already removed the session, so
+          //     a second throw is UNATTRIBUTABLE and exits the whole worker
+          //     (flaky "timeout waiting for ping" right after the overflow);
+          //   * write through: that just relocates the same unbounded
+          //     backlog into the socket's own write buffer (+106 MiB RSS,
+          //     i.e. straight back into the OOM this ceiling prevents).
+          if (lim.overflowed) return false
           if (consume(n)) return ow(buf, ...rest)
-          limiterFor(entry).queue.push({ len: n, buf, rest, fn: ow })
-          return false
+          // Bounded queue (see limiter.js): the piper never checks
+          // write()'s backpressure, so once the backlog passes the ceiling
+          // the producer cannot be slowed and buffering further only buys
+          // an OOM. Stop THIS session with an actionable error — routed
+          // through the session-error containment (errors.js via
+          // uncaughtException + err.sessionId) so every other tunnel lives.
+          if (queueWrite(entry, { len: n, buf, rest, fn: ow })) return false
+          // Give up on the session: latch first (so nothing throws again),
+          // drop the backlog (a failed transfer must not pin 16 MB while it
+          // tears down), then raise the error the containment can attribute.
+          lim.overflowed = true
+          lim.queue = []
+          lim.queued = 0
+          const err = new Error(
+            `Bandwidth cap: this tunnel backed up over ${MAX_QUEUE_BYTES >> 20} MB behind a ` +
+              `${Math.round(entry.limit / 1024)} KB/s cap and cannot throttle the sender — ` +
+              'raise or remove the cap for this tunnel'
+          )
+          err.sessionId = entry.id
+          throw err
         }
         return ow(buf, ...rest)
       }

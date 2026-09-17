@@ -17,6 +17,15 @@ const { clearStatsEmit } = require('./stats.js')
 function sessionForError(err) {
   const msg = String((err && err.message) || err)
   const errPort = err && err.port
+  // Exact attribution when the worker itself raised the error
+  // (err.sessionId, e.g. the bounded-queue overflow in stats.js).
+  // Port matching alone is only a heuristic: two sessions can legitimately
+  // share a port (two filemanager shares both default to 5409), and
+  // blaming the wrong tunnel would kill a healthy one.
+  if (err && err.sessionId !== undefined) {
+    const exact = sessions.get(err.sessionId)
+    if (exact) return exact
+  }
   for (const id of sessions.keys()) {
     const entry = sessions.get(id)
     if (!entry) continue

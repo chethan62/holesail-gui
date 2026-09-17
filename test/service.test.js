@@ -16,7 +16,9 @@ const WORKER =
   process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
 const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binary
 const TEST_PORT = 43117 // hard-coded local port to expose
-const TIMEOUT_MS = 120000
+const TIMEOUT_MS = 300000 // hang guard, not a speed budget: the suite runs
+// ~2 min on node and the bare runtime (DHT bootstrap dominates), so a tighter
+// limit flakes on slow runners — a genuine hang still surfaces here in 5 min.
 
 let nextId = 1
 const pending = new Map()
@@ -554,10 +556,129 @@ async function main() {
     )
     await rpc('session:stop', { id: fmKeyed.id })
 
+    console.log(
+      '16) capped tunnel stops instead of buffering a fast producer forever'
+    )
+    // The engine's TCP piper ignores write()'s backpressure, so a producer
+    // faster than the cap cannot be slowed down — everything it sends piles
+    // up in the worker's queue (measured: +75 MiB RSS for one 64 MiB burst
+    // at a 20 KiB/s cap). The queue is now bounded, so the session is
+    // dropped with an actionable error; the blast here is 128 MiB, so an
+    // unbounded queue would show up as a >100 MiB RSS jump.
+    const net5 = require('net')
+    const BURST = 128 * 1024 * 1024
+    const blast = net5.createServer((sock) => {
+      sock.on('error', () => {}) // tunnel dies mid-blast; EPIPE is expected
+      let sent = 0
+      const buf = Buffer.alloc(64 * 1024, 0x63)
+      const pump = () => {
+        while (sent < BURST) {
+          if (sock.destroyed) return
+          sent += buf.length
+          if (!sock.write(buf)) return sock.once('drain', pump)
+        }
+        sock.end()
+      }
+      pump()
+    })
+    await new Promise((res) => blast.listen(0, '127.0.0.1', res))
+    const workerRss = () => {
+      try {
+        const status = fs.readFileSync(`/proc/${worker.pid}/status`, 'utf8')
+        return Math.round(Number(/VmRSS:\s+(\d+)/.exec(status)[1]) / 1024)
+      } catch {
+        return null // no /proc (e.g. macOS) — behaviour checks still run
+      }
+    }
+    const overflowServer = await rpc(
+      'server:start',
+      { port: blast.address().port, secure: true, limit: 20 * 1024 },
+      90000
+    )
+    const overflowClient = await rpc(
+      'client:connect',
+      { key: overflowServer.url },
+      90000
+    )
+    // a neighbouring, uncapped tunnel that must survive the overflow
+    const bystander = await rpc(
+      'server:start',
+      { port: TEST_PORT + 8, secure: true },
+      90000
+    )
+    const rssBefore = workerRss()
+    const overflowErrs = []
+    const onOverflow = (line) => {
+      try {
+        const m = JSON.parse(line)
+        if (
+          m.event === 'session:update' &&
+          m.data &&
+          m.data.id === overflowServer.id &&
+          m.data.state === 'error'
+        )
+          overflowErrs.push(m.data)
+      } catch {}
+    }
+    rl.on('line', onOverflow)
+    const boom = net5.connect({ host: '127.0.0.1', port: overflowClient.port })
+    boom.on('error', () => {})
+    await new Promise((res, rej) => {
+      boom.on('connect', res)
+      boom.on('error', rej)
+    })
+    let waitedOverflow = 0
+    while (overflowErrs.length === 0 && waitedOverflow < 20000) {
+      await sleep(250)
+      waitedOverflow += 250
+    }
+    rl.off('line', onOverflow)
+    const rssAfter = workerRss()
+    assert(
+      overflowErrs.length >= 1,
+      `capped session stopped with an error (after ~${waitedOverflow}ms)`
+    )
+    assert(
+      overflowErrs.length > 0 &&
+        /Bandwidth cap/.test(overflowErrs[0].error || ''),
+      `error explains the cap (${overflowErrs[0] ? overflowErrs[0].error : 'none'})`
+    )
+    const pongOverflow = await rpc('ping', {})
+    assert(pongOverflow === 'pong', 'worker survived the overflow')
+    const afterOverflow = await rpc('sessions:list', {})
+    assert(
+      !afterOverflow.some((s) => s.id === overflowServer.id),
+      'the overflowing session was dropped'
+    )
+    assert(
+      afterOverflow.some((s) => s.id === bystander.id),
+      'the neighbouring tunnel was left alone'
+    )
+    if (rssBefore === null || rssAfter === null) {
+      console.log('  · /proc unavailable — skipped the RSS bound check')
+    } else {
+      assert(
+        rssAfter - rssBefore < 64,
+        `worker memory stayed bounded (${rssBefore} -> ${rssAfter} MiB, +${rssAfter - rssBefore})`
+      )
+    }
+    boom.destroy()
+    await rpc('session:stop', { id: overflowClient.id })
+    await rpc('session:stop', { id: bystander.id })
+    await new Promise((res) => blast.close(res))
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)
-    process.exitCode = 1
+    // Fail FAST: a failing run must not hang CI. A test that dies while a
+    // capped tunnel is backed up (test 16) leaves a session whose clean
+    // shutdown can stall on the stalled connection, and the blast/probe
+    // sockets keep this process alive — the run then looked like a job
+    // timeout instead of the assertion that actually failed.
+    try {
+      worker.kill('SIGKILL')
+    } catch {}
+    process.exit(1)
   } finally {
     clearTimeout(overall)
     try {
