@@ -457,7 +457,7 @@ arrives on the device — in both directions.
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
 - **Bandwidth caps are per-session only** — the Speed-limit (KB/s) cap applies to a single tunnel's combined up+down; there's no global shaping or per-direction control yet
-- **A cap can't slow a sender it doesn't control** — the tunnel engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops *that* tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
+- **A cap can't slow a sender it doesn't control** — the tunnel engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
