@@ -266,6 +266,15 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: latest
+          # The action's default packages are `tools platform-tools`, and
+          # google no longer publishes the legacy standalone `tools`
+          # package — the step dies with
+          # `Warning: Failed to find package 'tools'` + exit 1 before
+          # anything else runs (hit 2026-09-17; it had worked earlier the
+          # same day, so this is upstream repo drift, not our code).
+          # platform-tools is all we want here; the next step installs
+          # platforms/build-tools/NDK explicitly.
+          packages: 'platform-tools'
 
       - name: Accept licenses + install platform/build-tools/NDK
         run: |
