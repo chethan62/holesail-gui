@@ -149,7 +149,12 @@ knowing before relying on it:
   Different network — an iroh key and a holesail key can never reach each other.
 - **Always encrypted** (TLS 1.3): the "secure" toggle is a no-op; there is no
   plaintext mode.
-- **TCP only**: `udp: true` throws rather than tunnelling nothing.
+- **UDP rides native QUIC datagrams** (`udp: true`), one tunnel flow per
+  local source address — the same topology holesail uses, so a service that
+  keys sessions by source port behaves identically. Consequence of using real
+  datagrams: an oversized datagram is dropped (QUIC's limit, a little over
+  1 KB), where holesail framed UDP over a stream and had no ceiling — a UDP
+  app that sends jumbo datagrams still needs the holesail engine.
 - **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
   runtime cannot load — so it is selectable in dev/tests, not in shipped
   packages yet. Shipping it means bundling the **Node** binary as the worker
@@ -195,7 +200,7 @@ npm test             # E2E: spawns the real service worker, starts a server on
 
 The test talks to the exact same `service-worker.js` the GUI uses, so a green
 `npm test` verifies the full backend chain (validation → holesail → hyperdht →
-real tunnel). `npm run test:iroh` runs the same 17 sections against the
+real tunnel). `npm run test:iroh` runs the same 18 sections against the
 alternate engine (the suite is engine-aware: only the key scheme, the lookup
 record and the capped-burst behaviour differ, and each is asserted per engine).
 

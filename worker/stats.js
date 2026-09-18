@@ -177,9 +177,22 @@ function wireDataCounters(entry) {
     )
   }
   // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
-  // pacing is out of scope for the per-session cap)
-  if (dht.proxySocket && typeof dht.proxySocket.on === 'function') {
-    const ps = dht.proxySocket
+  // pacing is out of scope for the per-session cap).
+  // The field differs per engine: holesail's client assigns its datagram
+  // socket to `proxy` (handleUDP: `this.proxy = proxySocket`), the iroh
+  // engine exposes `proxySocket`. Checking only `proxySocket` left every
+  // holesail UDP session reporting 0/0 traffic forever (found by the UDP
+  // test, which asserts BOTH engines count). `proxy` is the TCP proxy SERVER
+  // on TCP sessions, so only a socket with send() and no listen() counts.
+  const udpSocket =
+    dht.proxySocket ||
+    (dht.proxy &&
+    typeof dht.proxy.send === 'function' &&
+    typeof dht.proxy.listen !== 'function'
+      ? dht.proxy
+      : null)
+  if (udpSocket && typeof udpSocket.on === 'function') {
+    const ps = udpSocket
     ps.on('message', (m) => bump('bytesUp', m ? m.length : 0))
     if (typeof ps.send === 'function') {
       const osend = ps.send.bind(ps)

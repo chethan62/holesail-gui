@@ -885,6 +885,91 @@ async function main() {
     await closeServer(blasterA.srv, blasterA.sockets)
     await closeServer(blasterB.srv, blasterB.sockets)
 
+    console.log('18) UDP tunnel relays datagrams to a UDP service')
+    // UDP is a separate engine path (holesail frames datagrams over a tunnel
+    // stream; iroh carries them as native QUIC datagrams) and had no coverage
+    // at all before this — a silent breakage would only show up as a dead game
+    // server or resolver for a user who ticked "Use UDP".
+    const dgram = require('dgram')
+    const udpEcho = dgram.createSocket('udp4')
+    udpEcho.on('message', (msg, rinfo) =>
+      udpEcho.send(msg, rinfo.port, rinfo.address)
+    )
+    await new Promise((res) => udpEcho.bind(0, '127.0.0.1', res))
+    const udpPort = udpEcho.address().port
+    const udpServer = await rpc(
+      'server:start',
+      { port: udpPort, secure: true, udp: true },
+      90000
+    )
+    assert(udpServer.protocol === 'udp', 'server session reports protocol udp')
+    const udpClient = await rpc(
+      'client:connect',
+      { key: udpServer.url, udp: true },
+      90000
+    )
+    assert(udpClient.protocol === 'udp', 'client session reports protocol udp')
+    // Each exchange uses its OWN bound socket: the local port is the flow's
+    // identity, so two calls must be two sources. (Read the port at bind time —
+    // after close() the socket no longer answers address().)
+    const exchange = (payload) =>
+      new Promise((resolve, reject) => {
+        const sock = dgram.createSocket('udp4')
+        let localPort = 0
+        const timer = setTimeout(() => {
+          sock.close()
+          reject(new Error(`no UDP reply for ${payload} in 25s`))
+        }, 25000)
+        sock.on('message', (msg) => {
+          clearTimeout(timer)
+          const result = { payload: msg.toString(), port: localPort }
+          sock.close()
+          resolve(result)
+        })
+        sock.bind(0, '127.0.0.1', () => {
+          localPort = sock.address().port
+          sock.send(Buffer.from(payload), udpClient.port, '127.0.0.1')
+        })
+      })
+    const firstReply = await exchange('udp-ping')
+    assert(
+      firstReply.payload === 'udp-ping',
+      'datagram echoed through the tunnel'
+    )
+    // A SECOND local source must be answered on its own flow — the topology
+    // (one tunnel connection per source address) is what keeps two clients of
+    // one UDP service apart, and a shared single flow would misroute the reply.
+    const secondReply = await exchange('udp-ping-2')
+    assert(
+      secondReply.payload === 'udp-ping-2',
+      'a second source is answered on its own flow'
+    )
+    assert(
+      secondReply.port !== firstReply.port,
+      'the two sources were distinct local ports'
+    )
+    await sleep(1200) // let the throttled stats events drain
+    const sStats = await rpc('session:stats', { id: udpServer.id })
+    const cStats = await rpc('session:stats', { id: udpClient.id })
+    assert(
+      sStats.bytesUp >= 10 && sStats.bytesDown >= 10,
+      `server counted datagrams both ways (up ${sStats.bytesUp} / down ${sStats.bytesDown})`
+    )
+    assert(
+      cStats.bytesUp >= 10 && cStats.bytesDown >= 10,
+      `client counted datagrams both ways (up ${cStats.bytesUp} / down ${cStats.bytesDown})`
+    )
+    await rpc('session:stop', { id: udpClient.id })
+    await rpc('session:stop', { id: udpServer.id })
+    assert(
+      !(await rpc('sessions:list', {})).some((s) => s.protocol === 'udp'),
+      'udp sessions stopped cleanly'
+    )
+    // An open dgram socket keeps the event loop (and the whole run) alive
+    // after the assertions — the same reason every TCP test server goes
+    // through closeServer().
+    udpEcho.close()
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

@@ -23,6 +23,7 @@
 
 const crypto = require('crypto')
 const net = require('net')
+const dgram = require('dgram')
 const { Duplex } = require('stream')
 const { EventEmitter } = require('events')
 const {
@@ -37,6 +38,10 @@ const {
 // connection to its local service (the probe is accepted and closed).
 const ALPN = Array.from(Buffer.from('holesail-gui/1'))
 const PROBE_ALPN = Array.from(Buffer.from('holesail-gui/probe'))
+// UDP tunnels get their own ALPN: a datagram flow has no bi-stream to carry a
+// handshake, so the ALPN split is what stops a TCP client from being accepted
+// by a UDP server (and vice versa) instead of failing somewhere mid-transfer.
+const ALPN_UDP = Array.from(Buffer.from('holesail-gui/udp1'))
 const CHUNK = 64 * 1024
 const PROBE_MS = 12000
 
@@ -172,6 +177,53 @@ class TunnelStream extends Duplex {
   }
 }
 
+/* A QUIC datagram flow as a Node Duplex, oriented exactly like TunnelStream
+ * (readable = from the peer, writable = to the peer) so stats.js counts and
+ * caps it with the same wrapper. Datagrams arrive through the engine's
+ * readDatagram loop (pushDatagram) and leave through sendDatagram, which
+ * resolves when the sender's buffer has room — datagrams are not retransmitted,
+ * which is what UDP wants. iroh carries UDP natively, so there is no framing
+ * step and no head-of-line blocking. */
+class DatagramStream extends Duplex {
+  constructor(conn, info = {}, engine = null) {
+    super({ highWaterMark: 1 << 20 })
+    this.conn = conn
+    this.engine = engine
+    this.relay = info.relay || null
+    this.rawStream = { remoteHost: info.peer || '' }
+  }
+
+  pushDatagram(u8) {
+    if (!this.destroyed) this.push(toBuf(u8))
+  }
+
+  _read() {}
+
+  _write(chunk, _enc, cb) {
+    const buf = toBuf(chunk)
+    const max = this.conn.maxDatagramSize()
+    if (max && buf.length > max) {
+      // QUIC datagrams are MTU-bounded (holesail framed UDP over a stream
+      // instead, so it had no ceiling). Anything larger needs the holesail
+      // engine. ponytail: drop and count — fragmenting a datagram would
+      // change what the receiving app sees.
+      if (this.engine) this.engine.stats.rejectCnt++
+      cb()
+      return
+    }
+    Promise.resolve()
+      .then(() => this.conn.sendDatagramWait(Array.from(buf)))
+      .then(
+        () => cb(),
+        () => cb() // a dropped datagram is normal for UDP
+      )
+  }
+
+  _destroy(_err, cb) {
+    cb()
+  }
+}
+
 /* --------------------------------- engine -------------------------------- */
 
 class Iroh {
@@ -205,7 +257,7 @@ class Iroh {
   get info() {
     return {
       type: this.type,
-      protocol: 'tcp',
+      protocol: this.udp ? 'udp' : 'tcp',
       secure: true,
       port: this.port,
       host: this.host,
@@ -221,14 +273,10 @@ class Iroh {
   }
 
   async ready() {
-    if (this.opts.udp) {
-      throw new Error(
-        'UDP tunnels are not supported by the iroh engine (TCP only) — start the app with TUNNEL_ENGINE=holesail for UDP'
-      )
-    }
+    this.udp = !!this.opts.udp
     const ep = await Endpoint.bind({
       secretKey: this.keyInput ? sha256(this.keyInput) : undefined,
-      alpns: [ALPN, PROBE_ALPN]
+      alpns: [this.udp ? ALPN_UDP : ALPN, PROBE_ALPN]
     })
     this.ep = ep
     this.publicKey = ep.id().toString()
@@ -334,6 +382,12 @@ class Iroh {
         () => this.conns.delete(conn),
         () => this.conns.delete(conn)
       )
+      if (this.udp) {
+        // Datagram flow: no bi-stream and no handshake to read — the separate
+        // UDP ALPN already proved the peer speaks this tunnel's protocol.
+        this._serveUdp(conn, { relay, peer })
+        return
+      }
       for (;;) {
         let bi
         try {
@@ -411,9 +465,52 @@ class Iroh {
     duplex.pipe(sock)
   }
 
+  /// A UDP tunnel connection: one local UDP socket per peer flow — exactly
+  /// the topology holesail uses (a framed pipe per connection) — so a service
+  /// that keys sessions by source port behaves the same. The socket's family
+  /// follows the service host.
+  _serveUdp(conn, info) {
+    const sock = dgram.createSocket(this.host.includes(':') ? 'udp6' : 'udp4')
+    const stream = new DatagramStream(conn, info, this)
+    this.duplexes.add(stream)
+    stream.on('close', () => this.duplexes.delete(stream))
+    // Emitted BEFORE anything flows: stats.js wraps this exact object
+    // synchronously ('data' = from the peer, write = to the peer), so the
+    // session's counters and the per-session cap mean the same thing here as
+    // they do for TCP.
+    this.dht.server.emit('connection', stream)
+    stream.on('data', (d) => {
+      sock.send(d, this.port, this.host, (err) => {
+        if (err && !this.paused) this.stats.rejectCnt++
+      })
+    })
+    sock.on('message', (msg) => {
+      if (!this.paused) stream.write(msg)
+    })
+    sock.on('error', () => stream.destroy())
+    stream.on('close', () => {
+      try {
+        sock.close()
+      } catch {}
+    })
+    ;(async () => {
+      for (;;) {
+        let d
+        try {
+          d = await conn.readDatagram()
+        } catch {
+          break // connection gone
+        }
+        if (this.paused) continue // paused drops instead of queueing
+        stream.pushDatagram(d)
+      }
+    })().catch(() => {})
+  }
+
   /* ------------------------------- client ------------------------------- */
 
   async _startProxy() {
+    if (this.udp) return this._startUdpProxy()
     const srv = net.createServer((sock) => this._onLocal(sock))
     this.dht.proxy = srv
     await new Promise((resolve, reject) => {
@@ -422,6 +519,86 @@ class Iroh {
     })
     this.port = srv.address().port // the OS may have reassigned it
     this._peer = peerAddrFrom(this.keyInput)
+  }
+
+  /// UDP client: a local UDP socket (the `proxySocket` stats.js counts, the
+  /// same field holesail exposes) plus ONE tunnel connection per distinct
+  /// local source address — the topology createUdpFramedProxy uses, so a
+  /// service that keys sessions by source port sees the same thing.
+  async _startUdpProxy() {
+    const sock = dgram.createSocket(this.host.includes(':') ? 'udp6' : 'udp4')
+    this.dht.proxySocket = sock
+    await new Promise((resolve, reject) => {
+      sock.once('error', reject)
+      sock.bind(this.port, this.host, resolve)
+    })
+    this.port = sock.address().port
+    this._peer = peerAddrFrom(this.keyInput)
+    this.udpFlows = new Map() // local `addr:port` -> { conn, stream, rinfo }
+    this.udpPending = new Set() // sources whose first connection is dialing
+    sock.on('message', (msg, rinfo) => this._onLocalDatagram(msg, rinfo))
+  }
+
+  /// UDP is allowed to lose packets: while paused (or overloaded) a datagram
+  /// is dropped, never queued. A flow that cannot be established is forgotten
+  /// so the next datagram retries it.
+  async _onLocalDatagram(msg, rinfo) {
+    if (this.paused || this.closed) return
+    const key = `${rinfo.address}:${rinfo.port}`
+    let flow = this.udpFlows.get(key)
+    if (!flow) {
+      if (this.udpPending.has(key)) return // dialing: drop (UDP may lose)
+      this.udpPending.add(key)
+      try {
+        flow = await this._openUdpFlow(key, rinfo)
+        this.udpFlows.set(key, flow)
+      } catch {
+        this.stats.rejectCnt++
+        return
+      } finally {
+        this.udpPending.delete(key)
+      }
+    }
+    if (!flow.stream.destroyed) flow.stream.write(msg)
+  }
+
+  /// ponytail: flows live for the session's lifetime — no idle reaping, since
+  /// only processes on this host can open a local source address on a
+  /// loopback-bound socket.
+  async _openUdpFlow(key, rinfo) {
+    const conn = await this.ep.connect(this._peer, ALPN_UDP)
+    const stream = new DatagramStream(conn, { peer: rinfo.address }, this)
+    const flow = { conn, stream, rinfo }
+    // A dead flow is FORGOTTEN, not kept: the next datagram from that source
+    // re-dials. Keeping a dead entry would silently black-hole the source.
+    const forget = () => {
+      this.conns.delete(conn)
+      this.duplexes.delete(stream)
+      if (this.udpFlows.get(key) === flow) this.udpFlows.delete(key)
+    }
+    this.conns.add(conn)
+    this.duplexes.add(stream)
+    conn.closed().then(forget, forget)
+    stream.on('close', () => this.duplexes.delete(stream))
+    stream.on('data', (d) => {
+      // answers go back to the exact source that opened this flow
+      this.dht.proxySocket.send(d, rinfo.port, rinfo.address, (err) => {
+        if (err) this.stats.rejectCnt++
+      })
+    })
+    ;(async () => {
+      for (;;) {
+        let d
+        try {
+          d = await conn.readDatagram()
+        } catch {
+          break // connection gone
+        }
+        if (this.paused) continue
+        stream.pushDatagram(d)
+      }
+    })().catch(() => {})
+    return flow
   }
 
   async _onLocal(sock) {
@@ -533,6 +710,11 @@ class Iroh {
     this.closed = true
     this._dropActive()
     if (this.dht.proxy) await new Promise((res) => this.dht.proxy.close(res))
+    if (this.dht.proxySocket) {
+      try {
+        this.dht.proxySocket.close()
+      } catch {}
+    }
     await this.ep.close().catch(() => {})
   }
 }
