@@ -152,13 +152,13 @@ knowing before relying on it:
 - **UDP rides native QUIC datagrams** (`udp: true`), one tunnel flow per
   local source address — the same topology holesail uses, so a service that
   keys sessions by source port behaves identically. Consequence of using real
-  datagrams: an oversized datagram is dropped, and the drop is counted. That
-  is the honest failure — holesail, the engine that can ship today, does not do
-  better: it silently TRUNCATES a large datagram (measured through the worker:
-  8 KiB arrives as 2048 B), so the far end sees a short packet and nothing is
-  logged. Neither engine is right for an app that needs jumbo datagrams
-  (TFTP-style transfers, some game traffic) until upstream raises its frame
-  size; the suite asserts both behaviours so a change shows up.
+  datagrams: an oversized datagram is dropped, and the drop is counted. holesail
+  has no such MTU bound in a shipped build — under Bare, which is what we ship, an
+  8 KiB datagram arrives intact — but the same engine under Node truncates it at
+  2048 bytes, silently, so the Node dev path is the one with the cliff and the far
+  end there sees a short packet with nothing logged. The suite asserts each
+  runtime's real number, so a change in either shows up as a failure rather than
+  as quiet data loss.
 - **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
   runtime cannot load — so it is selectable in dev/tests, not in shipped
   packages yet. Shipping it means bundling the **Node** binary as the worker

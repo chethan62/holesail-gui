@@ -19,6 +19,10 @@ const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binar
 // RPC contract; only the network underneath differs (iroh: QUIC + tickets +
 // always-encrypted + real backpressure; holesail: HyperDHT + hs:// keys).
 const IROH = String(process.env.TUNNEL_ENGINE || '').toLowerCase() === 'iroh'
+// Which JS runtime runs the worker. It changes real behaviour (see §20: holesail
+// truncates a large UDP datagram under Node and carries it under Bare), so
+// assertions that depend on it must ask rather than assume.
+const BARE = WORKER_CMD !== 'node'
 const URL_PREFIX = IROH ? 'iroh://' : 'hs://s000'
 const TEST_PORT = 43117 // hard-coded local port to expose
 const TIMEOUT_MS = 300000 // hang guard, not a speed budget: the suite runs
@@ -1069,15 +1073,16 @@ async function main() {
       const jumboStats = await rpc('session:stats', { id: jumboClient.id })
       assert(jumboStats.rejectCnt >= 1, 'and the drop is counted, not silent')
     } else {
-      // holesail does NOT carry it either — it silently TRUNCATES it (measured
-      // through this same worker path: 8 KiB arrives as 2048 bytes), which is a
-      // worse failure than iroh's drop, because the far end gets a short packet
-      // and nothing is logged. Asserting the number makes it a canary: if
-      // upstream raises the ceiling, this fails and the README's disclosure gets
-      // corrected with it.
+      // holesail behaves DIFFERENTLY under the two runtimes, and the difference
+      // is upstream's, not ours — worker/ sets no socket or buffer options at
+      // all. Bare (what we ship) carries the datagram intact; the Node dev path
+      // truncates it at 2048 bytes, silently, so the far end sees a short packet
+      // and nothing is logged. Assert whichever number this runtime really
+      // produces: that is what makes a change in either one visible.
       assert(
-        jumbo === 2048,
-        `holesail truncates the 8 KiB datagram to ${jumbo} — a ceiling, not a drop`
+        jumbo === (BARE ? 8 * 1024 : 2048),
+        `holesail on ${BARE ? 'bare' : 'node'} delivered ${jumbo} of 8192 bytes` +
+          (BARE ? ' (intact)' : ' — truncated, not dropped')
       )
     }
     const stillWorks = await jumboReply(Buffer.from('after-jumbo'), 20000)
