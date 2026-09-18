@@ -45,6 +45,22 @@ function assert(cond, message) {
   console.log('  ✓ ' + message)
 }
 
+// Close a test server without ever hanging the suite. server.close() waits for
+// open connections, and a socket whose peer stopped reading never drains — one
+// CI run sat here for 4 minutes and died on the overall guard instead of
+// reporting anything. Destroy what we know about and never wait forever.
+function closeServer(srv, sockets = []) {
+  return new Promise((resolve) => {
+    for (const s of sockets) {
+      try {
+        s.destroy()
+      } catch {}
+    }
+    srv.close(() => resolve())
+    setTimeout(resolve, 3000).unref() // safety net: fires only if we're still up
+  })
+}
+
 async function main() {
   worker = spawn(WORKER_CMD, [WORKER], { stdio: ['pipe', 'pipe', 'inherit'] })
   rl = readline.createInterface({ input: worker.stdout })
@@ -567,7 +583,9 @@ async function main() {
     // unbounded queue would show up as a >100 MiB RSS jump.
     const net5 = require('net')
     const BURST = 128 * 1024 * 1024
+    let blastSock = null // kept so cleanup can destroy it (see closeServer)
     const blast = net5.createServer((sock) => {
+      blastSock = sock
       sock.on('error', () => {}) // tunnel dies mid-blast; EPIPE is expected
       let sent = 0
       const buf = Buffer.alloc(64 * 1024, 0x63)
@@ -671,7 +689,7 @@ async function main() {
     boom.destroy()
     await rpc('session:stop', { id: overflowClient.id })
     await rpc('session:stop', { id: bystander.id })
-    await new Promise((res) => blast.close(res))
+    await closeServer(blast, blastSock ? [blastSock] : [])
 
     console.log('17) global speed limit shapes ALL tunnels together')
     // Two independent tunnels with no per-tunnel caps. Without a shared
@@ -689,13 +707,15 @@ async function main() {
     const PAYLOAD = 512 * 1024
     const CAP = 1024 * 1024
     const mkBlaster = async () => {
+      const sockets = []
       const srv = net6.createServer((sock) => {
+        sockets.push(sock)
         sock.on('error', () => {}) // the tunnel may drop under a cap
         sock.write(Buffer.alloc(PAYLOAD, 0x64))
         sock.end()
       })
       await new Promise((res) => srv.listen(0, '127.0.0.1', res))
-      return srv
+      return { srv, sockets }
     }
     const readAll = (port) =>
       new Promise((resolve, reject) => {
@@ -728,12 +748,12 @@ async function main() {
     const blasterB = await mkBlaster()
     const gServerA = await rpc(
       'server:start',
-      { port: blasterA.address().port, secure: true },
+      { port: blasterA.srv.address().port, secure: true },
       90000
     )
     const gServerB = await rpc(
       'server:start',
-      { port: blasterB.address().port, secure: true },
+      { port: blasterB.srv.address().port, secure: true },
       90000
     )
     const gClientA = await rpc('client:connect', { key: gServerA.url }, 90000)
@@ -783,8 +803,8 @@ async function main() {
     await rpc('session:stop', { id: gClientB.id })
     await rpc('session:stop', { id: gServerA.id })
     await rpc('session:stop', { id: gServerB.id })
-    await new Promise((res) => blasterA.close(res))
-    await new Promise((res) => blasterB.close(res))
+    await closeServer(blasterA.srv, blasterA.sockets)
+    await closeServer(blasterB.srv, blasterB.sockets)
 
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
