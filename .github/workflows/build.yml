@@ -290,10 +290,20 @@ jobs:
           # See the Windows step: the mac bundle ships its own bare runtime, and
           # the worker must boot under it (macOS has no `timeout`; the worker
           # exits when its stdin closes).
+          #
+          # This step FAILED the first time it ran (exit 139 = SIGSEGV) and the
+          # whole point is that macOS was never checked at all before, so the
+          # three stages below exist to say WHICH layer dies: the runtime, a
+          # plain script, or our worker + its .bare addons.
           cd dist-resources
+          echo "arch: $(uname -m), runtime: $(file -b ./bare 2>/dev/null || echo 'file unavailable')"
+          ./bare --version; echo "bare --version exit=$?"
+          printf 'console.log("hello from bare")\n' > /tmp/hello.js
+          ./bare /tmp/hello.js; echo "hello exit=$?"
           RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
           printf '{"id":1,"method":"ping","params":{}}\n' \
             | ./"$RT" service-worker.js | tee /tmp/ping.json
+          echo "worker exit=${PIPESTATUS[0]}"
           grep -q '"result":"pong"' /tmp/ping.json
           echo "OK: $RT booted the worker"
 
