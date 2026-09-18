@@ -12,9 +12,8 @@
  *     holesail key and an iroh key can never talk to each other.
  *   a user-supplied fixed key derives a deterministic identity (sha256 →
  *     ed25519 seed), so a permanent tunnel keeps its address across restarts.
- *   UDP is NOT implemented: holesail's framed-datagram mode has no equivalent
- *     wired up here (Connection.sendDatagram exists, the framing is real
- *     work), so `udp: true` throws instead of silently tunnelling nothing.
+ *   UDP rides native QUIC datagrams, one flow per local source address (see
+ *     DatagramStream) — MTU-bounded, so a jumbo-datagram app needs holesail.
  *   Node only — @number0/iroh ships napi prebuilds, which the Bare runtime
  *     (the Android backend) cannot load. Android stays on the holesail engine.
  */
@@ -52,13 +51,12 @@ const PROBE_MS = 12000
 // the stream, and the accepter consumes and verifies the token — iroh's own
 // TCP forwarder does exactly this (dumbpipe's `HANDSHAKE = b"hello"`). The
 // token here IS the ALPN, so a peer speaking a different protocol version is
-// refused instead of guessed at.
-// `process` via runtime.js, like every other worker module: this engine is
-// Node-only (napi prebuilds), but the convention is what the eslint config
-// now enforces — the bare runtime has no global process at all.
-const { process: proc } = require('../runtime.js')
-
+// is refused instead of guessed at.
 const HANDSHAKE = ALPN
+
+// via runtime.js like every worker module: Bare has no global `process` (and
+// this engine is Node-only anyway — napi prebuilds cannot load under Bare).
+const { process: proc } = require('../runtime.js')
 
 const dbg = (...a) => {
   if (proc.env && proc.env.IROH_DEBUG) console.error('[iroh:dbg]', ...a)
@@ -233,7 +231,7 @@ class DatagramStream extends Duplex {
 
 class Iroh {
   constructor(opts = {}) {
-    this.opts = opts
+    this.udp = !!opts.udp
     this.server = !!opts.server
     this.type = this.server ? 'server' : 'client'
     this.port = Number(opts.port)
@@ -278,7 +276,6 @@ class Iroh {
   }
 
   async ready() {
-    this.udp = !!this.opts.udp
     const ep = await Endpoint.bind({
       secretKey: this.keyInput ? sha256(this.keyInput) : undefined,
       alpns: [this.udp ? ALPN_UDP : ALPN, PROBE_ALPN]
@@ -408,7 +405,6 @@ class Iroh {
         dbg('bi-stream -> local service', peer)
         this._serve(bi, { relay, peer })
       }
-      if (this.conns.has(conn)) this.conns.delete(conn)
     } catch (err) {
       // connection closed / refused — the loop above ends on throw, so this
       // only guards the setup of a single connection. Never silent: a dropped
@@ -417,6 +413,15 @@ class Iroh {
       console.error('[iroh] incoming failed:', err && err.message)
       this.stats.rejectCnt++
     }
+  }
+
+  /// Register a duplex for teardown. Every path that creates one — server TCP,
+  /// server UDP, client TCP, client UDP flow — goes through here, so there is
+  /// one place that knows what a live tunnel stream is.
+  _track(duplex) {
+    this.duplexes.add(duplex)
+    duplex.on('close', () => this.duplexes.delete(duplex))
+    return duplex
   }
 
   /// One tunnel connection -> one local service socket. Emitting 'connection'
@@ -431,10 +436,8 @@ class Iroh {
       await bi.send.reset(0n).catch(() => {})
       return
     }
-    const duplex = new TunnelStream(bi, info)
-    this.duplexes.add(duplex)
+    const duplex = this._track(new TunnelStream(bi, info))
     duplex.on('close', () => {
-      this.duplexes.delete(duplex)
       this.stats.locCnt = Math.max(0, this.stats.locCnt - 1)
     })
     this.dht.server.emit('connection', duplex)
@@ -467,11 +470,9 @@ class Iroh {
         console.error('[iroh] tunnel error:', msg)
       sock.destroy()
     })
-    // A socket ERROR is a hard failure of one direction: reset, so the peer
-    // learns the stream died instead of reading a clean EOF.
-    // pass the real error through: the errno is what tells a cancelled
-    // request (ECONNRESET, benign, not logged) from a service that is not
-    // listening (ECONNREFUSED, a fault worth a line)
+    // Forward the socket error itself, errno included: it is what tells a
+    // cancelled request (ECONNRESET, benign, not logged) from a service that
+    // is not listening (ECONNREFUSED, a fault worth a line).
     sock.on('error', (err) => duplex.destroy(err))
     // Deliberately NO destroy on socket 'close'. pipe() already ends the
     // duplex when the socket's write side finishes, and that end goes through
@@ -489,9 +490,7 @@ class Iroh {
   /// follows the service host.
   _serveUdp(conn, info) {
     const sock = dgram.createSocket(this.host.includes(':') ? 'udp6' : 'udp4')
-    const stream = new DatagramStream(conn, info, this)
-    this.duplexes.add(stream)
-    stream.on('close', () => this.duplexes.delete(stream))
+    const stream = this._track(new DatagramStream(conn, info, this))
     // Emitted BEFORE anything flows: stats.js wraps this exact object
     // synchronously ('data' = from the peer, write = to the peer), so the
     // session's counters and the per-session cap mean the same thing here as
@@ -585,7 +584,9 @@ class Iroh {
   /// loopback-bound socket.
   async _openUdpFlow(key, rinfo) {
     const conn = await this.ep.connect(this._peer, ALPN_UDP)
-    const stream = new DatagramStream(conn, { peer: rinfo.address }, this)
+    const stream = this._track(
+      new DatagramStream(conn, { peer: rinfo.address }, this)
+    )
     const flow = { conn, stream, rinfo }
     // A dead flow is FORGOTTEN, not kept: the next datagram from that source
     // re-dials. Keeping a dead entry would silently black-hole the source.
@@ -595,9 +596,7 @@ class Iroh {
       if (this.udpFlows.get(key) === flow) this.udpFlows.delete(key)
     }
     this.conns.add(conn)
-    this.duplexes.add(stream)
     conn.closed().then(forget, forget)
-    stream.on('close', () => this.duplexes.delete(stream))
     stream.on('data', (d) => {
       // answers go back to the exact source that opened this flow
       this.dht.proxySocket.send(d, rinfo.port, rinfo.address, (err) => {
@@ -644,13 +643,11 @@ class Iroh {
       const bi = await conn.openBi()
       // announce the stream before piping anything into it (see HANDSHAKE)
       await bi.send.write(HANDSHAKE)
-      const duplex = new TunnelStream(bi)
+      const duplex = this._track(new TunnelStream(bi))
       duplex.conn = conn
       const selected = conn.paths().find((p) => p.isSelected)
       duplex.relay = selected && selected.isRelay ? 'relay' : null
       duplex.rawStream = { remoteHost: conn.remoteId().toString() }
-      this.duplexes.add(duplex)
-      duplex.on('close', () => this.duplexes.delete(duplex))
       this._pair(duplex, sock)
     } catch (err) {
       // peer unreachable / key wrong: this local connection dies, the session
@@ -773,4 +770,4 @@ async function lookup(key) {
   }
 }
 
-module.exports = { Iroh, lookup, peerAddrFrom }
+module.exports = { Iroh, lookup }
