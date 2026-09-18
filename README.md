@@ -368,6 +368,30 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.8.0">
+<summary><b>v0.8.0</b> — total speed limit across all tunnels + capped-transfer fixes</summary>
+
+- **All-tunnels speed limit** — the Sessions header takes a **Total speed limit
+  (KB/s)** that shapes every tunnel against one shared budget, so N busy tunnels
+  can't each use a full allowance. Live (change or clear it while tunnels run)
+  and remembered across restarts, so a link you deliberately capped doesn't come
+  back uncapped when permanent tunnels auto-restart.
+- **Capped transfers are no longer truncated** — the tunnel engine relays `end`
+  through to the far socket and Node silently drops writes after it, so a capped
+  transfer whose sender closed on finishing (every HTTP response) was delivered
+  truncated with no error. The end is now held until the queue has drained.
+- **A cap can't buffer the machine to death** — a producer faster than the cap
+  cannot be paused (the engine ignores socket backpressure), so a tunnel's
+  backlog is bounded at 16 MB; past that the tunnel stops with an actionable
+  error instead of piling up until the app is OOM-killed.
+- **Client session Up/Down counters were reversed** — client cards showed
+  download as upload (the server and UDP paths were already correct).
+- **CI: Android SDK install fixed** — `android-actions/setup-android` defaults to
+  the legacy `tools` package, which google no longer publishes; pinned to
+  `platform-tools`.
+
+</details>
+
 <details id="v0.7.1">
 <summary><b>v0.7.1</b> — reliability fixes: append-only event log, updater progress, payload hygiene</summary>
 
