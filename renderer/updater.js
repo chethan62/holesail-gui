@@ -17,7 +17,7 @@ export async function checkForUpdate(manual = false) {
   const btn = $('#update-check')
   if (manual && btn) {
     btn.disabled = true
-    btn.textContent = '…'
+    btn.classList.add('busy')
   }
   try {
     const res = await core.invoke('plugin:updater|check')
@@ -44,7 +44,7 @@ export async function checkForUpdate(manual = false) {
   } finally {
     if (manual && btn) {
       btn.disabled = false
-      btn.textContent = '⬆'
+      btn.classList.remove('busy')
     }
   }
 }

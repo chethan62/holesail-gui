@@ -3,8 +3,9 @@
 import { $, THEME_KEY } from './ui.js'
 
 export function applyTheme(theme) {
+  // The button holds both glyphs and CSS shows the one for the OTHER theme
+  // (style.css), so there is no text to swap here.
   document.body.dataset.theme = theme
-  $('#theme-toggle').textContent = theme === 'light' ? '🌙' : '🌓'
 }
 
 export function initTheme() {

@@ -13,7 +13,7 @@
         "label": "main",
         "title": "Holesail GUI",
         "width": 980,
-        "height": 760,
+        "height": 860,
         "minWidth": 360,
         "minHeight": 560,
         "resizable": true,
