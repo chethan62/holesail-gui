@@ -221,7 +221,7 @@ npm test             # E2E: spawns the real service worker, starts a server on
 
 The test talks to the exact same `service-worker.js` the GUI uses, so a green
 `npm test` verifies the full backend chain (validation → holesail → hyperdht →
-real tunnel). `npm run test:iroh` runs the same 18 sections against the
+real tunnel). `npm run test:iroh` runs the same 19 sections against the
 alternate engine (the suite is engine-aware: only the key scheme, the lookup
 record and the capped-burst behaviour differ, and each is asserted per engine).
 
@@ -417,6 +417,38 @@ arrives on the device — in both directions.
 </details>
 
 ## Changelog
+
+<details id="v0.9.0">
+<summary><b>v0.9.0</b> — swappable tunnel engine (iroh, opt-in) + UDP traffic fixed</summary>
+
+- **UDP tunnel cards show their traffic again** — a UDP session sat at 0/0
+  up/down forever: the worker looked for the engine's datagram socket under one
+  field name while the engine publishes it under another. Both directions now
+  count, and UDP has end-to-end coverage for the first time (a datagram echoed
+  through the tunnel from two different local sources — the topology that keeps
+  two clients of one UDP service apart).
+- **The tunnel engine is swappable** — `TUNNEL_ENGINE=iroh` runs the same
+  worker on [iroh](https://iroh.computer) (QUIC, hole-punching with relay
+  fallback, MIT/Apache-2.0) instead of holesail, behind the same RPC contract.
+  holesail stays the default and an installed build behaves exactly as before;
+  iroh is selectable in dev/test builds only, because packaged installers
+  bundle the Bare runtime and iroh's native prebuilds cannot load there.
+  Measured trade-offs — ~7x slower bulk throughput, ~40x faster connection
+  setup — are in [Architecture](#architecture).
+- **A dead peer no longer hangs silently** — with the peer gone, app sockets
+  used to sit open with nothing logged while the session still read "running";
+  the connection's death now resets the streams riding it, and a normal Stop
+  no longer writes an error line into the event log.
+- **Sessions can be listed right after a start** — listing them within ~200 ms
+  of starting one serialized live limiter state and threw `Converting circular
+structure to JSON`.
+- **Release artifacts are checked themselves** — a packaged build could not
+  have started from this line as it stood (the worker read Node's global
+  `process`, which the bundled Bare runtime does not have). The deb's own
+  worker is now exercised under its own bundled runtime, and the installed
+  layout is checked by the UI smoke.
+
+</details>
 
 <details id="v0.8.0">
 <summary><b>v0.8.0</b> — total speed limit across all tunnels + capped-transfer fixes</summary>
