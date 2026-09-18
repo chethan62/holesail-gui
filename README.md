@@ -164,6 +164,27 @@ knowing before relying on it:
   endpoint, so a permanent tunnel keeps its address across restarts. A peer
   that only receives still works — bi-streams are announced with a handshake,
   the way iroh's own `dumbpipe` does it.
+- **Bulk throughput is ~7x slower** — and this one is not a design choice, it
+  is a limit of the current JS binding. Measured on one machine, same bench,
+  same services, both ends in separate processes:
+
+  |                              | upload    | download  | 20 sockets at once  |
+  | ---------------------------- | --------- | --------- | ------------------- |
+  | holesail                     | 28.9 MB/s | 30.8 MB/s | 20/20 in 3.6 s      |
+  | iroh (`@number0/iroh` 1.1.0) | 4.1 MB/s  | 4.1 MB/s  | 20/20 in **0.09 s** |
+
+  iroh's per-connection cost is ~40x lower (QUIC streams are nearly free) and
+  it reaches a direct path the same way, but every byte of tunnel payload
+  crosses the JS boundary as a **plain JS array**, not a typed array:
+  `recv.read()` returns `Array` (~0.19 µs/byte) and `send.write()` _rejects_
+  `Buffer`/`Uint8Array` ("Failed to get Array length"). That caps a JS host at
+  ~4 MB/s no matter the chunk size — chunk size, receive window (16/64 MB),
+  relay-off and stream limits were all measured and change nothing. The
+  upgrade path is small and upstream: accept/return `Uint8Array` in
+  `iroh-ffi`'s napi signatures (`Vec<u8>` → typed array) and the same
+  memcpy path would run at hundreds of MB/s. Until then, pick per use case —
+  iroh for many short-lived connections and awkward NATs, holesail for
+  streaming or moving files.
 
 `npm run test:iroh` runs the whole E2E suite against that engine.
 
@@ -521,7 +542,7 @@ arrives on the device — in both directions.
   behavior on real desktops is still being validated
 - **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
 - **A cap can't slow a sender it doesn't control (holesail engine)** — that engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap). The iroh engine paces the producer through QUIC flow control instead, so the same burst never accumulates — measured +1 MiB RSS, no error, tunnel stays up
-- **The iroh engine is dev/test-selectable only** — packaged builds bundle the Bare runtime, whose ABI cannot load `@number0/iroh`'s napi prebuilds, so `TUNNEL_ENGINE=iroh` fails in an installed app. The measured path to ship it: bundle the **Node binary as the worker runtime** (`bare` → `node`; the worker+resources layout is unchanged and already runs both engines under Node — verified end to end on Linux). Cost: ~+22 MB compressed per installer (node 41.9 MB vs bare 19.7 MB gzipped; the iroh prebuild itself is 168 KB), and Node is MIT so it redistributes fine. A Node **single-executable** (SEA) binary is NOT the answer here: its injected script can only `require` built-ins (measured: `require('./worker/runtime.js')` fails), so it would need a JS bundler plus a native-addon `dlopen` shim. Android keeps Bare either way (no official Node build for it). The UI also still speaks `hs://`: an iroh key works when pasted, but deep links and the key-format hints assume holesail
+- **The iroh engine is dev/test-selectable only** — packaged builds bundle the Bare runtime, whose ABI cannot load `@number0/iroh`'s napi prebuilds, so `TUNNEL_ENGINE=iroh` fails in an installed app. The measured path to ship it: bundle the **Node binary as the worker runtime** (`bare` → `node`; the worker+resources layout is unchanged and already runs both engines under Node — verified end to end on Linux). Cost: ~+22 MB compressed per installer (node 41.9 MB vs bare 19.7 MB gzipped; the iroh prebuild itself is 168 KB), and Node is MIT so it redistributes fine. A Node **single-executable** (SEA) binary is NOT the answer here: its injected script can only `require` built-ins (measured: `require('./worker/runtime.js')` fails), so it would need a JS bundler plus a native-addon `dlopen` shim. Android keeps Bare either way (no official Node build for it). The UI also still speaks `hs://`: an iroh key works when pasted, but deep links and the key-format hints assume holesail. Bulk throughput is the other caveat: ~4 MB/s, ~7x below holesail, because the JS binding moves payload bytes one array element at a time (measured; engine section above)
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)

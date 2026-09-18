@@ -970,6 +970,65 @@ async function main() {
     // through closeServer().
     udpEcho.close()
 
+    console.log(
+      '19) many app sockets at once, multiplexed onto one shared connection'
+    )
+    // The client tunnels every local socket over ONE connection, so this is
+    // what breaks if the peer's advertised bi-stream limit is hit or a dial
+    // races with another. Measured on this box: iroh serves 20 at once in
+    // ~90 ms, holesail needs ~180 ms of DHT setup per socket, so 8 keeps the
+    // default-engine run quick while still being simultaneous.
+    const concEcho = net.createServer((s) => {
+      s.on('error', () => {})
+      s.pipe(s)
+    })
+    await new Promise((res) => concEcho.listen(0, '127.0.0.1', res))
+    const CONC = 8
+    const concServer = await rpc(
+      'server:start',
+      { port: concEcho.address().port, secure: true },
+      90000
+    )
+    const concClient = await rpc(
+      'client:connect',
+      { key: concServer.url },
+      90000
+    )
+    const concPayload = Buffer.alloc(16 * 1024, 0x51)
+    const concSockets = []
+    const concReplies = await Promise.all(
+      Array.from({ length: CONC }, () => {
+        return new Promise((resolve) => {
+          const s = net.connect({ host: '127.0.0.1', port: concClient.port })
+          concSockets.push(s)
+          const timer = setTimeout(() => resolve(0), 30000)
+          // ACCUMULATE: a tunnel read is whatever the peer's stream delivered
+          // (the iroh engine sends each read straight through), so a 16 KiB
+          // echo legitimately arrives as two chunks — asserting on the first
+          // chunk alone reports a healthy tunnel as broken.
+          let got = 0
+          s.on('data', (d) => {
+            if (!got) clearTimeout(timer)
+            got += d.length
+            if (got >= concPayload.length) resolve(got)
+          })
+          s.once('connect', () => s.write(concPayload))
+          s.once('error', () => {
+            clearTimeout(timer)
+            resolve(0)
+          })
+        })
+      })
+    )
+    const concOk = concReplies.filter((n) => n === concPayload.length).length
+    assert(
+      concOk === CONC,
+      `all ${CONC} simultaneous sockets echoed (${concOk} did)`
+    )
+    await rpc('session:stop', { id: concClient.id })
+    await rpc('session:stop', { id: concServer.id })
+    await closeServer(concEcho, concSockets)
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

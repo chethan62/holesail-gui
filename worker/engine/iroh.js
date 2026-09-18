@@ -446,15 +446,28 @@ class Iroh {
   /// engine is the difference between one dropped game server and 12).
   _pair(duplex, sock) {
     duplex.on('error', (err) => {
-      // expected when we dropped the connection ourselves (pause/close);
-      // anything else is worth a line — a silent P2P engine is undebuggable
-      if (!this.paused && !this.closed)
-        console.error('[iroh] tunnel error:', (err && err.message) || err)
+      // expected when we dropped the connection ourselves (pause/close) or when
+      // the PEER closed cleanly: QUIC reports a normal shutdown as
+      // ConnectionLost(ApplicationClosed(ApplicationClose { error_code: 0 }))
+      // — a stop, not a fault, and the user's event log should not cry error
+      // every time they hit Stop. Unrecognised shapes still log: this only
+      // silences the clean case, so a real fault can never disappear here.
+      const msg = String((err && err.message) || err)
+      const clean =
+        /ApplicationClosed\(ApplicationClose \{ error_code: 0\b/.test(msg) ||
+        /^Reset\(0\)$/.test(msg) || // peer stopped the stream = app cancelled
+        msg.includes('LocallyClosed') ||
+        /\b(ECONNRESET|EPIPE)\b/.test(msg) // local app hung up mid-request
+      if (!this.paused && !this.closed && !clean)
+        console.error('[iroh] tunnel error:', msg)
       sock.destroy()
     })
     // A socket ERROR is a hard failure of one direction: reset, so the peer
     // learns the stream died instead of reading a clean EOF.
-    sock.on('error', () => duplex.destroy(new Error('local socket error')))
+    // pass the real error through: the errno is what tells a cancelled
+    // request (ECONNRESET, benign, not logged) from a service that is not
+    // listening (ECONNREFUSED, a fault worth a line)
+    sock.on('error', (err) => duplex.destroy(err))
     // Deliberately NO destroy on socket 'close'. pipe() already ends the
     // duplex when the socket's write side finishes, and that end goes through
     // the limiter's deferred end (queueEnd) — so it lands AFTER the capped
@@ -627,6 +640,7 @@ class Iroh {
       // announce the stream before piping anything into it (see HANDSHAKE)
       await bi.send.write(HANDSHAKE)
       const duplex = new TunnelStream(bi)
+      duplex.conn = conn
       const selected = conn.paths().find((p) => p.isSelected)
       duplex.relay = selected && selected.isRelay ? 'relay' : null
       duplex.rawStream = { remoteHost: conn.remoteId().toString() }
@@ -644,9 +658,11 @@ class Iroh {
 
   /// One QUIC connection per session, re-dialed after it drops: the tunnel is
   /// a transport, not a per-socket thing (each local socket gets its own
-  /// bi-stream). ponytail: single shared connection — a per-socket dial would
-  /// pay a handshake per connection; revisit only if multiplexing is measured
-  /// to matter.
+  /// bi-stream). One shared connection, measured rather than assumed: 20
+  /// simultaneous local sockets were served over it in ~90 ms (holesail needs
+  /// ~180 ms of DHT setup PER socket), so a per-socket dial buys nothing.
+  /// `setMaxConcurrentBiStreams` was left at its default for the same reason —
+  /// no blocking at 20 concurrent streams.
   async _tunnelConn() {
     if (this._conn && !this._connClosed) return this._conn
     if (!this._dialing) {
@@ -660,16 +676,21 @@ class Iroh {
       this._conn = conn
       this._connClosed = false
       this._dialing = null
-      conn.closed().then(
-        () => {
-          this._connClosed = true
-          if (this._conn === conn) this._conn = null
-        },
-        () => {
-          this._connClosed = true
-          if (this._conn === conn) this._conn = null
+      const lost = () => {
+        this._connClosed = true
+        if (this._conn === conn) this._conn = null
+        // The connection carries every stream of this tunnel: when it dies
+        // they are all dead, and a QUIC stream parked in read() does NOT
+        // wake up on its own (measured: a SIGKILLed peer left the app's
+        // sockets hanging with nothing logged, session still "running").
+        // Fail them so the app sees a reset and retries — the session itself
+        // survives and the next local connection re-dials.
+        for (const d of this.duplexes) {
+          if (d.conn === conn && !d.destroyed)
+            d.destroy(new Error('tunnel connection lost'))
         }
-      )
+      }
+      conn.closed().then(lost, lost)
     }
     return this._conn
   }
