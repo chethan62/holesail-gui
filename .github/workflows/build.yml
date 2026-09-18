@@ -235,6 +235,22 @@ jobs:
           echo "build failed after 3 attempts"
           exit 1
 
+      - name: Verify the bundled runtime boots the worker
+        shell: bash
+        run: |
+          # Same class of check as the Linux job's deb/AppImage payloads: the
+          # packaged worker must boot under THIS platform's bundled bare runtime,
+          # which has no Node globals — a worker that reads `process` passes
+          # every Node test and then dies on a real install. Windows ships
+          # bare.exe; no `timeout` wrapper because the shell here is git-bash and
+          # the worker exits when its stdin closes.
+          cd dist-resources
+          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
+          printf '{"id":1,"method":"ping","params":{}}\n' \
+            | ./"$RT" service-worker.js | tee /tmp/ping.json
+          grep -q '"result":"pong"' /tmp/ping.json
+          echo "OK: $RT booted the worker"
+
       - uses: actions/upload-artifact@v5
         with:
           name: holesail-gui-windows
@@ -267,6 +283,19 @@ jobs:
           # builds don't need end users to have Node.js at all.
           node scripts/prepare-resources.mjs --bare
           npx tauri build
+
+      - name: Verify the bundled runtime boots the worker
+        shell: bash
+        run: |
+          # See the Windows step: the mac bundle ships its own bare runtime, and
+          # the worker must boot under it (macOS has no `timeout`; the worker
+          # exits when its stdin closes).
+          cd dist-resources
+          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
+          printf '{"id":1,"method":"ping","params":{}}\n' \
+            | ./"$RT" service-worker.js | tee /tmp/ping.json
+          grep -q '"result":"pong"' /tmp/ping.json
+          echo "OK: $RT booted the worker"
 
       - uses: actions/upload-artifact@v5
         with:

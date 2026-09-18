@@ -152,9 +152,13 @@ knowing before relying on it:
 - **UDP rides native QUIC datagrams** (`udp: true`), one tunnel flow per
   local source address — the same topology holesail uses, so a service that
   keys sessions by source port behaves identically. Consequence of using real
-  datagrams: an oversized datagram is dropped (QUIC's limit, a little over
-  1 KB), where holesail framed UDP over a stream and had no ceiling — a UDP
-  app that sends jumbo datagrams still needs the holesail engine.
+  datagrams: an oversized datagram is dropped, and the drop is counted. That
+  is the honest failure — holesail, the engine that can ship today, does not do
+  better: it silently TRUNCATES a large datagram (measured through the worker:
+  8 KiB arrives as 2048 B), so the far end sees a short packet and nothing is
+  logged. Neither engine is right for an app that needs jumbo datagrams
+  (TFTP-style transfers, some game traffic) until upstream raises its frame
+  size; the suite asserts both behaviours so a change shows up.
 - **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
   runtime cannot load — so it is selectable in dev/tests, not in shipped
   packages yet. Shipping it means bundling the **Node** binary as the worker

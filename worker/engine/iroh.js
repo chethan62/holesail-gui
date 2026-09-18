@@ -13,7 +13,8 @@
  *   a user-supplied fixed key derives a deterministic identity (sha256 →
  *     ed25519 seed), so a permanent tunnel keeps its address across restarts.
  *   UDP rides native QUIC datagrams, one flow per local source address (see
- *     DatagramStream) — MTU-bounded, so a jumbo-datagram app needs holesail.
+ *     DatagramStream) — MTU-bounded: an oversized datagram is dropped AND
+ *     counted, unlike holesail, which silently truncates at ~2 KB.
  *   Node only — @number0/iroh ships napi prebuilds, which the Bare runtime
  *     (the Android backend) cannot load. Android stays on the holesail engine.
  */
@@ -206,10 +207,11 @@ class DatagramStream extends Duplex {
     const buf = toBuf(chunk)
     const max = this.conn.maxDatagramSize()
     if (max && buf.length > max) {
-      // QUIC datagrams are MTU-bounded (holesail framed UDP over a stream
-      // instead, so it had no ceiling). Anything larger needs the holesail
-      // engine. ponytail: drop and count — fragmenting a datagram would
-      // change what the receiving app sees.
+      // QUIC datagrams are MTU-bounded. holesail has no such MTU bound but
+      // silently truncates at ~2 KB instead, and being *told* beats silent
+      // corruption: drop it, and let rejectCnt make it visible.
+      // ponytail: drop and count — fragmenting would change what the receiving
+      // app sees.
       if (this.engine) this.engine.stats.rejectCnt++
       cb()
       return

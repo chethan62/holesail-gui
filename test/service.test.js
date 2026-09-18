@@ -1031,56 +1031,64 @@ async function main() {
 
     console.log('20) an oversized UDP datagram cannot take the tunnel down')
     // QUIC datagrams are MTU-bounded, so the iroh engine DROPS one that is too
-    // large and counts it; holesail framed datagrams over a stream and has no
-    // such ceiling. Either way the tunnel and the worker must survive — the
-    // failure this guards is "a game server or resolver goes quiet because one
-    // app sent a big packet".
-    if (!IROH) {
-      console.log(
-        '   (skipped: holesail frames datagrams over a stream — no MTU ceiling to test)'
-      )
-    } else {
-      const jumboEcho = dgram.createSocket('udp4')
-      jumboEcho.on('message', (msg, rinfo) =>
-        jumboEcho.send(msg, rinfo.port, rinfo.address)
-      )
-      await new Promise((res) => jumboEcho.bind(0, '127.0.0.1', res))
-      const jumboServer = await rpc(
-        'server:start',
-        { port: jumboEcho.address().port, secure: true, udp: true },
-        90000
-      )
-      const jumboClient = await rpc(
-        'client:connect',
-        { key: jumboServer.url, udp: true },
-        90000
-      )
-      const jumboSock = dgram.createSocket('udp4')
-      await new Promise((res) => jumboSock.bind(0, '127.0.0.1', res))
-      // 8 KB: comfortably past any QUIC datagram limit, well inside UDP's
-      const reply = (payload, expectReplyMs = 20000) =>
-        new Promise((resolve) => {
-          const t = setTimeout(() => resolve(null), expectReplyMs)
-          jumboSock.once('message', (m) => {
-            clearTimeout(t)
-            resolve(m.length)
-          })
-          jumboSock.send(payload, jumboClient.port, '127.0.0.1')
+    // large and counts it; holesail frames datagrams over a stream and carries
+    // it. Both engines run the same harness and only the EXPECTATION differs —
+    // what must hold either way is that the tunnel and the worker survive, so
+    // "a game server or resolver goes quiet because one app sent a big packet"
+    // can't happen silently.
+    const jumboEcho = dgram.createSocket('udp4')
+    jumboEcho.on('message', (msg, rinfo) =>
+      jumboEcho.send(msg, rinfo.port, rinfo.address)
+    )
+    await new Promise((res) => jumboEcho.bind(0, '127.0.0.1', res))
+    const jumboServer = await rpc(
+      'server:start',
+      { port: jumboEcho.address().port, secure: true, udp: true },
+      90000
+    )
+    const jumboClient = await rpc(
+      'client:connect',
+      { key: jumboServer.url, udp: true },
+      90000
+    )
+    const jumboSock = dgram.createSocket('udp4')
+    await new Promise((res) => jumboSock.bind(0, '127.0.0.1', res))
+    // 8 KB: past any QUIC datagram limit, well inside UDP's own
+    const jumboReply = (payload, expectReplyMs = 20000) =>
+      new Promise((resolve) => {
+        const t = setTimeout(() => resolve(null), expectReplyMs)
+        jumboSock.once('message', (m) => {
+          clearTimeout(t)
+          resolve(m.length)
         })
-      const jumbo = await reply(Buffer.alloc(8 * 1024, 0x7a), 12000)
+        jumboSock.send(payload, jumboClient.port, '127.0.0.1')
+      })
+    const jumbo = await jumboReply(Buffer.alloc(8 * 1024, 0x7a), 12000)
+    if (IROH) {
       assert(jumbo === null, 'the oversize datagram is dropped, not delivered')
       const jumboStats = await rpc('session:stats', { id: jumboClient.id })
       assert(jumboStats.rejectCnt >= 1, 'and the drop is counted, not silent')
-      const stillWorks = await reply(Buffer.from('after-jumbo'), 20000)
+    } else {
+      // holesail does NOT carry it either — it silently TRUNCATES it (measured
+      // through this same worker path: 8 KiB arrives as 2048 bytes), which is a
+      // worse failure than iroh's drop, because the far end gets a short packet
+      // and nothing is logged. Asserting the number makes it a canary: if
+      // upstream raises the ceiling, this fails and the README's disclosure gets
+      // corrected with it.
       assert(
-        stillWorks === 'after-jumbo'.length,
-        'the tunnel still relays normal datagrams afterwards'
+        jumbo === 2048,
+        `holesail truncates the 8 KiB datagram to ${jumbo} — a ceiling, not a drop`
       )
-      await rpc('session:stop', { id: jumboClient.id })
-      await rpc('session:stop', { id: jumboServer.id })
-      jumboSock.close()
-      jumboEcho.close()
     }
+    const stillWorks = await jumboReply(Buffer.from('after-jumbo'), 20000)
+    assert(
+      stillWorks === 'after-jumbo'.length,
+      'the tunnel still relays normal datagrams afterwards'
+    )
+    await rpc('session:stop', { id: jumboClient.id })
+    await rpc('session:stop', { id: jumboServer.id })
+    jumboSock.close()
+    jumboEcho.close()
 
     console.log('21) a peer that goes away is told to the app, not hidden')
     // Stop the SERVER session under a live transfer. The client's connection
