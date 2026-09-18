@@ -149,18 +149,40 @@ jobs:
           echo "build failed after 3 attempts"
           exit 1
 
-      - name: Verify the packaged worker boots (deb payload under its own bare)
+      - name: Verify the packaged workers boot (deb + AppImage payloads)
         run: |
           # The packaged worker runs under the bundled bare runtime, which has
           # no Node globals — a worker that reads `process` passes every Node
           # test and dies on load in an installed build. It did, exactly once,
           # and nothing caught it because no check ever BOOTED the artifact.
           # Unpack the deb and talk to its own worker with its own runtime.
+          set -e
+          ping_worker() {
+            printf '{"id":1,"method":"ping","params":{}}\n' \
+              | timeout 60 "$1" "$2" \
+              | tee /tmp/ping.json
+            grep -q '"result":"pong"' /tmp/ping.json
+            echo "OK: $1 booted $2"
+          }
           mkdir -p /tmp/deb && dpkg-deb -x src-tauri/target/release/bundle/deb/*.deb /tmp/deb
-          printf '{"id":1,"method":"ping","params":{}}\n' \
-            | timeout 60 /tmp/deb/usr/lib/holesail-gui/bare /tmp/deb/usr/lib/holesail-gui/service-worker.js \
-            | tee /tmp/ping.json
-          grep -q '"result":"pong"' /tmp/ping.json
+          ping_worker /tmp/deb/usr/lib/holesail-gui/bare /tmp/deb/usr/lib/holesail-gui/service-worker.js
+
+          # The AppImage is what the Linux updater installs, so check its payload
+          # too (its worker must boot under the bare runtime it carries).
+          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          if [ -n "$APP" ]; then
+            rm -rf /tmp/squashfs-root
+            # --appimage-extract needs no FUSE, so a bare runner can do this
+            (cd /tmp && "$APP" --appimage-extract >/dev/null 2>&1 || true)
+            if [ -x /tmp/squashfs-root/usr/lib/holesail-gui/bare ]; then
+              ping_worker /tmp/squashfs-root/usr/lib/holesail-gui/bare /tmp/squashfs-root/usr/lib/holesail-gui/service-worker.js
+            else
+              echo "AppImage built but its payload has no bare runtime — investigate"
+              exit 1
+            fi
+          else
+            echo "no AppImage built (bundler flake) — deb payload checked, AppImage skipped"
+          fi
 
       - uses: actions/upload-artifact@v5
         with:
