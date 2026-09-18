@@ -1057,7 +1057,6 @@ async function main() {
       )
       const jumboSock = dgram.createSocket('udp4')
       await new Promise((res) => jumboSock.bind(0, '127.0.0.1', res))
-      const jumboPort = jumboSock.address().port
       // 8 KB: comfortably past any QUIC datagram limit, well inside UDP's
       const reply = (payload, expectReplyMs = 20000) =>
         new Promise((resolve) => {
