@@ -164,8 +164,8 @@ pub(crate) fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), Stri
     // that resolution walks up to the repo's node_modules; a packaged install
     // has no @number0/iroh to walk to, which is why this is a dev-selectable
     // engine until packaging ships Node (see the README).
-    let engine_needs_node = std::env::var("TUNNEL_ENGINE")
-        .is_ok_and(|v| v.trim().eq_ignore_ascii_case("iroh"));
+    let engine_needs_node =
+        std::env::var("TUNNEL_ENGINE").is_ok_and(|v| v.trim().eq_ignore_ascii_case("iroh"));
     if !engine_needs_node {
         for dir in &dirs {
             let bare = dir.join(bare_name);
