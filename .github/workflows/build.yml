@@ -301,10 +301,24 @@ jobs:
           printf 'console.log("hello from bare")\n' > /tmp/hello.js
           ./bare /tmp/hello.js; echo "hello exit=$?"
           RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
+          # Which native module is it? The runtime and plain JS are fine above,
+          # so require the worker's native load path one module at a time and
+          # print each exit code. TEMPORARY probe: trim it back to the ping once
+          # the culprit is named and fixed.
+          for m in bare-crypto sodium-native udx-native hyperdht holesail; do
+            printf "require('%s'); console.log('OK: %s')\n" "$m" "$m" > _probe.js
+            ./"$RT" _probe.js; echo "probe $m exit=$?"
+          done
+          rm -f _probe.js
+          # Same ping as Windows/Linux, with stderr kept so a JS-level failure
+          # cannot hide behind the pipe, and any crash report bare wrote.
           printf '{"id":1,"method":"ping","params":{}}\n' \
-            | ./"$RT" service-worker.js | tee /tmp/ping.json
-          echo "worker exit=${PIPESTATUS[0]}"
+            | ./"$RT" service-worker.js > /tmp/ping.json 2>/tmp/worker-err.txt
+          echo "worker exit=$?"
           grep -q '"result":"pong"' /tmp/ping.json
+          echo "--- worker stderr ---"; tail -30 /tmp/worker-err.txt
+          echo "--- crash reports ---"
+          ls -lt ./*.crash "$TMPDIR"/*crash* /tmp/*crash* 2>/dev/null | head -5
           echo "OK: $RT booted the worker"
 
       - uses: actions/upload-artifact@v5
