@@ -210,9 +210,12 @@ class Iroh {
       port: this.port,
       host: this.host,
       url: this.url,
-      // a client's key is the string it dialed (the credential the user
-      // pasted), a server's is its own ticket
-      key: this.server ? this.ticket || this.publicKey : this.keyInput,
+      // the string this tunnel is NAMED by: the key the user supplied
+      // (identity seed) when there is one, else the generated ticket. The
+      // saved-tunnel UI matches a saved entry to its running session on this,
+      // so it must be the seed for permanent tunnels — the ticket is in `url`
+      // and changes as the peer's addresses change.
+      key: this.keyInput || this.ticket || this.publicKey,
       publicKey: this.publicKey
     }
   }
@@ -266,7 +269,7 @@ class Iroh {
           require('./../transport.js').sendEvent('session:update', {
             id: this.sessionId,
             url: this.url,
-            key: this.ticket
+            key: this.keyInput || this.ticket
           })
         }
       })
@@ -310,11 +313,18 @@ class Iroh {
         sameAlpn(alpn, PROBE_ALPN) ? 'probe' : 'tunnel'
       )
       if (sameAlpn(alpn, PROBE_ALPN)) {
-        // reachability probe: complete the handshake and hang up. Never
+        // Reachability probe: complete the handshake and hang up. Never
         // reaches the local service, so a lookup() leaves no trace as a
-        // phantom connection in the owner's session:peer log.
-        const probeConn = await accepting.connect()
-        probeConn.close(0n, [])
+        // phantom connection in the owner's session:peer log. A probe is
+        // deliberately hit-and-run — the caller closes the moment its
+        // connect() resolves — so a failed connect() here is the normal
+        // outcome ("timed out") and must not be reported as an incoming
+        // failure: that spammed the app's event log on every reachability
+        // check.
+        try {
+          const probeConn = await accepting.connect()
+          probeConn.close(0n, [])
+        } catch {}
         return
       }
       const conn = await accepting.connect()

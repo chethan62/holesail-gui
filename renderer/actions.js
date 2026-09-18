@@ -270,7 +270,10 @@ export async function startConnect(event) {
         key: cleanKey,
         port: params.port ?? null,
         host: params.host ?? null,
-        secure: cleanKey.startsWith('hs://s000'),
+        // only holesail has a public mode; anything else (an iroh ticket)
+        // is always encrypted, so it must not be saved as Public — that flag
+        // also drives startSaved's `secure` and the Saved tab's badge
+        secure: !cleanKey.startsWith('hs://0000'),
         udp: params.udp,
         limit: params.limit,
         autostart: true,

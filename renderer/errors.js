@@ -27,11 +27,12 @@ const ERROR_HINTS = [
   [
     /Invalid key format/,
     () =>
-      `That connection string isn't a valid hs:// key — double-check it (private keys start with hs://s000, public with hs://0000).`
+      `That connection string isn't valid — double-check it (holesail: hs://s000… private, hs://0000… public; iroh: iroh://endpoint…).`
   ],
   [
     /Connection string is required/,
-    () => `Paste a connection string first (hs://s000… or hs://0000…).`
+    () =>
+      `Paste a connection string first (hs://s000…, hs://0000… or iroh://…).`
   ],
   [
     /Too many sessions/,

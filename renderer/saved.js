@@ -31,22 +31,35 @@ export async function refreshSaved() {
   }
 }
 
+/// True for a holesail connection string. A holesail key + the secure flag
+/// FULLY describe the string, so it can be rebuilt from storage and stays
+/// stable across restarts.
+function isHsKey(key) {
+  const k = String(key || '')
+  return k.startsWith('hs://s000') || k.startsWith('hs://0000')
+}
+
+/// The connectable string a saved entry is known by. An iroh key is only an
+/// identity seed — its ticket embeds the peer's live addresses, so a stopped
+/// iroh tunnel has no rebuildable string (null, never a fabricated hs:// one,
+/// which would name a completely different network).
+function savedUrl(t) {
+  if (t.kind === 'client') return String(t.key || '').replace(/\/+$/, '')
+  if (isHsKey(t.key))
+    return (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
+  return null
+}
+
 /// Is there a running session for this saved tunnel?
 export function savedSession(t) {
-  const serverUrl =
-    t.kind === 'server'
-      ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
-      : null
-  const clientKey =
-    t.kind === 'client' ? String(t.key || '').replace(/\/+$/, '') : null
-  const fmUrl =
-    t.kind === 'filemanager'
-      ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
-      : null
+  const url = savedUrl(t)
   for (const s of state.sessions.values()) {
-    if (serverUrl && s.url === serverUrl) return s
-    if (clientKey && s.url === clientKey) return s
-    if (fmUrl && s.url === fmUrl) return s
+    if (url && s.url === url) return s
+    // No derivable string (an iroh server): match the running session by the
+    // identity key it was started with — the worker reports the same seed, so
+    // a permanent tunnel is found again across restarts (without this the
+    // Saved tab read "not running" and autostart started a SECOND copy).
+    if (!url && t.kind !== 'client' && s.key === t.key) return s
   }
   return null
 }
@@ -209,14 +222,16 @@ export function renderSaved() {
     head.append(startBtn)
     item.append(head)
 
-    const keyLine = el(
-      'code',
-      '',
-      '',
-      t.kind === 'server' || t.kind === 'filemanager'
-        ? (t.secure === false ? 'hs://0000' : 'hs://s000') + t.key
-        : t.key
-    )
+    // Show the LIVE connection string when the tunnel is running — for iroh
+    // that is the only truthful source (its ticket is regenerated as the
+    // peer's addresses change). A stopped iroh tunnel shows its identity key
+    // instead, with a tooltip saying where the ticket comes from.
+    const live = savedSession(t)
+    const keyLine = el('code', '', '', live ? live.url : savedUrl(t) || t.key)
+    if (!live && t.kind !== 'client' && !isHsKey(t.key)) {
+      keyLine.title =
+        'iroh tunnels are named by a ticket that embeds the peer’s live addresses — start the tunnel to get its current connection string'
+    }
     const meta = el('div', 'meta')
     if (t.kind === 'filemanager') meta.append(metaItem('Folder', t.path ?? '?'))
     else meta.append(metaItem('Port', t.port ?? 'auto'))
