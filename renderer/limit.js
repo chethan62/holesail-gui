@@ -44,6 +44,9 @@ export async function restoreGlobalLimit() {
     state.globalLimit = limit
     $('#global-limit').value = String(Math.round(limit / 1024))
     updateUptimeNote()
+    // log it: after a restart the tunnels are slow for a reason the user
+    // can't see in the UI (the field is filled, but the reason isn't)
+    log(`Total speed limit restored: ${fmtBytes(limit)}/s across all tunnels`)
   } catch (err) {
     log('Could not restore the total speed limit: ' + err.message, 'err')
   }
