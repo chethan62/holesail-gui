@@ -1,9 +1,16 @@
-/* limiter.js — per-session token-bucket bandwidth cap. Depends on
- * runtime.js + state.js.
+/* limiter.js — bandwidth caps: one token bucket per session, plus one
+ * bucket shared by every tunnel. Depends on runtime.js + state.js.
  *
- * A single bucket caps COMBINED upload+download (the use case behind the
- * feature: "a busy tunnel can saturate my link"). The data-boundary
- * wrappers in stats.js call consume()/pauseForLimit()/queueWrite() here.
+ * A bucket caps COMBINED upload+download for whatever it governs (the use
+ * case behind the feature: "a busy tunnel can saturate my link"). The
+ * global bucket is what makes a SECOND tunnel not simply add its own
+ * allowance on top: bytes move only when BOTH the session's bucket and the
+ * shared one have budget, so N tunnels share one link budget.
+ *
+ * The data-boundary wrappers in stats.js drive all of this through
+ * limitConsume() / queueWrite() / the ticker's drain. Reads are paced by
+ * pausing the source stream (pauseForLimit in stats.js), writes by the
+ * queue.
  */
 
 const { Buffer } = require('./runtime.js')
@@ -21,6 +28,17 @@ const { sessions } = require('./state.js')
 // genuinely needs a deeper burst behind a slow cap.
 const MAX_QUEUE_BYTES = 16 * 1024 * 1024
 
+// The all-tunnels budget (0 = no global cap). Shared state, like `sessions`.
+const global = { limit: 0, tokens: 0, last: 0, timer: null }
+
+/// KB/s input (or anything) -> bytes/sec; junk and negatives mean "no cap".
+function normalizeLimit(limit) {
+  if (limit === undefined || limit === null || limit === '') return 0
+  const n = Number(limit)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
+}
+
 function limiterFor(entry) {
   if (!entry._lim)
     entry._lim = {
@@ -30,7 +48,8 @@ function limiterFor(entry) {
       queued: 0,
       overflowed: false,
       paused: [],
-      timer: null
+      timer: null,
+      pendingEnd: null
     }
   return entry._lim
 }
@@ -46,50 +65,145 @@ function queueWrite(entry, item) {
   return true
 }
 
+/// Hold a stream end until the queue has drained. The engine's piper relays
+/// 'end' straight through to the far socket, so without this a burst that
+/// finishes while chunks are still queued would be written AFTER end() —
+/// and Node drops writes-after-end silently: a capped download would look
+/// like a clean but truncated response. Found by the global-cap test, which
+/// is the first case that sends a full payload and then closes.
+function queueEnd(entry, fn) {
+  limiterFor(entry).pendingEnd = fn
+  return true
+}
+
+function releaseEnd(lim) {
+  if (!lim.pendingEnd || lim.queue.length) return
+  const endFn = lim.pendingEnd
+  lim.pendingEnd = null
+  try {
+    endFn()
+  } catch {}
+}
+
+/* ------------------------------- budgets -------------------------------- */
+
+function getGlobalLimit() {
+  return global.limit
+}
+
+/// Budget this session may use right now: the smaller of its own bucket and
+/// the shared one (Infinity for whichever isn't capped).
+function limitTokens(entry) {
+  const own = entry.limit ? limiterFor(entry).tokens : Infinity
+  const shared = global.limit ? global.tokens : Infinity
+  return Math.min(own, shared)
+}
+
+function chargeTokens(entry, n) {
+  if (entry.limit) limiterFor(entry).tokens -= n
+  if (global.limit) global.tokens -= n
+}
+
+/// May `n` bytes move now? Charges both buckets when the answer is yes.
+function limitConsume(entry, n) {
+  if (!entry.limit && !global.limit) return true
+  if (limitTokens(entry) < n) return false
+  chargeTokens(entry, n)
+  return true
+}
+
+/* ------------------------------- tickers -------------------------------- */
+
+function startGlobalTicker() {
+  if (global.timer || !global.limit) return
+  global.last = Date.now()
+  const tick = () => {
+    if (!global.limit) {
+      global.timer = null
+      return
+    }
+    const now = Date.now()
+    // refill only — the per-session tickers below are what drain queues and
+    // resume paused streams, against BOTH buckets
+    global.tokens = Math.min(
+      global.limit,
+      global.tokens + (global.limit * (now - global.last)) / 1000
+    )
+    global.last = now
+    global.timer = setTimeout(tick, 200)
+  }
+  global.timer = setTimeout(tick, 200)
+}
+
+/// Set (or clear, with 0) the budget shared by every tunnel. Returns the
+/// applied bytes/sec. Live: existing sessions start draining under it
+/// immediately, and sessions with no cap of their own get a ticker (they
+/// had no reason for one before).
+function setGlobalLimit(bytes) {
+  global.limit = normalizeLimit(bytes)
+  // a change must not hand out a stale burst from the old setting
+  global.tokens = 0
+  global.last = Date.now()
+  if (global.limit) startGlobalTicker()
+  else if (global.timer) {
+    clearTimeout(global.timer)
+    global.timer = null
+  }
+  for (const entry of sessions.values()) startLimitTicker(entry)
+  return global.limit
+}
+
 function startLimitTicker(entry) {
   const lim = limiterFor(entry)
   if (lim.timer) return
   lim.last = Date.now()
   const tick = () => {
-    if (!entry.limit || !sessions.has(entry.id)) {
+    // Nothing left to enforce (session gone, or its cap and the global one
+    // are both off): flush what a cap held back and stop. setGlobalLimit
+    // re-arms every session when a global cap appears.
+    if (!sessions.has(entry.id) || (!entry.limit && !global.limit)) {
       lim.timer = null
+      stopLimitTicker(entry)
       return
     }
     const now = Date.now()
-    // bucket caps at 1s worth of budget; partial-write draining below
-    // guarantees no chunk ever deadlocks the queue
-    lim.tokens = Math.min(
-      entry.limit,
-      lim.tokens + (entry.limit * (now - lim.last)) / 1000
-    )
+    if (entry.limit) {
+      // bucket caps at 1s worth of budget; the partial drain below
+      // guarantees no chunk ever deadlocks the queue
+      lim.tokens = Math.min(
+        entry.limit,
+        lim.tokens + (entry.limit * (now - lim.last)) / 1000
+      )
+    }
     lim.last = now
-    // drain queued writes (partial writes for chunks larger than budget)
-    while (lim.queue.length && lim.tokens > 0) {
+    // drain queued writes — a chunk leaves only when BOTH budgets allow it
+    // (partial writes for chunks larger than the available budget)
+    while (lim.queue.length) {
+      const avail = Math.floor(limitTokens(entry))
+      if (avail <= 0) break
       const q = lim.queue[0]
-      if (q.len <= lim.tokens) {
+      const take = Math.min(q.len, avail)
+      const isBuf = Buffer.isBuffer(q.buf)
+      const head =
+        take === q.len
+          ? q.buf
+          : isBuf
+            ? q.buf.subarray(0, take)
+            : String(q.buf).slice(0, take)
+      if (take === q.len) {
         lim.queue.shift()
-        lim.tokens -= q.len
-        lim.queued -= q.len
-        try {
-          q.fn(q.buf, ...q.rest)
-        } catch {}
       } else {
-        const take = Math.floor(lim.tokens)
-        lim.tokens = 0
-        lim.queued -= take
-        const isBuf = Buffer.isBuffer(q.buf)
-        const head = isBuf
-          ? q.buf.subarray(0, take)
-          : String(q.buf).slice(0, take)
         q.buf = isBuf ? q.buf.subarray(take) : String(q.buf).slice(take)
         q.len -= take
-        try {
-          q.fn(head, ...q.rest)
-        } catch {}
       }
+      lim.queued -= take
+      chargeTokens(entry, take)
+      try {
+        q.fn(head, ...q.rest)
+      } catch {}
     }
     // resume paused source streams now that budget is available
-    if (lim.paused.length && lim.tokens > 0) {
+    if (lim.paused.length && limitTokens(entry) > 0) {
       for (const s of lim.paused) {
         try {
           s.resume()
@@ -97,11 +211,15 @@ function startLimitTicker(entry) {
       }
       lim.paused = []
     }
+    // an end that arrived while chunks were still queued goes out last
+    releaseEnd(lim)
     lim.timer = setTimeout(tick, 200)
   }
   lim.timer = setTimeout(tick, 200)
 }
 
+/// Stop pacing this session and let everything it was holding back through
+/// (session stopped, or its caps were cleared).
 function stopLimitTicker(entry) {
   const lim = entry._lim
   if (!lim) return
@@ -118,6 +236,7 @@ function stopLimitTicker(entry) {
     } catch {}
   }
   lim.queued = 0
+  releaseEnd(lim)
   for (const s of lim.paused) {
     try {
       s.resume()
@@ -128,8 +247,14 @@ function stopLimitTicker(entry) {
 
 module.exports = {
   MAX_QUEUE_BYTES,
+  normalizeLimit,
   limiterFor,
   queueWrite,
+  queueEnd,
+  limitConsume,
+  limitTokens,
+  getGlobalLimit,
+  setGlobalLimit,
   startLimitTicker,
   stopLimitTicker
 }

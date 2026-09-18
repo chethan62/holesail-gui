@@ -18,6 +18,7 @@ const {
 } = require('./tunnels.js')
 
 const Holesail = require('holesail')
+const { setGlobalLimit } = require('./limiter.js')
 
 async function dispatch(method, params) {
   switch (method) {
@@ -39,6 +40,12 @@ async function dispatch(method, params) {
       return listSessions()
     case 'session:stats':
       return getSessionStats(params.id)
+    // all-tunnels bandwidth budget (0 = off). One shared bucket that every
+    // session is charged against, on top of whatever cap that session has
+    // of its own — the reason to set it: N permanent tunnels must not each
+    // get a full allowance and add up to more than the link can carry.
+    case 'limit:global':
+      return { limit: setGlobalLimit(params.limit) }
     // Holesail.lookup returns the server's DHT record ({host, port,
     // protocol, secure}) when the key is announced. For a well-formed but
     // UNANNOUNCED key it returns `{ secure: true/false }` — a bare shell

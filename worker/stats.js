@@ -18,7 +18,14 @@
 const { Buffer } = require('./runtime.js')
 const { sessions, statsTimers } = require('./state.js')
 const { sendEvent } = require('./transport.js')
-const { limiterFor, queueWrite, MAX_QUEUE_BYTES } = require('./limiter.js')
+const {
+  limiterFor,
+  queueWrite,
+  queueEnd,
+  limitConsume,
+  getGlobalLimit,
+  MAX_QUEUE_BYTES
+} = require('./limiter.js')
 
 const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
 
@@ -42,16 +49,9 @@ function wireDataCounters(entry) {
     if (n > 0) stats[dir] = (stats[dir] || 0) + n
   }
   // consume() returns true when the byte count fits the budget (or there
-  // is no cap); false → caller must throttle (pause/queue)
-  const consume = (n) => {
-    if (!entry.limit) return true
-    const lim = limiterFor(entry)
-    if (lim.tokens >= n) {
-      lim.tokens -= n
-      return true
-    }
-    return false
-  }
+  // is no cap anywhere, session or global); false → caller must throttle
+  // (pause the source / queue the write). Both buckets are charged here.
+  const consume = (n) => limitConsume(entry, n)
   const pauseForLimit = (stream) => {
     const lim = limiterFor(entry)
     if (!lim.paused.includes(stream)) lim.paused.push(stream)
@@ -65,7 +65,8 @@ function wireDataCounters(entry) {
     stream.on('data', (d) => {
       const n = d ? d.length : 0
       bump(downDir, n)
-      if (entry.limit && n && !consume(n)) pauseForLimit(stream)
+      // no-op when nothing is capped (limitConsume short-circuits)
+      if (n && !consume(n)) pauseForLimit(stream)
     })
     if (typeof stream.write === 'function') {
       const ow = stream.write.bind(stream)
@@ -77,7 +78,7 @@ function wireDataCounters(entry) {
               ? buf.length
               : 0
         bump(upDir, n)
-        if (entry.limit && n) {
+        if (n && (entry.limit || getGlobalLimit())) {
           const lim = limiterFor(entry)
           // Already given up on (the overflow below dropped this session):
           // the transfer has already failed and its connection is being torn
@@ -104,10 +105,13 @@ function wireDataCounters(entry) {
           lim.overflowed = true
           lim.queue = []
           lim.queued = 0
+          // name whichever cap is actually binding (a session with no cap
+          // of its own can still back up behind the shared one)
+          const capRate = entry.limit || getGlobalLimit()
           const err = new Error(
             `Bandwidth cap: this tunnel backed up over ${MAX_QUEUE_BYTES >> 20} MB behind a ` +
-              `${Math.round(entry.limit / 1024)} KB/s cap and cannot throttle the sender — ` +
-              'raise or remove the cap for this tunnel'
+              `${Math.round(capRate / 1024)} KB/s ${entry.limit ? '' : 'total '}cap and cannot ` +
+              'throttle the sender — raise or remove that cap'
           )
           err.sessionId = entry.id
           throw err
@@ -119,6 +123,20 @@ function wireDataCounters(entry) {
       const lim = entry._lim
       if (lim) lim.paused = lim.paused.filter((s) => s !== stream)
     })
+    // Defer 'end' while chunks are still queued (see queueEnd in limiter.js)
+    // — writing after end() is silently dropped by Node, so a capped burst
+    // that closes would otherwise be truncated without any error.
+    if (typeof stream.end === 'function') {
+      const oe = stream.end.bind(stream)
+      stream.end = (...args) => {
+        const lim = entry._lim
+        if (lim && !lim.overflowed && (lim.queue.length || lim.queued)) {
+          queueEnd(entry, () => oe(...args))
+          return stream
+        }
+        return oe(...args)
+      }
+    }
   }
 
   // SERVER: every incoming tunnel connection — count bytes AND tell the

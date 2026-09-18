@@ -673,6 +673,119 @@ async function main() {
     await rpc('session:stop', { id: bystander.id })
     await new Promise((res) => blast.close(res))
 
+    console.log('17) global speed limit shapes ALL tunnels together')
+    // Two independent tunnels with no per-tunnel caps. Without a shared
+    // bucket each would run at loopback speed and the SUM would be orders of
+    // magnitude above the limit — that is what this asserts against. Note
+    // the double charge: a byte crossing both ends of a tunnel inside this
+    // one worker is charged once as the server's upload and once as the
+    // client's download, so the delivered rate lands at about half the
+    // limit. The invariant asserted is the sum being WITHIN the limit.
+    const net6 = require('net')
+    // Sizing matters: the bucket may hold up to a full second of budget, so
+    // a payload barely above the cap can drain as one burst. 512 KB per
+    // tunnel against a 1 MB/s total means the pacing dominates any burst
+    // allowance (and the numbers below stay readable).
+    const PAYLOAD = 512 * 1024
+    const CAP = 1024 * 1024
+    const mkBlaster = async () => {
+      const srv = net6.createServer((sock) => {
+        sock.on('error', () => {}) // the tunnel may drop under a cap
+        sock.write(Buffer.alloc(PAYLOAD, 0x64))
+        sock.end()
+      })
+      await new Promise((res) => srv.listen(0, '127.0.0.1', res))
+      return srv
+    }
+    const readAll = (port) =>
+      new Promise((resolve, reject) => {
+        const sock = net6.connect({ host: '127.0.0.1', port })
+        let got = 0
+        let firstAt = 0
+        const timer = setTimeout(() => {
+          sock.destroy()
+          reject(new Error(`probe stalled after ${got} of ${PAYLOAD} bytes`))
+        }, 60000)
+        sock.on('error', (err) => {
+          clearTimeout(timer)
+          sock.destroy()
+          reject(err)
+        })
+        sock.on('data', (d) => {
+          if (!firstAt) firstAt = Date.now()
+          got += d.length
+          if (got >= PAYLOAD) {
+            clearTimeout(timer)
+            sock.destroy()
+            // timed from the FIRST byte: a cold tunnel pays a DHT handshake
+            // (seconds on the bare runtime) before any data moves, and that
+            // is connection setup, not throughput
+            resolve({ bytes: got, transferMs: Date.now() - firstAt })
+          }
+        })
+      })
+    const blasterA = await mkBlaster()
+    const blasterB = await mkBlaster()
+    const gServerA = await rpc(
+      'server:start',
+      { port: blasterA.address().port, secure: true },
+      90000
+    )
+    const gServerB = await rpc(
+      'server:start',
+      { port: blasterB.address().port, secure: true },
+      90000
+    )
+    const gClientA = await rpc('client:connect', { key: gServerA.url }, 90000)
+    const gClientB = await rpc('client:connect', { key: gServerB.url }, 90000)
+    const applied = await rpc('limit:global', { limit: CAP })
+    assert(applied.limit === CAP, `limit:global applied (${applied.limit})`)
+    // whole round for the capped phase: setup time only ever makes the
+    // measured rate LOWER, so this cannot flake into a false failure, and a
+    // cap that isn't applied shows up as a round two orders of magnitude
+    // faster (loopback transfers this size in milliseconds).
+    const cappedStart = Date.now()
+    const phase1 = await Promise.all([
+      readAll(gClientA.port),
+      readAll(gClientB.port)
+    ])
+    const cappedMs = Date.now() - cappedStart
+    const cappedRate = (phase1[0].bytes + phase1[1].bytes) / (cappedMs / 1000)
+    assert(
+      phase1[0].bytes === PAYLOAD && phase1[1].bytes === PAYLOAD,
+      `both tunnels delivered their ${PAYLOAD} bytes`
+    )
+    assert(
+      cappedRate <= CAP,
+      `combined throughput stayed within the ${Math.round(CAP / 1024)} KB/s total (${Math.round(cappedRate / 1024)} KB/s)`
+    )
+    assert(
+      cappedMs >= 1200,
+      `transfer stretched by the shared limit (${cappedMs}ms)`
+    )
+    // live, not just at start: clearing it must release both tunnels
+    const cleared = await rpc('limit:global', { limit: 0 })
+    assert(cleared.limit === 0, 'limit:global cleared')
+    const phase2 = await Promise.all([
+      readAll(gClientA.port),
+      readAll(gClientB.port)
+    ])
+    const fastMs = Math.max(phase2[0].transferMs, phase2[1].transferMs)
+    assert(
+      phase2[0].bytes === PAYLOAD && phase2[1].bytes === PAYLOAD,
+      'both tunnels deliver their bytes again after the cap is cleared'
+    )
+    assert(
+      fastMs * 2 < cappedMs,
+      `uncapped transfer is far quicker (${fastMs}ms vs ${cappedMs}ms capped)`
+    )
+    await rpc('session:stop', { id: gClientA.id })
+    await rpc('session:stop', { id: gClientB.id })
+    await rpc('session:stop', { id: gServerA.id })
+    await rpc('session:stop', { id: gServerB.id })
+    await new Promise((res) => blasterA.close(res))
+    await new Promise((res) => blasterB.close(res))
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

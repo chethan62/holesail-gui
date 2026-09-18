@@ -267,6 +267,16 @@ your localhost port.
 
 Sessions can be paused/resumed/stopped; the event log at the bottom shows what the worker is doing.
 
+**Speed limits** — every form (Share, Share a folder, Connect) takes an optional
+**Speed limit (KB/s)** for that one tunnel, and the Sessions header has a **Total
+speed limit** that shapes _all_ tunnels together (one shared budget, so five
+busy tunnels can't add up to five times the rate you allowed). Both are live:
+change or clear them while tunnels run. The total is remembered across restarts
+— permanent tunnels restart on their own, so a link you deliberately capped
+doesn't come back uncapped. A cap can't slow a sender that ignores
+backpressure; the worker bounds a tunnel's backlog at 16 MB and stops that one
+tunnel with a clear error instead of buffering the burst into RAM.
+
 **Temporary vs Permanent** — the Tunnel type selector on the Share tab chooses
 between a one-off key (new random key each start) and a **permanent** tunnel:
 fixed key, named, saved, and auto-restarted whenever the app (re)starts.
@@ -456,7 +466,7 @@ arrives on the device — in both directions.
 - **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
-- **Bandwidth caps are per-session only** — the Speed-limit (KB/s) cap applies to a single tunnel's combined up+down; there's no global shaping or per-direction control yet
+- **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
 - **A cap can't slow a sender it doesn't control** — the tunnel engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more

@@ -57,6 +57,15 @@ export async function logAppend(line) {
   return await window.__TAURI__.core.invoke('log_append', { line })
 }
 
+// Small persisted settings blob (currently the all-tunnels speed limit) —
+// held by Rust so the cap survives an app restart
+export async function settingsGet() {
+  return await invokeWrapped('settings_get')
+}
+export async function settingsSet(value) {
+  return await invokeWrapped('settings_set', { value })
+}
+
 // saved tunnels (temp/permanent) — persisted by the Rust backend
 async function invokeErr(method, args) {
   return await invokeWrapped(method, args)

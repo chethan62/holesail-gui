@@ -6,6 +6,7 @@ import { $, log, fmtDuration, copyText } from './ui.js'
 import { rpc, onEvent, workerDiagnostics, workerRetrySpawn } from './bridge.js'
 import { upsertSession, onPeerConnected, renderSessions } from './sessions.js'
 import { autostartSaved } from './saved.js'
+import { restoreGlobalLimit } from './limit.js'
 
 export function updateWorkerStatus(ok, label) {
   const wasOk = state.workerOk
@@ -115,6 +116,7 @@ export function subscribeWorkerEvents() {
           if (!flags.workerReady) {
             log('worker:ready never arrived — syncing anyway', 'warn')
             syncWorker()
+              .then(() => restoreGlobalLimit())
               .then(() => autostartSaved())
               .catch((err) => {
                 updateWorkerStatus(false, 'worker unavailable')
@@ -127,6 +129,7 @@ export function subscribeWorkerEvents() {
         flags.workerReady = true
         hideNodeRequired()
         syncWorker()
+          .then(() => restoreGlobalLimit())
           .then(() =>
             autostartSaved().catch((err) =>
               log('Autostart failed: ' + err.message, 'err')

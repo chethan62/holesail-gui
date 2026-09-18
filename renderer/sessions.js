@@ -126,13 +126,20 @@ export function renderSessions() {
 
 export function updateUptimeNote() {
   const note = $('#uptime-note')
+  // the all-tunnels cap is worth showing here: it silently shapes every
+  // session, so "why is this slow?" has an answer on screen
+  const cap = state.globalLimit
+    ? ` · ⏱ ${fmtBytes(state.globalLimit)}/s total`
+    : ''
   if (state.sessions.size === 0) {
-    note.textContent = '—'
+    note.textContent = '—' + cap
     return
   }
   const ages = [...state.meta.values()].map((m) => Date.now() - m.startedAt)
   const oldest = ages.length ? fmtDuration(Math.min(...ages)) : ''
-  note.textContent = `${state.sessions.size} session${state.sessions.size > 1 ? 's' : ''} · up ${oldest}`
+  note.textContent =
+    `${state.sessions.size} session${state.sessions.size > 1 ? 's' : ''} · up ${oldest}` +
+    cap
 }
 
 function renderSession(container, s) {

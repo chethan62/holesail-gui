@@ -18,17 +18,14 @@ const {
   clearStatsEmit,
   emitSession
 } = require('./stats.js')
-const { startLimitTicker, stopLimitTicker } = require('./limiter.js')
+const {
+  normalizeLimit,
+  startLimitTicker,
+  stopLimitTicker
+} = require('./limiter.js')
 
 const Holesail = require('holesail')
 const Livefiles = require('livefiles')
-
-function normalizeLimit(limit) {
-  if (limit === undefined || limit === null || limit === '') return 0
-  const n = Number(limit)
-  if (!Number.isFinite(n) || n < 0) return 0
-  return n
-}
 
 function recordFromHs(hs, id) {
   const info = hs.info
@@ -77,7 +74,9 @@ async function startServer(params) {
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
-  if (limit) startLimitTicker(entry)
+  // always: a session with no cap of its own still needs a ticker to
+  // drain under the global one (the ticker self-terminates otherwise)
+  startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
   return { ...session, limit }
@@ -149,7 +148,9 @@ async function startFilemanager(params) {
   const entry = { hs, fileServer, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
-  if (limit) startLimitTicker(entry)
+  // always: a session with no cap of its own still needs a ticker to
+  // drain under the global one (the ticker self-terminates otherwise)
+  startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
   return { ...session, limit }
@@ -192,7 +193,9 @@ async function connectClient(params) {
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
   wireSessionStats(entry)
-  if (limit) startLimitTicker(entry)
+  // always: a session with no cap of its own still needs a ticker to
+  // drain under the global one (the ticker self-terminates otherwise)
+  startLimitTicker(entry)
   armStatsEmit(entry)
   emitSession(session)
   return { ...session, limit }

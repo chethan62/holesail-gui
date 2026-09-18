@@ -10,7 +10,8 @@ import {
   setBusy,
   isBroadSharePath,
   confirmInline,
-  updatePublicWarnings
+  updatePublicWarnings,
+  readLimit
 } from './ui.js'
 import { rpc, savedSave, savedDelete } from './bridge.js'
 import { genKey, refreshSaved } from './saved.js'
@@ -20,17 +21,6 @@ import { lookupKey } from './lookup.js'
 
 // Re-exported so the boot wiring in app.js can import them from one place.
 export { updatePublicWarnings, lookupKey }
-
-// Read a speed-limit input (KB/s) → bytes/sec for the worker. Empty/0 →
-// 0 (unlimited). Clamped to a sane ceiling (1 GB/s) so a typo can't set a
-// nonsense value.
-export function readLimit(sel) {
-  const v = $(sel).value.trim()
-  if (!v) return 0
-  const kb = Number(v)
-  if (!Number.isFinite(kb) || kb <= 0) return 0
-  return Math.min(Math.round(kb * 1024), 1024 * 1024 * 1024)
-}
 
 export async function startShare(event) {
   event.preventDefault()

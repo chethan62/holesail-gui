@@ -166,6 +166,8 @@ pub fn run() {
             commands::lan_address,
             commands::home_dir,
             commands::log_append,
+            commands::settings_get,
+            commands::settings_set,
             saved::saved_list,
             saved::saved_save,
             saved::saved_delete,

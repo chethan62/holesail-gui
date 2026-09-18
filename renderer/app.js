@@ -38,6 +38,7 @@ import {
   subscribeWorkerEvents
 } from './worker.js'
 import { handleDeepLink, stopAllTunnels } from './deep.js'
+import { bindGlobalLimit, restoreGlobalLimit } from './limit.js'
 
 /* ------------------------------ navigation ------------------------------ */
 
@@ -143,6 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#connect-form').addEventListener('submit', startConnect)
   $('#filemanager-form').addEventListener('submit', startFilemanagerShare)
   bindDropZone()
+  bindGlobalLimit()
   updatePublicWarnings() // initial state (public keys from recents/deep links)
   bindNodeScreen()
   // tunnel type toggle reveals the name field for permanent tunnels
@@ -198,6 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await new Promise((r) => setTimeout(r, 100))
       }
       await syncWorker()
+      await restoreGlobalLimit()
       await autostartSaved()
       log('Service worker restarted manually', 'ok')
     } catch (err) {
@@ -220,6 +223,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     await syncWorker()
     log('Connected to holesail service worker')
+    // the all-tunnels cap must be back in the worker BEFORE any tunnel
+    // starts, or the first seconds run uncapped
+    await restoreGlobalLimit()
     // load saved tunnels, then auto-restart the autostart ones
     await refreshSaved()
     await autostartSaved()

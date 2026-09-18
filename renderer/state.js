@@ -12,6 +12,7 @@ export const state = {
   replay: new Map(), // session id -> { type, params } for one-click reconnect
   lanIp: null, // this machine's LAN IPv4, for direct same-network access
   homeDir: null, // home dir, feeds the folder-share broad-path guardrail
+  globalLimit: 0, // bytes/sec shared by ALL tunnels (0 = no global cap)
   workerOk: false,
   traffic: new Map(), // id -> { up: number[], down: number[] } rolling history
   conn: new Map() // id -> total peers connected (server sessions)

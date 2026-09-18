@@ -134,7 +134,22 @@ export function fmtBytes(n) {
   return (n >= 10 ? Math.round(n) : n.toFixed(1)) + ' ' + units[u]
 }
 
-/* ---------------------------- broad-path guard --------------------------- */
+/* ------------------------------ speed limits ----------------------------- */
+
+/// Read a speed-limit input (KB/s) → bytes/sec for the worker. Empty/0 →
+/// 0 (unlimited). Clamped to a sane ceiling (1 GB/s) so a typo can't set a
+/// nonsense value. Lives here (not in actions.js) because BOTH the
+/// per-tunnel forms and the all-tunnels limit (limit.js) need it — features
+/// never import each other.
+export function readLimit(sel) {
+  const v = $(sel).value.trim()
+  if (!v) return 0
+  const kb = Number(v)
+  if (!Number.isFinite(kb) || kb <= 0) return 0
+  return Math.min(Math.round(kb * 1024), 1024 * 1024 * 1024)
+}
+
+/* --------------------------- broad-path guard --------------------------- */
 
 /// True when `path` is the filesystem root, a home directory, or a home
 /// dir's immediate children — the sort of thing a fat-fingered share could

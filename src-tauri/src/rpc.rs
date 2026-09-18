@@ -44,6 +44,7 @@ pub(crate) async fn rpc(
         "sessions:list",
         "session:stats",
         "lookup",
+        "limit:global",
     ];
     if !ALLOWED.contains(&method.as_str()) {
         return Err(format!("Method not allowed: {method}"));

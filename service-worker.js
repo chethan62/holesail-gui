@@ -22,6 +22,7 @@
  *   session:pause {id}
  *   session:resume {id}
  *   sessions:list                 -> [session, ...]
+ *   limit:global  {limit}         -> {limit}   (0 = off; shared budget)
  *   lookup        {key}
  *
  * Module map (acyclic, leaves first — all under worker/):
@@ -29,7 +30,7 @@
  *   state.js     — sessions Map + id counter + stats timers
  *   transport.js — newline-JSON writer
  *   guards.js    — session cap, broad-path guardrail, free-port
- *   limiter.js   — per-session token-bucket bandwidth cap
+ *   limiter.js   — bandwidth caps: a bucket per session + one shared bucket
  *   stats.js     — byte counters + throttled traffic emit
  *   tunnels.js   — server/client/filemanager start/stop/pause/resume
  *   errors.js    — attribute async errors to a session, drop only it

@@ -345,6 +345,24 @@
 
       <section id="sessions-section">
         <h2>Sessions <span id="uptime-note" class="uptime-note">—</span></h2>
+        <div class="grid-form global-cap">
+          <div class="full cap-row">
+            <label for="global-limit">
+              Total speed limit (KB/s, all tunnels — 0 = unlimited)
+            </label>
+            <input
+              id="global-limit"
+              type="number"
+              min="0"
+              step="1"
+              inputmode="numeric"
+              placeholder="0"
+            />
+            <button type="button" class="btn" id="global-limit-apply">
+              Apply
+            </button>
+          </div>
+        </div>
         <div id="sessions" class="sessions">
           <p class="empty">
             No active sessions. Share a port or connect to a tunnel to get

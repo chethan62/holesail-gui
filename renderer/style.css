@@ -299,6 +299,24 @@ main {
   margin-top: 4px;
 }
 
+/* all-tunnels speed limit (sessions header): reuse the form styling, but
+   as one compact row instead of a stacked field */
+.global-cap {
+  margin: 10px 0 2px;
+}
+.global-cap .cap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.global-cap .cap-row label {
+  flex: 1 1 240px;
+}
+.global-cap input[type='number'] {
+  max-width: 140px;
+}
+
 /* recent chips */
 .recent-label {
   color: var(--text-dim);
