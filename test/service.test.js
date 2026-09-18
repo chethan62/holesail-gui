@@ -1029,6 +1029,119 @@ async function main() {
     await rpc('session:stop', { id: concServer.id })
     await closeServer(concEcho, concSockets)
 
+    console.log('20) an oversized UDP datagram cannot take the tunnel down')
+    // QUIC datagrams are MTU-bounded, so the iroh engine DROPS one that is too
+    // large and counts it; holesail framed datagrams over a stream and has no
+    // such ceiling. Either way the tunnel and the worker must survive — the
+    // failure this guards is "a game server or resolver goes quiet because one
+    // app sent a big packet".
+    if (!IROH) {
+      console.log(
+        '   (skipped: holesail frames datagrams over a stream — no MTU ceiling to test)'
+      )
+    } else {
+      const jumboEcho = dgram.createSocket('udp4')
+      jumboEcho.on('message', (msg, rinfo) =>
+        jumboEcho.send(msg, rinfo.port, rinfo.address)
+      )
+      await new Promise((res) => jumboEcho.bind(0, '127.0.0.1', res))
+      const jumboServer = await rpc(
+        'server:start',
+        { port: jumboEcho.address().port, secure: true, udp: true },
+        90000
+      )
+      const jumboClient = await rpc(
+        'client:connect',
+        { key: jumboServer.url, udp: true },
+        90000
+      )
+      const jumboSock = dgram.createSocket('udp4')
+      await new Promise((res) => jumboSock.bind(0, '127.0.0.1', res))
+      const jumboPort = jumboSock.address().port
+      // 8 KB: comfortably past any QUIC datagram limit, well inside UDP's
+      const reply = (payload, expectReplyMs = 20000) =>
+        new Promise((resolve) => {
+          const t = setTimeout(() => resolve(null), expectReplyMs)
+          jumboSock.once('message', (m) => {
+            clearTimeout(t)
+            resolve(m.length)
+          })
+          jumboSock.send(payload, jumboClient.port, '127.0.0.1')
+        })
+      const jumbo = await reply(Buffer.alloc(8 * 1024, 0x7a), 12000)
+      assert(jumbo === null, 'the oversize datagram is dropped, not delivered')
+      const jumboStats = await rpc('session:stats', { id: jumboClient.id })
+      assert(jumboStats.rejectCnt >= 1, 'and the drop is counted, not silent')
+      const stillWorks = await reply(Buffer.from('after-jumbo'), 20000)
+      assert(
+        stillWorks === 'after-jumbo'.length,
+        'the tunnel still relays normal datagrams afterwards'
+      )
+      await rpc('session:stop', { id: jumboClient.id })
+      await rpc('session:stop', { id: jumboServer.id })
+      jumboSock.close()
+      jumboEcho.close()
+    }
+
+    console.log('21) a peer that goes away is told to the app, not hidden')
+    // Stop the SERVER session under a live transfer. The client's connection
+    // dies from the far end and its app socket must learn that promptly —
+    // error, FIN or close are all fine, hanging forever is not (measured
+    // before the fix: sockets sat open with nothing logged and the session
+    // still read "running"). The CLIENT session must survive: only the
+    // streams riding the dead connection are gone.
+    const deadEcho = net.createServer((s) => {
+      s.on('error', () => {})
+      s.pipe(s)
+    })
+    await new Promise((res) => deadEcho.listen(0, '127.0.0.1', res))
+    const deadServer = await rpc(
+      'server:start',
+      { port: deadEcho.address().port, secure: true },
+      90000
+    )
+    const deadClient = await rpc(
+      'client:connect',
+      { key: deadServer.url },
+      90000
+    )
+    const deadSock = net.connect({ host: '127.0.0.1', port: deadClient.port })
+    await new Promise((r, j) => deadSock.once('connect', r).once('error', j))
+    const alive = await new Promise((res) => {
+      const t = setTimeout(() => res(false), 20000)
+      deadSock.once('data', () => {
+        clearTimeout(t)
+        res(true)
+      })
+      deadSock.write(Buffer.from('before-the-peer-dies'))
+    })
+    assert(alive, 'the tunnel carries a transfer before the peer leaves')
+    // Two traps in one line, both measured: a socket with no 'data' listener is
+    // PAUSED (Node only emits 'end' for a FIN it actually reads), and a close
+    // that lands between `session:stop` resolving and the listener being
+    // attached is never reported again. So: resume, arm the listeners, THEN
+    // kill the peer.
+    deadSock.resume()
+    const told = new Promise((resolve) => {
+      const t = setTimeout(() => resolve('hung'), 20000)
+      const done = (what) => {
+        clearTimeout(t)
+        resolve(what)
+      }
+      deadSock.once('close', () => done('closed'))
+      deadSock.once('error', () => done('errored'))
+      deadSock.once('end', () => done('ended'))
+    })
+    await rpc('session:stop', { id: deadServer.id })
+    const how = await told
+    assert(how !== 'hung', `the app socket was told within 20s (it ${how})`)
+    assert(
+      (await rpc('sessions:list', {})).some((s) => s.id === deadClient.id),
+      'the client session itself survived its dead streams'
+    )
+    await rpc('session:stop', { id: deadClient.id })
+    await closeServer(deadEcho, [deadSock])
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)
