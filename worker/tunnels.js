@@ -24,7 +24,7 @@ const {
   stopLimitTicker
 } = require('./limiter.js')
 
-const Holesail = require('holesail')
+const { Engine: Holesail } = require('./engine/index.js')
 const Livefiles = require('livefiles')
 
 function recordFromHs(hs, id) {
@@ -73,6 +73,9 @@ async function startServer(params) {
   const session = recordFromHs(hs, id)
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
+  // engines that emit late updates (iroh's ticket refresh) need to name
+  // their session in the event
+  hs.sessionId = id
   wireSessionStats(entry)
   // always: a session with no cap of its own still needs a ticker to
   // drain under the global one (the ticker self-terminates otherwise)
@@ -147,6 +150,7 @@ async function startFilemanager(params) {
   }
   const entry = { hs, fileServer, ...session, limit }
   sessions.set(id, entry)
+  hs.sessionId = id
   wireSessionStats(entry)
   // always: a session with no cap of its own still needs a ticker to
   // drain under the global one (the ticker self-terminates otherwise)
@@ -192,6 +196,9 @@ async function connectClient(params) {
   const session = recordFromHs(hs, id)
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
+  // engines that emit late updates (iroh's ticket refresh) need to name
+  // their session in the event
+  hs.sessionId = id
   wireSessionStats(entry)
   // always: a session with no cap of its own still needs a ticker to
   // drain under the global one (the ticker self-terminates otherwise)
@@ -243,7 +250,13 @@ function listSessions() {
   // they're non-serializable object graphs that would otherwise ride along
   // in every sessions:list RPC response (payload bomb + junk in renderer
   // state). Sessions map back to their instances via sessions.get(id).
-  return [...sessions.values()].map(({ hs, fileServer, ...s }) => s)
+  // `_lim` (limiter.js) is worker-private state holding a live Timeout — it
+  // serializes fine once its ticker has gone quiet and throws "Converting
+  // circular structure to JSON" until then, i.e. listing a session within
+  // ~200ms of starting it. (Latent with holesail, whose DHT bootstrap took
+  // long enough to hide it; hit immediately by the iroh engine, which is
+  // ready in ~15ms.)
+  return [...sessions.values()].map(({ hs, fileServer, _lim, ...s }) => s)
 }
 
 // Session-level traffic/connection readout, unpolled by the renderer (it

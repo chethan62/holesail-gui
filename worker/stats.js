@@ -98,7 +98,8 @@ function wireDataCounters(entry) {
           // an OOM. Stop THIS session with an actionable error — routed
           // through the session-error containment (errors.js via
           // uncaughtException + err.sessionId) so every other tunnel lives.
-          if (queueWrite(entry, { len: n, buf, rest, fn: ow })) return false
+          if (queueWrite(entry, { len: n, buf, rest, fn: ow, stream }))
+            return false
           // Give up on the session: latch first (so nothing throws again),
           // drop the backlog (a failed transfer must not pin 16 MB while it
           // tears down), then raise the error the containment can attribute.

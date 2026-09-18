@@ -140,6 +140,26 @@ under its own process (Node in dev, the bundled **Bare** runtime in packaged
 builds — see below), so the addons load as-is; the Rust backend only proxies
 JSON-RPC over stdio.
 
+**Tunnel engine is swappable** (`worker/engine/`). `TUNNEL_ENGINE=iroh`
+selects [iroh](https://iroh.computer) — QUIC, NAT hole-punching with relay
+fallback, MIT/Apache-2.0 — behind the same RPC contract. Differences worth
+knowing before relying on it:
+
+- **Keys differ**: iroh tickets (`iroh://endpoint…`) instead of `hs://s000…`.
+  Different network — an iroh key and a holesail key can never reach each other.
+- **Always encrypted** (TLS 1.3): the "secure" toggle is a no-op; there is no
+  plaintext mode.
+- **TCP only**: `udp: true` throws rather than tunnelling nothing.
+- **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
+  runtime cannot load — so it is selectable in dev/tests, not in shipped
+  packages yet (that needs the worker running under Node; see Known issues).
+- **A fixed key = a stable identity**: hashing the key derives a deterministic
+  endpoint, so a permanent tunnel keeps its address across restarts. A peer
+  that only receives still works — bi-streams are announced with a handshake,
+  the way iroh's own `dumbpipe` does it.
+
+`npm run test:iroh` runs the whole E2E suite against that engine.
+
 </details>
 
 ## Requirements
@@ -173,7 +193,9 @@ npm test             # E2E: spawns the real service worker, starts a server on
 
 The test talks to the exact same `service-worker.js` the GUI uses, so a green
 `npm test` verifies the full backend chain (validation → holesail → hyperdht →
-real tunnel).
+real tunnel). `npm run test:iroh` runs the same 17 sections against the
+alternate engine (the suite is engine-aware: only the key scheme, the lookup
+record and the capped-burst behaviour differ, and each is asserted per engine).
 
 ## Build a release bundle
 
@@ -491,7 +513,8 @@ arrives on the device — in both directions.
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
 - **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
-- **A cap can't slow a sender it doesn't control** — the tunnel engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
+- **A cap can't slow a sender it doesn't control (holesail engine)** — that engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap). The iroh engine paces the producer through QUIC flow control instead, so the same burst never accumulates — measured +1 MiB RSS, no error, tunnel stays up
+- **The iroh engine is selectable in dev/tests only** — packaged builds bundle the Bare runtime, and `@number0/iroh`'s napi prebuilds can't load there, so `TUNNEL_ENGINE=iroh` fails in an installed app (it needs the worker running under Node — a single-executable build). The UI also still speaks `hs://`: an iroh key works when pasted, but deep links and the key-format hints assume holesail
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)

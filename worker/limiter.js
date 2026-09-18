@@ -178,6 +178,7 @@ function startLimitTicker(entry) {
     lim.last = now
     // drain queued writes — a chunk leaves only when BOTH budgets allow it
     // (partial writes for chunks larger than the available budget)
+    const drained = new Set()
     while (lim.queue.length) {
       const avail = Math.floor(limitTokens(entry))
       if (avail <= 0) break
@@ -192,6 +193,7 @@ function startLimitTicker(entry) {
             : String(q.buf).slice(0, take)
       if (take === q.len) {
         lim.queue.shift()
+        if (q.stream) drained.add(q.stream)
       } else {
         q.buf = isBuf ? q.buf.subarray(take) : String(q.buf).slice(take)
         q.len -= take
@@ -201,6 +203,22 @@ function startLimitTicker(entry) {
       try {
         q.fn(head, ...q.rest)
       } catch {}
+    }
+    // A queued write returns false to the producer, which the pipe honours by
+    // PAUSING it — but Node only emits 'drain' after a real write, so a stream
+    // whose backlog we just drained here would stay paused forever (observed:
+    // a capped download stopped dead after the first 16 KB). Emit the resume
+    // signal ourselves once nothing of that stream is left in the queue.
+    // ponytail: per-tick drain only, no per-chunk scheduling — a source is
+    // paused for at most one tick past its backlog.
+    if (drained.size) {
+      const pending = new Set(lim.queue.map((q) => q.stream))
+      for (const s of drained) {
+        if (pending.has(s)) continue
+        try {
+          s.emit('drain')
+        } catch {}
+      }
     }
     // resume paused source streams now that budget is available
     if (lim.paused.length && limitTokens(entry) > 0) {
@@ -228,14 +246,21 @@ function stopLimitTicker(entry) {
     lim.timer = null
   }
   // unlimited: flush anything queued and un-pause everything immediately
+  const flushed = new Set()
   while (lim.queue.length) {
     const q = lim.queue.shift()
     lim.queued -= q.len
+    if (q.stream) flushed.add(q.stream)
     try {
       q.fn(q.buf, ...q.rest)
     } catch {}
   }
   lim.queued = 0
+  for (const s of flushed) {
+    try {
+      s.emit('drain')
+    } catch {}
+  }
   releaseEnd(lim)
   for (const s of lim.paused) {
     try {

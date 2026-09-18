@@ -1,0 +1,558 @@
+/* iroh.js — the iroh engine (QUIC + hole-punching + relay fallback,
+ * MIT/Apache-2.0) behind the SAME facade the rest of the worker already
+ * speaks: `ready()`, `.info`, `.dht` ({stats, server|proxy}), `close()`,
+ * `pause()`, `resume()`. Nothing in tunnels.js/stats.js/limiter.js changes
+ * when this engine is selected — stats.js still wraps the tunnel-side stream
+ * it is handed (`__hgCounted`), limiter.js still paces those writes.
+ *
+ * Deliberate differences from holesail:
+ *   secure is ALWAYS true — QUIC is TLS 1.3, there is no plaintext mode to
+ *     turn off, so the renderer's secure toggle is a no-op here.
+ *   keys are iroh tickets (`endpoint…`), not hs://… — different network, so a
+ *     holesail key and an iroh key can never talk to each other.
+ *   a user-supplied fixed key derives a deterministic identity (sha256 →
+ *     ed25519 seed), so a permanent tunnel keeps its address across restarts.
+ *   UDP is NOT implemented: holesail's framed-datagram mode has no equivalent
+ *     wired up here (Connection.sendDatagram exists, the framing is real
+ *     work), so `udp: true` throws instead of silently tunnelling nothing.
+ *   Node only — @number0/iroh ships napi prebuilds, which the Bare runtime
+ *     (the Android backend) cannot load. Android stays on the holesail engine.
+ */
+
+'use strict'
+
+const crypto = require('crypto')
+const net = require('net')
+const { Duplex } = require('stream')
+const { EventEmitter } = require('events')
+const {
+  Endpoint,
+  EndpointAddr,
+  EndpointId,
+  EndpointTicket
+} = require('@number0/iroh')
+
+// One ALPN for tunnel traffic, one for the reachability probe. Separate
+// ALPNs are what let `lookup` prove a peer is up WITHOUT opening a
+// connection to its local service (the probe is accepted and closed).
+const ALPN = Array.from(Buffer.from('holesail-gui/1'))
+const PROBE_ALPN = Array.from(Buffer.from('holesail-gui/probe'))
+const CHUNK = 64 * 1024
+const PROBE_MS = 12000
+
+// A QUIC bi-stream is invisible to the peer until a frame is sent on it, so an
+// opened-but-silent stream never fires the peer's acceptBi: a client whose app
+// connection only RECEIVES (a download-only socket) would hang forever waiting
+// for a tunnel the server never learns about. The opener therefore announces
+// the stream, and the accepter consumes and verifies the token — iroh's own
+// TCP forwarder does exactly this (dumbpipe's `HANDSHAKE = b"hello"`). The
+// token here IS the ALPN, so a peer speaking a different protocol version is
+// refused instead of guessed at.
+const HANDSHAKE = ALPN
+
+const dbg = (...a) => {
+  if (process.env.IROH_DEBUG) console.error('[iroh:dbg]', ...a)
+}
+const toBuf = (x) => (Buffer.isBuffer(x) ? x : Buffer.from(x))
+const sha256 = (s) => Array.from(crypto.createHash('sha256').update(s).digest())
+
+/// Accept `iroh://<ticket>`, a bare ticket, or a bare endpoint id. Throws
+/// 'Invalid key format' (the message the renderer already maps) for anything
+/// else — a typo must not silently dial a different peer.
+const sameAlpn = (a, b) =>
+  Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i])
+
+function peerAddrFrom(key) {
+  const raw = String(key || '')
+    .trim()
+    .replace(/^iroh:\/\//, '')
+    .replace(/\/+$/, '')
+  if (!raw) throw new Error('Connection string is required')
+  try {
+    return EndpointTicket.fromString(raw).endpointAddr()
+  } catch {}
+  try {
+    return new EndpointAddr(EndpointId.fromString(raw), null, [])
+  } catch {}
+  throw new Error(`Invalid key format: ${raw.slice(0, 24)}…`)
+}
+
+function withTimeout(promise, ms, what) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${what} timed out`)), ms).unref()
+    )
+  ])
+}
+
+/* --------------------------- the tunnel stream --------------------------- */
+/* A QUIC bi-stream as a Node Duplex, oriented from the LOCAL SERVICE's
+ * perspective: readable = what came from the peer (bytesDown), writable =
+ * what goes to the peer (bytesUp). That is exactly the orientation stats.js
+ * assumes when it wraps this object with ('bytesUp','bytesDown').
+ *
+ * Backpressure is real in both directions: the readable side only pulls from
+ * the stream when the socket wants bytes (so a slow app throttles the peer
+ * through QUIC flow control instead of buffering in this process), and the
+ * writable side waits for `send.write()` to resolve.
+ * `relay`/`rawStream` are read by stats.js to report session:peer routing. */
+class TunnelStream extends Duplex {
+  constructor(bi, info = {}) {
+    super({ highWaterMark: 1 << 20 })
+    this.bi = bi
+    this.relay = info.relay || null
+    this.rawStream = { remoteHost: info.peer || '' }
+    this._pulling = false
+  }
+
+  _read() {
+    if (this._pulling) return
+    this._pulling = true
+    this._pump()
+  }
+
+  async _pump() {
+    try {
+      for (;;) {
+        const chunk = await this.bi.recv.read(CHUNK)
+        if (!chunk || chunk.length === 0) break // EOF from the peer
+        if (!this.push(toBuf(chunk))) {
+          this._pulling = false // consumer will call _read() again
+          return
+        }
+      }
+      this._pulling = false
+      this.push(null)
+    } catch (err) {
+      this._pulling = false
+      this.destroy(err)
+    }
+  }
+
+  _write(chunk, _enc, cb) {
+    this._writeAll(toBuf(chunk)).then(
+      () => cb(),
+      (err) => cb(err)
+    )
+  }
+
+  async _writeAll(buf) {
+    let off = 0
+    while (off < buf.length) {
+      // iroh-ffi's SendStream::write takes a `Vec<u8>`, which the binding only
+      // decodes from a plain JS Array — Buffer/Uint8Array raise "Failed to
+      // get Array length". That per-chunk Array.from is this engine's
+      // throughput ceiling. ponytail: accept it; the fix is upstream
+      // (typed-array support in iroh-ffi), not a hand-rolled C shim here.
+      const slice = buf.subarray(off, off + CHUNK)
+      const n = await this.bi.send.write(Array.from(slice))
+      if (!n || n < 0) throw new Error('tunnel stream closed')
+      off += n
+    }
+  }
+
+  _final(cb) {
+    this.bi.send.finish().then(
+      () => cb(),
+      () => cb() // the peer may already be gone; not an error worth surfacing
+    )
+  }
+
+  _destroy(err, cb) {
+    // A clean end (session close, local socket closed) finishes the stream so
+    // the peer sees EOF; only an ABNORMAL end resets it. Resetting on the
+    // normal path makes every orderly teardown surface as a peer error.
+    Promise.resolve()
+      .then(() => (err ? this.bi.send.reset(0n) : this.bi.send.finish()))
+      .catch(() => {})
+      .then(() => this.bi.recv.stop(0n))
+      .catch(() => {})
+      .then(() => cb(err))
+  }
+}
+
+/* --------------------------------- engine -------------------------------- */
+
+class Iroh {
+  constructor(opts = {}) {
+    this.opts = opts
+    this.server = !!opts.server
+    this.type = this.server ? 'server' : 'client'
+    this.port = Number(opts.port)
+    this.host = opts.host || '127.0.0.1'
+    // normalise once: `iroh://<ticket>` with the prefix and any trailing
+    // slash the UI/URL-parser added stripped off (that slash used to derive a
+    // WRONG peer in holesail — same trap here)
+    this.keyInput = opts.key
+      ? String(opts.key)
+          .trim()
+          .replace(/^iroh:\/\//, '')
+          .replace(/\/+$/, '')
+      : null
+    this.paused = false
+    this.closed = false
+    // engine-maintained counters, read by stats.js/limiter.js via
+    // entries[i].stats (bytes* are added by the stats.js wrappers)
+    this.stats = { bytesUp: 0, bytesDown: 0, locCnt: 0, rejectCnt: 0 }
+    this.duplexes = new Set()
+    this.sockets = new Set()
+    this.conns = new Set()
+    // `dht` is the holesail-shaped hole the rest of the worker reaches into
+    this.dht = { stats: this.stats }
+  }
+
+  get info() {
+    return {
+      type: this.type,
+      protocol: 'tcp',
+      secure: true,
+      port: this.port,
+      host: this.host,
+      url: this.url,
+      // a client's key is the string it dialed (the credential the user
+      // pasted), a server's is its own ticket
+      key: this.server ? this.ticket || this.publicKey : this.keyInput,
+      publicKey: this.publicKey
+    }
+  }
+
+  async ready() {
+    if (this.opts.udp) {
+      throw new Error(
+        'UDP tunnels are not supported by the iroh engine (TCP only) — start the app with TUNNEL_ENGINE=holesail for UDP'
+      )
+    }
+    const ep = await Endpoint.bind({
+      secretKey: this.keyInput ? sha256(this.keyInput) : undefined,
+      alpns: [ALPN, PROBE_ALPN]
+    })
+    this.ep = ep
+    this.publicKey = ep.id().toString()
+    this._setTicket()
+    this._acceptLoop()
+    if (this.server) this.dht.server = new EventEmitter()
+    else await this._startProxy()
+    this._refreshTicketWhenOnline()
+    return this
+  }
+
+  /// A SERVER advertises its own ticket as the connection string. A CLIENT
+  /// advertises the ticket it dialed (that is the string the user pasted and
+  /// the one the UI shows on the card) — its own endpoint address is of no
+  /// interest to anyone.
+  _setTicket() {
+    try {
+      this.ticket = EndpointTicket.fromAddr(this.ep.addr()).toString()
+    } catch {
+      this.ticket = null
+    }
+    this.url = 'iroh://' + (this.server ? this.ticket : this.keyInput)
+  }
+
+  /// Prefer a ticket that includes the home relay: a ticket minted in the
+  /// first seconds after bind may carry only LAN addresses, which nobody
+  /// outside the network can dial. Refresh once the relay is up and tell the
+  /// UI the new url (the old one keeps working for direct peers).
+  _refreshTicketWhenOnline() {
+    if (!this.server) return
+    const before = this.ticket
+    this.ep
+      .online()
+      .then(() => {
+        if (this.closed) return
+        this._setTicket()
+        if (this.ticket && this.ticket !== before) {
+          require('./../transport.js').sendEvent('session:update', {
+            id: this.sessionId,
+            url: this.url,
+            key: this.ticket
+          })
+        }
+      })
+      .catch(() => {})
+  }
+
+  /* ------------------------------- server ------------------------------- */
+
+  async _acceptLoop() {
+    for (;;) {
+      let incoming
+      try {
+        incoming = await this.ep.acceptNext()
+      } catch {
+        return
+      }
+      if (!incoming || this.closed) return
+      // no await: connections are concurrent, one slow service must not block
+      // the accept loop
+      this._onIncoming(incoming)
+    }
+  }
+
+  async _onIncoming(incoming) {
+    try {
+      if (this.paused) {
+        this.stats.rejectCnt++
+        await incoming.refuse()
+        return
+      }
+      // order matters in this API: remoteAddr() is only readable while the
+      // Incoming is unconsumed, alpn() only on the accepting handle
+      const remote = await incoming.remoteAddr()
+      const relay = remote.kind === 'relay' ? remote.addr || 'relay' : null
+      const peer = remote.addr || remote.endpointId || ''
+      const accepting = await incoming.accept()
+      const alpn = await accepting.alpn()
+      dbg(
+        'incoming',
+        JSON.stringify(peer),
+        sameAlpn(alpn, PROBE_ALPN) ? 'probe' : 'tunnel'
+      )
+      if (sameAlpn(alpn, PROBE_ALPN)) {
+        // reachability probe: complete the handshake and hang up. Never
+        // reaches the local service, so a lookup() leaves no trace as a
+        // phantom connection in the owner's session:peer log.
+        const probeConn = await accepting.connect()
+        probeConn.close(0n, [])
+        return
+      }
+      const conn = await accepting.connect()
+      dbg('tunnel connection accepted', conn.remoteId().fmtShort())
+      this.conns.add(conn)
+      conn.closed().then(
+        () => this.conns.delete(conn),
+        () => this.conns.delete(conn)
+      )
+      for (;;) {
+        let bi
+        try {
+          bi = await conn.acceptBi()
+        } catch {
+          break // the connection closed — normal end of this peer, not an error
+        }
+        if (this.paused) {
+          this.stats.rejectCnt++
+          bi.send.reset(0n).catch(() => {})
+          continue
+        }
+        dbg('bi-stream -> local service', peer)
+        this._serve(bi, { relay, peer })
+      }
+      if (this.conns.has(conn)) this.conns.delete(conn)
+    } catch (err) {
+      // connection closed / refused — the loop above ends on throw, so this
+      // only guards the setup of a single connection. Never silent: a dropped
+      // Incoming shows up on the peer as "server refused", and a P2P engine
+      // with no diagnostics is undebuggable.
+      console.error('[iroh] incoming failed:', err && err.message)
+      this.stats.rejectCnt++
+    }
+  }
+
+  /// One tunnel connection -> one local service socket. Emitting 'connection'
+  /// BEFORE piping is what lets stats.js wrap this exact duplex object
+  /// (synchronously) and have every byte counted from the first one.
+  async _serve(bi, info) {
+    try {
+      const hello = await bi.recv.readExact(HANDSHAKE.length)
+      if (!sameAlpn(hello, HANDSHAKE)) throw new Error('bad handshake')
+    } catch {
+      this.stats.rejectCnt++ // peer vanished or speaks another version
+      await bi.send.reset(0n).catch(() => {})
+      return
+    }
+    const duplex = new TunnelStream(bi, info)
+    this.duplexes.add(duplex)
+    duplex.on('close', () => {
+      this.duplexes.delete(duplex)
+      this.stats.locCnt = Math.max(0, this.stats.locCnt - 1)
+    })
+    this.dht.server.emit('connection', duplex)
+    const sock = net.connect(this.port, this.host)
+    this.sockets.add(sock)
+    this.stats.locCnt++
+    this._pair(duplex, sock)
+  }
+
+  /// Bridge a tunnel duplex and a local socket. Every failure path here ends
+  /// ONE connection: a socket error destroys the duplex, a tunnel error
+  /// destroys the socket — and the tunnel error is heard (an unhandled
+  /// 'error' event on a stream takes the whole worker down, which for a P2P
+  /// engine is the difference between one dropped game server and 12).
+  _pair(duplex, sock) {
+    duplex.on('error', (err) => {
+      // expected when we dropped the connection ourselves (pause/close);
+      // anything else is worth a line — a silent P2P engine is undebuggable
+      if (!this.paused && !this.closed)
+        console.error('[iroh] tunnel error:', (err && err.message) || err)
+      sock.destroy()
+    })
+    // A socket ERROR is a hard failure of one direction: reset, so the peer
+    // learns the stream died instead of reading a clean EOF.
+    sock.on('error', () => duplex.destroy(new Error('local socket error')))
+    // Deliberately NO destroy on socket 'close'. pipe() already ends the
+    // duplex when the socket's write side finishes, and that end goes through
+    // the limiter's deferred end (queueEnd) — so it lands AFTER the capped
+    // backlog is flushed. Destroying here instead FINs the stream with the
+    // tail still queued: a 512 KB transfer arrived as 485376 bytes, the
+    // remainder silently discarded, with the peer reading a clean EOF.
+    sock.pipe(duplex)
+    duplex.pipe(sock)
+  }
+
+  /* ------------------------------- client ------------------------------- */
+
+  async _startProxy() {
+    const srv = net.createServer((sock) => this._onLocal(sock))
+    this.dht.proxy = srv
+    await new Promise((resolve, reject) => {
+      srv.once('error', reject)
+      srv.listen(this.port, this.host, resolve)
+    })
+    this.port = srv.address().port // the OS may have reassigned it
+    this._peer = peerAddrFrom(this.keyInput)
+  }
+
+  async _onLocal(sock) {
+    // Pause NOW, before the first await. stats.js attaches a byte-counting
+    // 'data' listener to this socket as soon as it appears, which puts the
+    // socket in flowing mode — every byte the app sends during the dial below
+    // would be handed to that counter and dropped, because nothing is piping
+    // it yet (observed as an HTTP request that never arrives: the client's
+    // stream opens, the tunnel stays silent, the caller hangs). Paused, those
+    // bytes buffer until _pair() pipes the socket, and pipe() resumes it.
+    sock.pause()
+    if (this.paused || this.closed) {
+      this.stats.rejectCnt++
+      sock.destroy()
+      return
+    }
+    this.sockets.add(sock)
+    this.stats.locCnt++
+    sock.on('close', () => {
+      this.sockets.delete(sock)
+      this.stats.locCnt = Math.max(0, this.stats.locCnt - 1)
+    })
+    try {
+      const conn = await this._tunnelConn()
+      const bi = await conn.openBi()
+      // announce the stream before piping anything into it (see HANDSHAKE)
+      await bi.send.write(HANDSHAKE)
+      const duplex = new TunnelStream(bi)
+      const selected = conn.paths().find((p) => p.isSelected)
+      duplex.relay = selected && selected.isRelay ? 'relay' : null
+      duplex.rawStream = { remoteHost: conn.remoteId().toString() }
+      this.duplexes.add(duplex)
+      duplex.on('close', () => this.duplexes.delete(duplex))
+      this._pair(duplex, sock)
+    } catch (err) {
+      // peer unreachable / key wrong: this local connection dies, the session
+      // (and every other local connection on it) stays up
+      console.error('[iroh] client dial failed:', err && err.message)
+      this.stats.rejectCnt++
+      sock.destroy()
+    }
+  }
+
+  /// One QUIC connection per session, re-dialed after it drops: the tunnel is
+  /// a transport, not a per-socket thing (each local socket gets its own
+  /// bi-stream). ponytail: single shared connection — a per-socket dial would
+  /// pay a handshake per connection; revisit only if multiplexing is measured
+  /// to matter.
+  async _tunnelConn() {
+    if (this._conn && !this._connClosed) return this._conn
+    if (!this._dialing) {
+      this._dialing = this.ep.connect(this._peer, ALPN)
+      this._dialing.catch(() => {
+        this._dialing = null
+      })
+    }
+    const conn = await this._dialing
+    if (!this._conn || this._connClosed) {
+      this._conn = conn
+      this._connClosed = false
+      this._dialing = null
+      conn.closed().then(
+        () => {
+          this._connClosed = true
+          if (this._conn === conn) this._conn = null
+        },
+        () => {
+          this._connClosed = true
+          if (this._conn === conn) this._conn = null
+        }
+      )
+    }
+    return this._conn
+  }
+
+  /* ------------------------------ lifecycle ----------------------------- */
+
+  async pause() {
+    this.paused = true
+    this.stats.rejectCnt += this.duplexes.size // connections we are about to drop
+    this._dropActive()
+  }
+
+  async resume() {
+    this.paused = false
+  }
+
+  _dropActive() {
+    dbg('dropActive', this.duplexes.size, 'streams,', this.conns.size, 'conns')
+    for (const d of [...this.duplexes]) {
+      try {
+        d.destroy()
+      } catch {}
+    }
+    for (const s of [...this.sockets]) {
+      try {
+        s.destroy()
+      } catch {}
+    }
+    for (const c of [...this.conns]) {
+      try {
+        c.close(0n, [])
+      } catch {}
+    }
+  }
+
+  async close() {
+    if (this.closed) return
+    this.closed = true
+    this._dropActive()
+    if (this.dht.proxy) await new Promise((res) => this.dht.proxy.close(res))
+    await this.ep.close().catch(() => {})
+  }
+}
+
+/// Reachability preflight for the `lookup` RPC: dial with the probe ALPN and
+/// hang up. Unlike holesail's DHT-record read this proves the peer is
+/// actually reachable, and it never touches the peer's local service — a
+/// phantom connection in the owner's event log was the alternative.
+async function lookup(key) {
+  const addr = peerAddrFrom(key)
+  const ep = await Endpoint.bind({ alpns: [ALPN, PROBE_ALPN] })
+  try {
+    const conn = await withTimeout(
+      ep.connect(addr, PROBE_ALPN),
+      PROBE_MS,
+      'lookup'
+    )
+    conn.close(0n, [])
+    return {
+      protocol: 'tcp',
+      secure: true,
+      endpointId: addr.id().toString(),
+      addrs: addr.directAddresses(),
+      relayUrl: addr.relayUrl()
+    }
+  } catch {
+    return null
+  } finally {
+    await ep.close().catch(() => {})
+  }
+}
+
+module.exports = { Iroh, lookup, peerAddrFrom }

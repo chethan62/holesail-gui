@@ -15,6 +15,11 @@ const path = require('path')
 const WORKER =
   process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
 const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binary
+// Which tunnel engine the suite drives. Both engines must satisfy the same
+// RPC contract; only the network underneath differs (iroh: QUIC + tickets +
+// always-encrypted + real backpressure; holesail: HyperDHT + hs:// keys).
+const IROH = String(process.env.TUNNEL_ENGINE || '').toLowerCase() === 'iroh'
+const URL_PREFIX = IROH ? 'iroh://' : 'hs://s000'
 const TEST_PORT = 43117 // hard-coded local port to expose
 const TIMEOUT_MS = 300000 // hang guard, not a speed budget: the suite runs
 // ~2 min on node and the bare runtime (DHT bootstrap dominates), so a tighter
@@ -100,8 +105,8 @@ async function main() {
     assert(server.type === 'server', 'type is server')
     assert(server.port === TEST_PORT, 'port matches')
     assert(
-      typeof server.url === 'string' && server.url.startsWith('hs://s000'),
-      'private url hs://s000…'
+      typeof server.url === 'string' && server.url.startsWith(URL_PREFIX),
+      `connection string starts with ${URL_PREFIX}`
     )
     console.log('    url: ' + server.url)
 
@@ -110,7 +115,7 @@ async function main() {
     assert(client.type === 'client', 'type is client')
     assert(client.secure === true, 'secure auto-detected from prefix')
     assert(
-      typeof client.url === 'string' && client.url.startsWith('hs://s000'),
+      typeof client.url === 'string' && client.url.startsWith(URL_PREFIX),
       'client url present'
     )
     console.log('    client url: ' + client.url)
@@ -531,21 +536,39 @@ async function main() {
     const online = await rpc('lookup', { key: lkServer.url }, 60000)
     assert(
       online && typeof online === 'object',
-      'lookup of a live server returns its DHT record'
+      IROH
+        ? 'lookup of a live peer returns its endpoint record'
+        : 'lookup of a live server returns its DHT record'
     )
-    assert(
-      online.port === lkServer.port,
-      'lookup record carries the server port'
-    )
+    if (IROH) {
+      // iroh publishes no port (the ticket names a peer, not a service) —
+      // the probe PROVES reachability by dialing instead of reading a record
+      assert(
+        typeof online.endpointId === 'string' && online.endpointId.length > 0,
+        'lookup record carries the peer endpoint id'
+      )
+    } else {
+      assert(
+        online.port === lkServer.port,
+        'lookup record carries the server port'
+      )
+    }
     assert(online.protocol === 'tcp', 'lookup record carries the protocol')
     assert(online.secure === true, 'lookup record marks the tunnel secure')
-    // a random valid key nobody announced -> the worker normalizes the bare
-    // {secure:true} shell to null (offline is a state, NOT an error)
-    const deadKey = 'hs://s000' + 'a'.repeat(64)
+    // offline is a STATE, not an error: holesail normalizes the bare
+    // {secure:true} shell of an unannounced key to null; iroh has no record
+    // to read, so the same key after the peer is gone is the honest case
+    if (IROH) {
+      await rpc('session:stop', { id: lkServer.id })
+      await sleep(500)
+    }
+    const deadKey = IROH ? lkServer.url : 'hs://s000' + 'a'.repeat(64)
     const offline = await rpc('lookup', { key: deadKey }, 60000)
     assert(
       offline === null,
-      'lookup of an unannounced key returns null (offline)'
+      IROH
+        ? 'lookup of a peer that has gone away returns null (offline)'
+        : 'lookup of an unannounced key returns null (offline)'
     )
     // malformed public key -> thrown error (unlike a well-formed absent key)
     let badErr = null
@@ -555,7 +578,7 @@ async function main() {
       badErr = e
     }
     assert(badErr !== null, 'lookup of a malformed public key throws')
-    await rpc('session:stop', { id: lkServer.id })
+    if (!IROH) await rpc('session:stop', { id: lkServer.id })
 
     console.log('15) filemanager accepts a fixed key (permanent folder shares)')
     const fmKey = 'b'.repeat(64)
@@ -571,9 +594,33 @@ async function main() {
       'filemanager started with a fixed key'
     )
     assert(
-      fmKeyed.url === 'hs://s000' + fmKey,
-      'filemanager url uses the fixed key (stable across restarts)'
+      fmKeyed.url.startsWith(URL_PREFIX),
+      'filemanager url uses the engine key scheme'
     )
+    if (IROH) {
+      // iroh has no hs://-style key: a fixed key derives a deterministic
+      // endpoint identity, so the SAME key must yield the SAME address
+      // (that invariant is what permanent tunnels rest on)
+      const again = await rpc(
+        'server:start',
+        { port: TEST_PORT + 9, secure: true, key: fmKey },
+        90000
+      )
+      // the ticket itself carries ephemeral addresses, so compare the
+      // IDENTITY the key derives (publicKey == endpoint id)
+      assert(
+        again.publicKey === fmKeyed.publicKey &&
+          typeof again.publicKey === 'string' &&
+          again.publicKey.length > 0,
+        'the same fixed key yields the same identity (stable across restarts)'
+      )
+      await rpc('session:stop', { id: again.id })
+    } else {
+      assert(
+        fmKeyed.url === 'hs://s000' + fmKey,
+        'filemanager url uses the fixed key (stable across restarts)'
+      )
+    }
     await rpc('session:stop', { id: fmKeyed.id })
 
     console.log(
@@ -650,32 +697,60 @@ async function main() {
       boom.on('error', rej)
     })
     let waitedOverflow = 0
-    while (overflowErrs.length === 0 && waitedOverflow < 20000) {
+    // iroh throttles instead of overflowing, so there is no error to wait
+    // for — give the burst a bounded window to prove it stays quiet
+    const overflowWait = IROH ? 6000 : 20000
+    while (overflowErrs.length === 0 && waitedOverflow < overflowWait) {
       await sleep(250)
       waitedOverflow += 250
     }
     rl.off('line', onOverflow)
     const rssAfter = workerRss()
-    assert(
-      overflowErrs.length >= 1,
-      `capped session stopped with an error (after ~${waitedOverflow}ms)`
-    )
-    assert(
-      overflowErrs.length > 0 &&
-        /Bandwidth cap/.test(overflowErrs[0].error || ''),
-      `error explains the cap (${overflowErrs[0] ? overflowErrs[0].error : 'none'})`
-    )
     const pongOverflow = await rpc('ping', {})
-    assert(pongOverflow === 'pong', 'worker survived the overflow')
+    assert(pongOverflow === 'pong', 'worker survived the burst')
     const afterOverflow = await rpc('sessions:list', {})
-    assert(
-      !afterOverflow.some((s) => s.id === overflowServer.id),
-      'the overflowing session was dropped'
-    )
+    if (IROH) {
+      // The iroh engine paces the producer through QUIC flow control instead
+      // of accepting writes it cannot deliver, so the burst never piles up:
+      // no cap error, the session lives, and RSS stays flat. Same ceiling,
+      // reached by not creating the backlog rather than by dying on it.
+      assert(
+        overflowErrs.length === 0,
+        `no cap error: the sender was throttled, not buffered (${overflowErrs.length})`
+      )
+      assert(
+        afterOverflow.some((s) => s.id === overflowServer.id),
+        'the capped tunnel survived the burst'
+      )
+    } else {
+      assert(
+        overflowErrs.length >= 1,
+        `capped session stopped with an error (after ~${waitedOverflow}ms)`
+      )
+      assert(
+        /Bandwidth cap/.test(overflowErrs[0].error || ''),
+        `error explains the cap (${overflowErrs[0] ? overflowErrs[0].error : 'none'})`
+      )
+      assert(
+        !afterOverflow.some((s) => s.id === overflowServer.id),
+        'the overflowing session was dropped'
+      )
+    }
     assert(
       afterOverflow.some((s) => s.id === bystander.id),
       'the neighbouring tunnel was left alone'
     )
+    if (IROH && rssBefore !== null && rssAfter !== null) {
+      // the burst is 128 MiB behind a 20 KiB/s cap: an unbounded backlog
+      // shows up here as >100 MiB. Asserted for iroh because backpressure
+      // should mean there is nothing to accumulate (holesail's number stays
+      // measured-only: allocator/GC lag over the transient churn is what it
+      // reflects, see below).
+      assert(
+        rssAfter - rssBefore < 64,
+        `burst did not accumulate in the worker (+${rssAfter - rssBefore} MiB)`
+      )
+    }
     if (rssBefore === null || rssAfter === null) {
       console.log('  · /proc unavailable — no RSS reading')
     } else {

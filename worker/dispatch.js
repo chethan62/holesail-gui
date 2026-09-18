@@ -17,7 +17,7 @@ const {
   getSessionStats
 } = require('./tunnels.js')
 
-const Holesail = require('holesail')
+const { lookup } = require('./engine/index.js')
 const { setGlobalLimit } = require('./limiter.js')
 
 async function dispatch(method, params) {
@@ -55,8 +55,11 @@ async function dispatch(method, params) {
     // online/offline/unknown cleanly. Malformed keys still throw
     // (Invalid key format), which surfaces as an RPC error -> 'unknown'.
     case 'lookup': {
-      const res = await Holesail.lookup(params.key)
-      return res && Number.isInteger(res.port) ? res : null
+      const res = await lookup(params.key)
+      // holesail: a record with no port is a bare {secure} shell from an
+      // unannounced key. iroh: a live peer returns its endpoint id and no
+      // port at all (the local port is never published). Both are "online".
+      return res && (Number.isInteger(res.port) || res.endpointId) ? res : null
     }
     // test-only: throw an async error OUTSIDE the RPC promise chain
     // (uncaughtException, like a real socket/bind failure) attributed to a
