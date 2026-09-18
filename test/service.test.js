@@ -154,7 +154,7 @@ async function main() {
     )
     const stoppedClash = await rpc('session:stop', { id: clash.id })
     assert(stoppedClash.state === 'stopped', 'free-port client stopped')
-    await new Promise((res) => blocker.close(res))
+    await closeServer(blocker)
     const pongAfter = await rpc('ping', {})
     assert(pongAfter === 'pong', 'worker still alive after the port conflict')
 
@@ -319,7 +319,9 @@ async function main() {
     // DELIBERATELY asymmetric: echo the request AND push 64 KiB back. A
     // symmetric echo hides swapped up/down counters (both sides read the
     // same number) — this is the only shape that catches a direction bug.
+    const tSockets = []
     const tServer = net2.createServer((sock) => {
+      tSockets.push(sock)
       sock.on('data', (d) => sock.write(d))
       sock.once('data', () => sock.write(reply))
     })
@@ -375,7 +377,7 @@ async function main() {
     assert(srvStats.locCnt === 0, 'no lingering connections after close')
     await rpc('session:stop', { id: statsClient.id })
     await rpc('session:stop', { id: statsServer.id })
-    await new Promise((res) => tServer.close(res))
+    await closeServer(tServer, tSockets)
 
     console.log(
       '13b) stats events keep flowing (throttled re-arm, not one-shot)'
@@ -473,9 +475,11 @@ async function main() {
     const capClient = await rpc('client:connect', { key: capServer.url }, 90000)
     // echo server behind the tunnel
     const net4 = require('net')
-    const echoServer = net4.createServer((sock) =>
+    const eSockets = []
+    const echoServer = net4.createServer((sock) => {
+      eSockets.push(sock)
       sock.on('data', (d) => sock.write(d))
-    )
+    })
     await new Promise((res) =>
       echoServer.listen(TEST_PORT + 7, '127.0.0.1', res)
     )
@@ -516,7 +520,7 @@ async function main() {
     assert(elapsed > 2000, `transfer stretched by the cap (${elapsed}ms)`)
     await rpc('session:stop', { id: capClient.id })
     await rpc('session:stop', { id: capServer.id })
-    await new Promise((res) => echoServer.close(res))
+    await closeServer(echoServer, eSockets)
 
     console.log('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc(
