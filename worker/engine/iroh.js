@@ -53,10 +53,15 @@ const PROBE_MS = 12000
 // TCP forwarder does exactly this (dumbpipe's `HANDSHAKE = b"hello"`). The
 // token here IS the ALPN, so a peer speaking a different protocol version is
 // refused instead of guessed at.
+// `process` via runtime.js, like every other worker module: this engine is
+// Node-only (napi prebuilds), but the convention is what the eslint config
+// now enforces — the bare runtime has no global process at all.
+const { process: proc } = require('../runtime.js')
+
 const HANDSHAKE = ALPN
 
 const dbg = (...a) => {
-  if (process.env.IROH_DEBUG) console.error('[iroh:dbg]', ...a)
+  if (proc.env && proc.env.IROH_DEBUG) console.error('[iroh:dbg]', ...a)
 }
 const toBuf = (x) => (Buffer.isBuffer(x) ? x : Buffer.from(x))
 const sha256 = (s) => Array.from(crypto.createHash('sha256').update(s).digest())

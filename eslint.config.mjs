@@ -38,7 +38,34 @@ export default [
     }
   },
   {
-    files: ['service-worker.js', 'worker/**/*.js', 'test/**/*.js'],
+    // NO `process` global here on purpose: a packaged build runs the worker
+    // under the bare runtime, which has no global process — declaring it (as
+    // this file used to) lets `process.env` pass lint and then kill the worker
+    // on load, i.e. the app never starts. Take it from worker/runtime.js.
+    // Tests run under Node and declare it below.
+    files: ['service-worker.js', 'worker/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        console: 'readonly',
+        Buffer: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
+        __dirname: 'readonly',
+        globalThis: 'readonly',
+        setImmediate: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        URL: 'readonly'
+      }
+    }
+  },
+  {
+    // Node-only files (the suite + scripts): these DO get the global process.
+    files: ['test/**/*.js', 'scripts/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',

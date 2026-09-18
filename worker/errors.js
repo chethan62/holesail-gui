@@ -8,7 +8,7 @@
  * restores permanents).
  */
 
-const { setImmediate } = require('./runtime.js')
+const { setImmediate, process } = require('./runtime.js')
 const { sessions } = require('./state.js')
 const { sendEvent } = require('./transport.js')
 const { stopLimitTicker } = require('./limiter.js')

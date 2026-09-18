@@ -10,7 +10,14 @@
 
 'use strict'
 
-const name = String(process.env.TUNNEL_ENGINE || 'holesail')
+// `process` comes from runtime.js like every other worker module: Bare (the
+// runtime a packaged build runs the worker under) has NO global `process`, so
+// reading `process.env` here killed the worker on load — the whole packaged
+// app failed to start, and the only symptom was the suite's opaque "timeout
+// waiting for ping". Bare gets an empty env, i.e. the default engine.
+const { process: proc } = require('../runtime.js')
+
+const name = String((proc.env && proc.env.TUNNEL_ENGINE) || 'holesail')
   .trim()
   .toLowerCase()
 
