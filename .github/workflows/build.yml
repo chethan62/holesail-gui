@@ -277,12 +277,38 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Ad-hoc code sign (pseudo-identity "-"). Without ANY bundle signature
+          # macOS reports a downloaded app as "damaged and can't be opened" —
+          # a block a user cannot click past — because Apple Silicon requires a
+          # signature for apps from the internet. Ad-hoc still shows the
+          # unidentified-developer warning, which the user CAN allow, so it is
+          # the difference between "installable with a warning" and "not
+          # installable". A real Developer ID certificate (which would also need
+          # notarization) is a spend-it-money decision, not a code change.
+          APPLE_SIGNING_IDENTITY: '-'
         run: |
           # --bare bundles the darwin bare runtime + .bare-ABI native addons
           # (tauri.macos.conf.json ships it as a resource), so installed
           # builds don't need end users to have Node.js at all.
           node scripts/prepare-resources.mjs --bare
           npx tauri build
+
+      - name: Verify the .app is signed (ad-hoc counts, unsigned does not)
+        run: |
+          APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
+          echo "app: $APP"
+          if [ ! -e "$APP/Contents/_CodeSignature/CodeResources" ]; then
+            echo "FAIL: the bundle has no signature — macOS will call this 'damaged'"
+            exit 1
+          fi
+          # the nested runtime must be sealed by that signature, otherwise the
+          # worker is unsigned code inside a signed app
+          if ! grep -q 'Resources/bare' "$APP/Contents/_CodeSignature/CodeResources"; then
+            echo "FAIL: Resources/bare is not covered by the app signature"
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP" || exit 1
+          echo "OK: signed (ad-hoc) and the bundled runtime is sealed by it"
 
       - name: Verify the bundled runtime boots the worker
         shell: bash
