@@ -73,8 +73,8 @@ async function startServer(params) {
   const session = recordFromHs(hs, id)
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
-  // engines that emit late updates (iroh's ticket refresh) need to name
-  // their session in the event
+  // a late url update (a permanent tunnel's regenerated key) must name its
+  // session in the event
   hs.sessionId = id
   wireSessionStats(entry)
   // always: a session with no cap of its own still needs a ticker to
@@ -196,8 +196,8 @@ async function connectClient(params) {
   const session = recordFromHs(hs, id)
   const entry = { hs, ...session, limit }
   sessions.set(id, entry)
-  // engines that emit late updates (iroh's ticket refresh) need to name
-  // their session in the event
+  // a late url update (a permanent tunnel's regenerated key) must name its
+  // session in the event
   hs.sessionId = id
   wireSessionStats(entry)
   // always: a session with no cap of its own still needs a ticker to
@@ -254,7 +254,7 @@ function listSessions() {
   // serializes fine once its ticker has gone quiet and throws "Converting
   // circular structure to JSON" until then, i.e. listing a session within
   // ~200ms of starting it. (Latent with holesail, whose DHT bootstrap took
-  // long enough to hide it; hit immediately by the iroh engine, which is
+  // long enough to hide it; hit immediately by the engine, which is
   // ready in ~15ms.)
   return [...sessions.values()].map(({ hs, fileServer, _lim, ...s }) => s)
 }

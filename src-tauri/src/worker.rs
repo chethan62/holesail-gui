@@ -158,21 +158,15 @@ pub(crate) fn worker_command(app: &AppHandle) -> Result<(PathBuf, PathBuf), Stri
             dirs.push(dir.join("bin"));
         }
     }
-    // The iroh engine (@number0/iroh napi prebuilds) cannot load in the
-    // bundled bare runtime, so when it is selected the worker must run under
-    // Node — same env var the worker itself reads to pick its engine. In dev
-    // that resolution walks up to the repo's node_modules; a packaged install
-    // has no @number0/iroh to walk to, which is why this is a dev-selectable
-    // engine until packaging ships Node (see the README).
-    let engine_needs_node =
-        std::env::var("TUNNEL_ENGINE").is_ok_and(|v| v.trim().eq_ignore_ascii_case("iroh"));
-    if !engine_needs_node {
-        for dir in &dirs {
-            let bare = dir.join(bare_name);
-            let worker = dir.join("service-worker.js");
-            if bare.is_file() && worker.is_file() {
-                return Ok((bare, worker));
-            }
+    // The bundled bare runtime wins whenever both it and the worker are
+    // present: that is the packaged case, and it needs no Node on the machine.
+    // (An engine needing NAPI-RS prebuilds could not load under bare, so it
+    // could not ship here at all - see worker/engine/index.js.)
+    for dir in &dirs {
+        let bare = dir.join(bare_name);
+        let worker = dir.join("service-worker.js");
+        if bare.is_file() && worker.is_file() {
+            return Ok((bare, worker));
         }
     }
     let worker_path =

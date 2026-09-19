@@ -59,7 +59,7 @@ async function dispatch(method, params) {
     case 'lookup': {
       const res = await lookup(params.key)
       // holesail: a record with no port is a bare {secure} shell from an
-      // unannounced key. iroh: a live peer returns its endpoint id and no
+      // unannounced key. A live peer returns its record and no
       // port at all (the local port is never published). Both are "online".
       return res && (Number.isInteger(res.port) || res.endpointId) ? res : null
     }

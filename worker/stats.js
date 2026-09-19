@@ -179,7 +179,7 @@ function wireDataCounters(entry) {
   // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
   // pacing is out of scope for the per-session cap).
   // The field differs per engine: holesail's client assigns its datagram
-  // socket to `proxy` (handleUDP: `this.proxy = proxySocket`), the iroh
+  // socket to `proxy` (handleUDP: `this.proxy = proxySocket`), the engine's
   // engine exposes `proxySocket`. Checking only `proxySocket` left every
   // holesail UDP session reporting 0/0 traffic forever (found by the UDP
   // test, which asserts BOTH engines count). `proxy` is the TCP proxy SERVER

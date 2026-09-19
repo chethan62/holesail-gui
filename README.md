@@ -147,59 +147,28 @@ under its own process (Node in dev, the bundled **Bare** runtime in packaged
 builds — see below), so the addons load as-is; the Rust backend only proxies
 JSON-RPC over stdio.
 
-**Tunnel engine is swappable** (`worker/engine/`). `TUNNEL_ENGINE=iroh`
-selects [iroh](https://iroh.computer) — QUIC, NAT hole-punching with relay
-fallback, MIT/Apache-2.0 — behind the same RPC contract. Differences worth
-knowing before relying on it:
+**The tunnel engine is holesail** (`worker/engine/`, AGPL-3.0) — and it is the
+only one. A second engine was built and measured here: [iroh](https://iroh.computer),
+QUIC with hole-punching and relay fallback, MIT/Apache-2.0. It could never ship
+from this repo — `@number0/iroh` ships NAPI-RS prebuilds needing Node >= 20.3,
+while the packaged worker runs under Bare, which loads only its own addon ABI —
+so it became its own project: **github.com/chethan62/iroh-tunnel**, taking the
+UDP datagram work, the reachability probe and its tests with it.
 
-- **Keys differ**: iroh tickets (`iroh://endpoint…`) instead of `hs://s000…`.
-  Different network — an iroh key and a holesail key can never reach each other.
-- **Always encrypted** (TLS 1.3): the "secure" toggle is a no-op; there is no
-  plaintext mode.
-- **UDP rides native QUIC datagrams** (`udp: true`), one tunnel flow per
-  local source address — the same topology holesail uses, so a service that
-  keys sessions by source port behaves identically. Consequence of using real
-  datagrams: an oversized datagram is dropped, and the drop is counted. holesail
-  has no such MTU bound, but whether an 8 KiB datagram arrives intact or comes
-  back silently truncated at 2048 bytes varies with the environment, not with the
-  engine: measured intact under Bare on a dev box, truncated to 2048 under the
-  same Bare on a CI runner and under Node in both places. So a large-datagram
-  service (TFTP-style transfers, some game traffic) cannot rely on it either
-  way. The suite asserts what holds everywhere — the payload is delivered whole
-  or at that 2 KB ceiling, never mangled into a third length, and the tunnel
-  keeps working — and logs the measured number instead of asserting it.
-- **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
-  runtime cannot load — so it is selectable in dev/tests, not in shipped
-  packages yet. Shipping it means bundling the **Node** binary as the worker
-  runtime instead of Bare (the layout the worker already uses) — measured
-  trade-offs in Known issues.
-- **A fixed key = a stable identity**: hashing the key derives a deterministic
-  endpoint, so a permanent tunnel keeps its address across restarts. A peer
-  that only receives still works — bi-streams are announced with a handshake,
-  the way iroh's own `dumbpipe` does it.
-- **Bulk throughput is ~7x slower** — and this one is not a design choice, it
-  is a limit of the current JS binding. Measured on one machine, same bench,
-  same services, both ends in separate processes:
+The measurements that decided that are worth keeping (one machine, same bench,
+both ends in separate processes):
 
-  |                              | upload    | download  | 20 sockets at once  |
-  | ---------------------------- | --------- | --------- | ------------------- |
-  | holesail                     | 28.9 MB/s | 30.8 MB/s | 20/20 in 3.6 s      |
-  | iroh (`@number0/iroh` 1.1.0) | 4.1 MB/s  | 4.1 MB/s  | 20/20 in **0.09 s** |
+|                              | upload    | download  | 20 sockets at once  |
+| ---------------------------- | --------- | --------- | ------------------- |
+| holesail                     | 28.9 MB/s | 30.8 MB/s | 20/20 in 3.6 s      |
+| iroh (`@number0/iroh` 1.1.0) | 4.1 MB/s  | 4.1 MB/s  | 20/20 in **0.09 s** |
 
-  iroh's per-connection cost is ~40x lower (QUIC streams are nearly free) and
-  it reaches a direct path the same way, but every byte of tunnel payload
-  crosses the JS boundary as a **plain JS array**, not a typed array:
-  `recv.read()` returns `Array` (~0.19 µs/byte) and `send.write()` _rejects_
-  `Buffer`/`Uint8Array` ("Failed to get Array length"). That caps a JS host at
-  ~4 MB/s no matter the chunk size — chunk size, receive window (16/64 MB),
-  relay-off and stream limits were all measured and change nothing. The
-  upgrade path is small and upstream: accept/return `Uint8Array` in
-  `iroh-ffi`'s napi signatures (`Vec<u8>` → typed array) and the same
-  memcpy path would run at hundreds of MB/s. Until then, pick per use case —
-  iroh for many short-lived connections and awkward NATs, holesail for
-  streaming or moving files.
-
-`npm run test:iroh` runs the whole E2E suite against that engine.
+iroh wins connection setup by ~40x and carries datagrams natively, but every
+payload byte crosses its JS boundary as a plain `Array` (not a typed array),
+capping a JS host at ~4 MB/s whatever the chunk size — the analysis is in the
+other project's README. For a GUI whose main job is moving files, ~7x slower
+bulk transfer was the deciding factor, and the licence question it was built to
+answer is a decision about this repo, not a second engine.
 
 </details>
 
@@ -231,7 +200,7 @@ npm run dev          # tauri dev — builds the Rust backend and opens the windo
 npm test             # E2E: spawns the real service worker, starts a server on
                      # the DHT, connects a client, stops both, asserts protocol
 npm run gate         # the whole pre-push gate in CI's order, fail-fast:
-                     # format + lint + node/iroh/bare suites + rustfmt + clippy
+                     # format + lint + node/bare suites + rustfmt + clippy
                      # + cargo test (add scripts/ci-ui-smoke.py by hand when
                      # renderer files changed — it needs a built binary)
 ```
@@ -242,7 +211,8 @@ real tunnel). `npm run test:iroh` runs the same 22 sections against the
 alternate engine; the suite is engine-aware only where behaviour genuinely
 differs (the key scheme, the lookup record, the capped-burst outcome, the RSS
 bound and UDP's datagram ceiling), and every branch is asserted per engine.
-`npm run test:bare` is the leg that runs the worker under the runtime a
+§22 (the iroh engine's key parser) went with the engine, so the numbering has
+a gap. `npm run test:bare` is the leg that runs the worker under the runtime a
 PACKAGED build uses — the only local check that sees a Node-only global. CI
 runs all three legs.
 
@@ -439,6 +409,27 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.10.0">
+<summary><b>v0.10.0</b> — one engine again: the iroh engine became its own project</summary>
+
+- **The iroh engine moved out.** It was built here as an opt-in second engine
+  (`TUNNEL_ENGINE=iroh`) and could never ship from this repo: `@number0/iroh`
+  ships NAPI-RS prebuilds needing Node >= 20.3, while packaged builds run the
+  worker under Bare, which loads only its own addon ABI. It lives at
+  **github.com/chethan62/iroh-tunnel** now — with the UDP datagram work, the
+  reachability probe, the throughput analysis, and its own tests (including the
+  key-parser check that used to be §22 here). `@number0/iroh` is out of
+  package.json, Rust no longer reads `TUNNEL_ENGINE`, the engine seam is a
+  holesail-only re-export, and the CI leg that ran the iroh suite is gone.
+  **No behaviour change for users**: no shipped build could select iroh, since
+  the packaged worker never had a Node runtime to load it in.
+- **Engine-agnostic code stayed and was reworded, not deleted.** The Saved tab's
+  handling of a server with no fixed key — no derivable connection string — was
+  written for iroh's tickets but is a real holesail case too, so it kept its
+  behaviour and only lost the iroh naming; the UI hints no longer mention a key
+  format this app cannot produce.
+
+</details>
 <details id="v0.9.5">
 <summary><b>v0.9.5</b> — the GPLv3 dependency's licence now ships; the two method lists are checked</summary>
 
@@ -722,7 +713,7 @@ structure to JSON`.
   behavior on real desktops is still being validated
 - **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
 - **A cap can't slow a sender it doesn't control (holesail engine)** — that engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap). The iroh engine paces the producer through QUIC flow control instead, so the same burst never accumulates — measured +1 MiB RSS, no error, tunnel stays up
-- **The iroh engine is dev/test-selectable only** — packaged builds bundle the Bare runtime, whose ABI cannot load `@number0/iroh`'s napi prebuilds, so `TUNNEL_ENGINE=iroh` fails in an installed app. The measured path to ship it: bundle the **Node binary as the worker runtime** (`bare` → `node`; the worker+resources layout is unchanged and already runs both engines under Node — verified end to end on Linux). Cost: ~+22 MB compressed per installer (node 41.9 MB vs bare 19.7 MB gzipped; the iroh prebuild itself is 168 KB), and Node is MIT so it redistributes fine. A Node **single-executable** (SEA) binary is NOT the answer here: its injected script can only `require` built-ins (measured: `require('./worker/runtime.js')` fails), so it would need a JS bundler plus a native-addon `dlopen` shim. Android keeps Bare either way (no official Node build for it). The UI also still speaks `hs://`: an iroh key works when pasted, but deep links and the key-format hints assume holesail. Bulk throughput is the other caveat: ~4 MB/s, ~7x below holesail, because the JS binding moves payload bytes one array element at a time (measured; engine section above)
+- **Tunnel engine: holesail only** — the iroh engine became its own project (github.com/chethan62/iroh-tunnel) because `@number0/iroh`'s NAPI-RS prebuilds cannot load under the Bare runtime this app packages, and shipping it would have meant bundling Node (+~22 MB per installer) for an engine ~7x slower at bulk transfer. Its UDP datagram work, reachability probe and tests went with it
 - **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)

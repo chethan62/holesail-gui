@@ -39,10 +39,10 @@ function isHsKey(key) {
   return k.startsWith('hs://s000') || k.startsWith('hs://0000')
 }
 
-/// The connectable string a saved entry is known by. An iroh key is only an
-/// identity seed — its ticket embeds the peer's live addresses, so a stopped
-/// iroh tunnel has no rebuildable string (null, never a fabricated hs:// one,
-/// which would name a completely different network).
+/// The connectable string a saved entry is known by. A server saved without a
+/// fixed key has none: its url is generated at start, so there is nothing to
+/// rebuild from (null, never a fabricated hs:// one, which would name a
+/// completely different tunnel).
 function savedUrl(t) {
   if (t.kind === 'client') return String(t.key || '').replace(/\/+$/, '')
   if (isHsKey(t.key))
@@ -55,7 +55,7 @@ export function savedSession(t) {
   const url = savedUrl(t)
   for (const s of state.sessions.values()) {
     if (url && s.url === url) return s
-    // No derivable string (an iroh server): match the running session by the
+    // No derivable string (a server with no fixed key): match it to the
     // identity key it was started with — the worker reports the same seed, so
     // a permanent tunnel is found again across restarts (without this the
     // Saved tab read "not running" and autostart started a SECOND copy).
@@ -222,15 +222,15 @@ export function renderSaved() {
     head.append(startBtn)
     item.append(head)
 
-    // Show the LIVE connection string when the tunnel is running — for iroh
-    // that is the only truthful source (its ticket is regenerated as the
-    // peer's addresses change). A stopped iroh tunnel shows its identity key
-    // instead, with a tooltip saying where the ticket comes from.
+    // Show the LIVE connection string when the tunnel is running — for a
+    // tunnel with no fixed key that is the only truthful source, since its url
+    // is generated at start. A stopped one shows its key instead, with a
+    // tooltip saying so.
     const live = savedSession(t)
     const keyLine = el('code', '', '', live ? live.url : savedUrl(t) || t.key)
     if (!live && t.kind !== 'client' && !isHsKey(t.key)) {
       keyLine.title =
-        'iroh tunnels are named by a ticket that embeds the peer’s live addresses — start the tunnel to get its current connection string'
+        'this tunnel has no fixed key, so its connection string only exists while it runs — start it to see the current one'
     }
     const meta = el('div', 'meta')
     if (t.kind === 'filemanager') meta.append(metaItem('Folder', t.path ?? '?'))

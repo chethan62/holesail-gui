@@ -1,7 +1,7 @@
 {
   "name": "holesail-gui",
-  "version": "0.9.5",
-  "description": "Desktop GUI for Holesail — share local ports and connect to P2P tunnels",
+  "version": "0.10.0",
+  "description": "Desktop GUI for Holesail \u2014 share local ports and connect to P2P tunnels",
   "author": "chethan62",
   "license": "MIT",
   "scripts": {
@@ -17,8 +17,7 @@
     "build:android": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk --debug",
     "build:android:release": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk",
     "test": "node test/service.test.js",
-    "test:iroh": "TUNNEL_ENGINE=iroh node test/service.test.js",
-    "gate": "npm run format:check && npm run lint && npm test && npm run test:iroh && npm run test:bare && node scripts/prepare-resources.mjs --bare --target linux-x64 && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "gate": "npm run format:check && npm run lint && npm test && npm run test:bare && node scripts/prepare-resources.mjs --bare --target linux-x64 && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:bare": "node scripts/prepare-resources.mjs --bare --target linux-x64 --out dist-resources-bare && WORKER_CMD=dist-resources-bare/bare WORKER_PATH=dist-resources-bare/service-worker.js node test/service.test.js",
     "tauri": "tauri"
   },
@@ -27,7 +26,6 @@
     "livefiles": "^1.1.0"
   },
   "devDependencies": {
-    "@number0/iroh": "^1.1.0",
     "@tauri-apps/cli": "^2",
     "eslint": "^10.8.1",
     "prettier": "^3.9.6"

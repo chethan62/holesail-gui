@@ -1,34 +1,23 @@
-/* engine/index.js — the single seam that selects the tunnel engine.
+/* engine/index.js - the seam that selects the tunnel engine.
  *
- * Default is holesail (unchanged behaviour, DHT/HyperDHT, AGPL engine).
- * TUNNEL_ENGINE=iroh swaps in worker/engine/iroh.js — QUIC, MIT/Apache-2.0,
- * same facade, different network (iroh tickets instead of hs:// keys, TCP
- * only, always encrypted).
+ * One engine today: holesail (HyperDHT, hs:// keys, AGPL-3.0). The iroh engine
+ * that lived here (QUIC, iroh tickets, MIT/Apache-2.0) became its own project:
+ * @number0/iroh ships NAPI-RS prebuilds and needs Node >= 20.3, while the Bare
+ * runtime a packaged build runs loads only its own addon ABI - so an iroh
+ * engine could never ship from this repo. It is github.com/chethan62/iroh-tunnel
+ * now, with the UDP datagram work and its tests.
  *
- * Both expose `Engine` (a constructor tunnels.js calls with
- * {server|client, port, host, secure, key, udp}) and `lookup(key)`. */
+ * The facade both the callers and any future engine speak: `Engine` (the
+ * constructor tunnels.js calls with {server|client, port, host, secure, key,
+ * udp}) and `lookup(key)`. This file is the only place a swap happens.
+ */
 
 'use strict'
 
-// `process` comes from runtime.js like every other worker module: Bare (the
-// runtime a packaged build runs the worker under) has NO global `process`, so
-// reading `process.env` here killed the worker on load — the whole packaged
-// app failed to start, and the only symptom was the suite's opaque "timeout
-// waiting for ping". Bare gets an empty env, i.e. the default engine.
-const { process: proc } = require('../runtime.js')
+const Holesail = require('holesail')
 
-const name = String((proc.env && proc.env.TUNNEL_ENGINE) || 'holesail')
-  .trim()
-  .toLowerCase()
-
-if (name === 'iroh') {
-  const { Iroh, lookup } = require('./iroh.js')
-  module.exports = { name, Engine: Iroh, lookup }
-} else {
-  const Holesail = require('holesail')
-  module.exports = {
-    name: 'holesail',
-    Engine: Holesail,
-    lookup: (key) => Holesail.lookup(key)
-  }
+module.exports = {
+  name: 'holesail',
+  Engine: Holesail,
+  lookup: (key) => Holesail.lookup(key)
 }

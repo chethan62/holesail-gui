@@ -23,12 +23,6 @@ jobs:
         run: npm run format:check
       - name: npm test (node runtime)
         run: npm test
-      # iroh is opt-in (TUNNEL_ENGINE=iroh) and CANNOT run under bare — its
-      # napi prebuilds do not load there, which is why packaged builds ship
-      # holesail — so the iroh suite runs on the node leg only. Without this
-      # step every iroh assertion (including suite §20-22) was local-only.
-      - name: npm run test:iroh (iroh engine)
-        run: npm run test:iroh
       - name: npm run test:bare (bare runtime)
         run: npm run test:bare
 
@@ -66,7 +60,7 @@ jobs:
       # Without this step the 28 Rust tests existed only as a pre-release gate
       # run by hand: nothing in CI executed them, so a regression could only be
       # caught by whoever remembered to run them (the same blind spot that left
-      # the iroh suite unrun for its whole life).
+      # a whole suite unrun for its life, once).
       - name: Test (cargo test)
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
