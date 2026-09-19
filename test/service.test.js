@@ -1159,6 +1159,31 @@ async function main() {
     await rpc('session:stop', { id: deadClient.id })
     await closeServer(deadEcho, [deadSock])
 
+    // 22) an unparseable key is rejected WITHOUT being echoed back. The
+    // renderer maps this message to a peer status, and the event log has a
+    // "Copy log" button — so the text lands in bug reports and must carry no
+    // key material. Iroh parses locally and fails fast; the holesail engine
+    // delegates parsing upstream, so this is iroh-only.
+    if (IROH) {
+      console.log('\n22) an unparseable key is rejected without echoing it')
+      const bogus = 'deadbeefdeadbeefdeadbeef'
+      let msg = ''
+      try {
+        await rpc('client:connect', { key: bogus }, 30000)
+      } catch (err) {
+        msg = String((err && err.message) || err)
+      }
+      assert(
+        /Invalid key format/.test(msg),
+        `the renderer's mapping still matches the message (got: ${msg || 'no error'})`
+      )
+      assert(
+        !msg.includes(bogus.slice(0, 12)) && !/deadbeef/.test(msg),
+        'the rejected key is not echoed into the message'
+      )
+      console.log('  ✓ rejected with a message that carries no key material')
+    }
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)

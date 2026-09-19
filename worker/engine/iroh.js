@@ -84,7 +84,9 @@ function peerAddrFrom(key) {
   try {
     return new EndpointAddr(EndpointId.fromString(raw), null, [])
   } catch {}
-  throw new Error(`Invalid key format: ${raw.slice(0, 24)}…`)
+  throw new Error(
+    `Invalid key format: ${raw.length} chars, expected an iroh ticket or endpoint id`
+  )
 }
 
 function withTimeout(promise, ms, what) {

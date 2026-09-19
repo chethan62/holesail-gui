@@ -23,6 +23,14 @@ jobs:
         run: npm run format:check
       - name: npm test (node runtime)
         run: npm test
+      # iroh is opt-in (TUNNEL_ENGINE=iroh) and CANNOT run under bare — its
+      # napi prebuilds do not load there, which is why packaged builds ship
+      # holesail — so the iroh suite runs on the node leg only. Without this
+      # step every iroh assertion (including suite §20-22) was local-only.
+      - name: npm test (iroh engine)
+        run: npm test
+        env:
+          TUNNEL_ENGINE: iroh
       - name: npm run test:bare (bare runtime)
         run: npm run test:bare
 
