@@ -100,20 +100,24 @@ command. The GUI adds what the terminal can't:
 
 ## Platforms
 
-| Platform    | Status                                       | Deliverables                                                 |
-| ----------- | -------------------------------------------- | ------------------------------------------------------------ |
-| **Linux**   | ✅ fully working                             | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak`              |
-| **Windows** | ✅ builds via CI                             | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
-| **Android** | ✅ backend works (bare runtime) — arm64 APK  | debug APK — see the [Android](#android) section              |
-| **macOS**   | ✅ builds via CI (untested on real hardware) | `.dmg`/`.app` — bare runtime bundled, no Node needed         |
+| Platform    | Status                                      | Deliverables                                                 |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------ |
+| **Linux**   | ✅ fully working                            | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak`              |
+| **Windows** | ✅ builds + boots its packaged worker in CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
+| **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section              |
+| **macOS**   | ✅ builds + boots its packaged worker in CI | `.dmg`/`.app` — bare runtime bundled, no Node needed         |
 
 Every platform ships a flatpak bundle from CI alongside the desktop installers; see [Build a release bundle](#build-a-release-bundle).
 
 All four targets are built automatically by the GitHub Actions workflow in
-`.github/workflows/build.yml` (artifacts on every push / `workflow_dispatch`);
-macOS just hasn't been verified end-to-end on real hardware the way Linux and
-Android have. The flatpak job builds the GNOME-platform bundle in CI too
-(artifacts on every push; verified release flow ships it with releases).
+`.github/workflows/build.yml` (artifacts on every push / `workflow_dispatch`),
+and the Linux, Windows and macOS jobs also **boot the worker they packaged**
+under the runtime they bundled — that check is what found the macOS bundles
+dying at startup, so it stays strict. None of them _launch the app_ on real
+hardware: the GUI has only been exercised on Linux here. macOS builds are
+unsigned and un-notarized, so Gatekeeper wants right-click → Open on first
+launch. The flatpak job builds the GNOME-platform bundle in CI too (artifacts on
+every push; verified release flow ships it with releases).
 
 ## Architecture
 
@@ -583,7 +587,7 @@ structure to JSON`.
 
 - **Public mode (`hs://0000…`) has no encryption** — treat it as an unauthenticated TCP relay; anyone with the key can connect
 - **No TCP-over-DHT portability guarantee** — like upstream holesail, tunnels are UDP-DHT based; some restrictive networks still block UDP hole-punching (rare; falls back through DHT relays automatically)
-- **macOS untested on real hardware** — builds green in CI, never launched on Apple silicon
+- **macOS/Windows bundles are boot-checked in CI, but the apps are unlaunched there** — no Mac or Windows machine here, so "the packaged worker boots under the packaged runtime" is verified and "the window appears" is not. macOS builds are also unsigned and not notarized (no `_CodeSignature` in the `.app`), so Gatekeeper requires right-click → Open on first launch
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
 - **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
