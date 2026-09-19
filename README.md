@@ -118,7 +118,7 @@ hardware: the GUI has only been exercised on Linux here. macOS builds are
 ad-hoc signed but **not notarized**, so the first launch is a Gatekeeper prompt
 you allow under System Settings → Privacy & Security (the old
 right-click → Open bypass was removed in Sequoia). Note the signature is not
-optional on Apple Silicon: an unsigned `.app` is reported as *damaged* with no
+optional on Apple Silicon: an unsigned `.app` is reported as _damaged_ with no
 way to allow it. The flatpak job builds the GNOME-platform bundle in CI too (artifacts on
 every push; verified release flow ships it with releases).
 
