@@ -482,6 +482,26 @@ jobs:
           echo "flatpak build failed after 3 attempts"
           exit 1
 
+      - name: Verify the installed flatpak payload boots its worker
+        run: |
+          # The flatpak manifest lists what it installs BY HAND, and that list
+          # drifted once: `worker/*.js` missed worker/engine/, so the worker died
+          # at startup for flatpak users while every other platform was fine.
+          # Boot the worker from the tree the manifest actually produced.
+          APP=packaging/flatpak/build-dir/files/lib/holesail-gui
+          ls "$APP"
+          printf '{"id":1,"method":"ping","params":{}}\n' \
+            | "$APP/bare" "$APP/service-worker.js" > /tmp/ping.json 2>/tmp/worker-err.txt
+          status=$?
+          echo "worker exit=$status"
+          if [ "$status" -ne 0 ] || ! grep -q '"result":"pong"' /tmp/ping.json; then
+            echo "FAIL: the installed flatpak payload cannot boot its worker"
+            echo "--- stdout ---"; cat /tmp/ping.json
+            echo "--- stderr ---"; tail -20 /tmp/worker-err.txt
+            exit 1
+          fi
+          echo "OK: flatpak payload booted its worker"
+
       - name: Export bundle artifact
         run: |
           cd packaging/flatpak
