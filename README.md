@@ -407,6 +407,71 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.10.5">
+<summary><b>v0.10.5</b> — the chosen sailboat icon, and the header logo stops aliasing</summary>
+
+- **The icon is one transparent master**, expanded by `npx tauri icon` into the
+  whole 35-file family (window, installers, launcher, Android, macOS, Windows),
+  so the launcher, taskbar, tray and in-app header cannot disagree about what
+  the app looks like. It has to be transparent: the same file is drawn on the
+  header's dark background and used as the launcher icon, so a badge or a
+  coloured tile would render a hard square in the header.
+- **The header had been drawing that logo with nearest-neighbour aliasing since
+  v0.10.3.** That release removed an `image-rendering: pixelated` hint — correct
+  for the old pixel-art mark, wrong for this artwork — but the edit missed the
+  `.logo` declaration and the comment left behind claimed it had been removed.
+  The hint is gone, the logo is 28px, and the QR code keeps `pixelated`, where
+  it is genuinely correct.
+
+</details>
+
+<details id="v0.10.4">
+<summary><b>v0.10.4</b> — icon iteration, and CI stops skipping an assertion</summary>
+
+- Icon-only: a second candidate master, normalized to the same coverage and
+  checked at 32×32 and on both a dark and a light background before being
+  expanded into the family. A later candidate superseded it.
+- **CI was skipping an assertion it was supposed to run.** The installer
+  smoke's desktop-database check reported a skip because
+  `update-desktop-database` was missing on the runner, so the handler entry was
+  never verified there. The linux job installs `desktop-file-utils` and the
+  assertion now runs for real.
+
+</details>
+
+<details id="v0.10.3">
+<summary><b>v0.10.3</b> — a crisp sailboat replaces the pixel-art mark; the installer writes the <code>hs://</code> handler</summary>
+
+- **The old mark was pixel art**, so every size above 32px showed hard edges.
+  It is replaced by a vector master rendered at 1024 and expanded into the full
+  family, and the Android notification silhouette is regenerated from the same
+  file.
+- **A brand-new user clicking an `hs://` invite link before the app's first
+  launch got nothing.** Tauri writes the scheme handler at runtime, on first
+  launch, and the installer wrote only the menu entry.
+  `scripts/install-linux.sh` now writes the handler entry and refreshes the
+  desktop database, and the installer smoke asserts both.
+- **The Flatpak showed a generic icon in every menu**: the manifest installed
+  `io.holesail.gui.png` while the desktop entry asked for `Icon=holesail-gui`.
+  Fixed, and CI now asserts that the `Icon=` name resolves — for the flatpak
+  and for the deb.
+
+</details>
+
+<details id="v0.10.2">
+<summary><b>v0.10.2</b> — the sailboat icon returns; <code>install-linux.sh</code> stops failing silently</summary>
+
+- **`--no-build` with no build failed with no message at all.** Under
+  `set -euo pipefail`, `APPIMAGE="$(ls … | head -1)"` takes the failing
+  pipeline's status and exits _before_ the guard that would have explained the
+  missing AppImage. Fixed with `|| true` and a comment recording the trap, and
+  `scripts/ci-install-smoke.sh` now runs the REAL installer into a throwaway
+  `HOME`, asserting both directions — including that the guard FIRES.
+- The launcher and in-app header icons are derived from `src-tauri/icons/` at
+  build time, so they cannot drift from the master.
+
+</details>
+
 <details id="v0.10.1">
 <summary><b>v0.10.1</b> — folder shares get a real password, not the well-known default</summary>
 
