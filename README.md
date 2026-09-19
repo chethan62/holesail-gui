@@ -436,6 +436,38 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.9.1">
+<summary><b>v0.9.1</b> — macOS builds actually worked on: they were dying at startup</summary>
+
+- **macOS installs could never have worked — now they boot.** The bundle shipped
+  a runtime stripped with `--strip-all`, which on a Mach-O deletes the global
+  symbol table a `.bare` addon resolves when it loads, so the worker segfaulted
+  the instant it started: every macOS build so far was dead on arrival, and
+  nothing said so. Linux and Windows are unaffected (ELF and PE keep what
+  addons need, so they keep the size win). Found by the new check below; the
+  shipped `.app`'s own runtime now carries the symbols, verified in the release
+  artifact. **If you downloaded the v0.9.0 `.dmg`, it is broken — use this one.**
+- **CI now boots the worker each platform packaged, under the runtime it
+  bundled** — Linux (deb + AppImage payloads), Windows and macOS. This is the
+  check that found the macOS failure, so it stays strict; the older macOS
+  bundles had only ever been "the dmg built". The suite's own passing run is
+  what a packaged build has to reproduce.
+- **The UI stopped fighting the platform's own widgets** — the Tunnel-type
+  dropdown rendered white in the dark theme (WebKitGTK ignores a select's
+  background until `appearance: none`), the number fields' native spinners read
+  as unlabelled buttons, and the topbar's icon buttons were ~26×22 with no
+  background. Icons are inline SVG now, with accessible names and a focus ring;
+  the logo matches the app's own artwork instead of an emoji; and the window
+  opens tall enough to show the whole Share form.
+- **An oversize UDP datagram's fate is described, not asserted** — whether
+  holesail delivers an 8 KiB datagram intact or truncates it at 2 KB varies
+  with the machine (measured: intact under Bare on one box, 2 KB on a CI runner
+  and under Node everywhere), so the suite asserts what holds everywhere — never
+  a third length, never silently nothing, tunnel keeps working — and logs the
+  number it measured instead of asserting it.
+
+</details>
+
 <details id="v0.9.0">
 <summary><b>v0.9.0</b> — swappable tunnel engine (iroh, opt-in) + UDP traffic fixed</summary>
 
