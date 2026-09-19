@@ -164,6 +164,11 @@ modules:
       - install -Dm755 holesail-gui /app/bin/holesail-gui
       - install -Dm644 holesail-gui.desktop /app/share/applications/io.holesail.gui.desktop
       - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/io.holesail.gui.png
+      # The .desktop Tauri bundles asks for Icon=holesail-gui, but the icon is
+      # installed under the app id (Flatpak convention), so the name resolved to
+      # nothing and every menu showed a generic icon. Retarget the entry rather
+      # than shipping the same image twice.
+      - sed -i 's|^Icon=holesail-gui$|Icon=io.holesail.gui|' /app/share/applications/io.holesail.gui.desktop
     sources:
       - type: file
         path: ../../src-tauri/target/release/holesail-gui
