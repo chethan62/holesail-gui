@@ -235,13 +235,13 @@ npm run gate         # the whole pre-push gate in CI's order, fail-fast:
 
 The test talks to the exact same `service-worker.js` the GUI uses, so a green
 `npm test` verifies the full backend chain (validation → holesail → hyperdht →
-real tunnel). `npm run test:iroh` runs the same 21 sections against the
+real tunnel). `npm run test:iroh` runs the same 22 sections against the
 alternate engine; the suite is engine-aware only where behaviour genuinely
 differs (the key scheme, the lookup record, the capped-burst outcome, the RSS
 bound and UDP's datagram ceiling), and every branch is asserted per engine.
 `npm run test:bare` is the leg that runs the worker under the runtime a
-PACKAGED build uses — the only local check that sees a Node-only global, and
-CI runs it too.
+PACKAGED build uses — the only local check that sees a Node-only global. CI
+runs all three legs.
 
 ## Build a release bundle
 
