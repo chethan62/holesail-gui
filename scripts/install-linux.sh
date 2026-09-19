@@ -86,6 +86,18 @@ fi
 sed "s|@APPDIR@|$APP_DIR|" "$REPO/packaging/appimage/holesail-gui.desktop" \
   > "$HOME/.local/share/applications/holesail-gui.desktop"
 
+# Register the hs:// handler now, rather than leaving it to the app's first
+# run (Tauri writes its own at runtime): someone who installs and is then sent
+# an invite link has no handler until they launch the app. The desktop
+# database refresh is not optional — a handler that nothing has indexed is
+# ignored, which looks exactly like a dead link.
+sed "s|@APPDIR@|$APP_DIR|" "$REPO/packaging/appimage/holesail-gui-handler.desktop" \
+  > "$HOME/.local/share/applications/holesail-gui-handler.desktop"
+update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+if command -v kbuildsycoca6 >/dev/null 2>&1; then
+  timeout -s KILL 60 kbuildsycoca6 >/dev/null 2>&1 || true
+fi
+
 echo "installed: $APP_DIR/$APPIMAGE_NAME"
 echo "launcher:  $APP_DIR/launch.sh"
 echo "menu:      $HOME/.local/share/applications/holesail-gui.desktop"

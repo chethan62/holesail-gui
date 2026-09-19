@@ -63,6 +63,21 @@ grep -q 'seeded' "$HOME/.config/io.holesail.gui/settings.json" || fail "settings
 [ ! -d "$OLD_STATE" ] || fail "old state dir left behind after a clean migration"
 pass "state migrated and old dir removed"
 
+HANDLER="$HOME/.local/share/applications/holesail-gui-handler.desktop"
+[ -f "$HANDLER" ] || fail "hs:// scheme handler not installed"
+grep -q 'x-scheme-handler/hs' "$HANDLER" || fail "handler does not declare x-scheme-handler/hs"
+grep -q '@APPDIR@' "$HANDLER" && fail "handler still contains the @APPDIR@ placeholder"
+grep -q "$HOME/Applications" "$HANDLER" || fail "handler does not point at the install dir"
+grep -q '%u' "$HANDLER" || fail "handler does not accept a URL argument"
+pass "hs:// scheme handler installed and templated"
+CACHE="$HOME/.local/share/applications/mimeinfo.cache"
+if command -v update-desktop-database >/dev/null 2>&1; then
+  grep -q 'x-scheme-handler/hs' "$CACHE" || fail "desktop database did not index the handler ($CACHE)"
+  pass "desktop database lists the handler"
+else
+  echo "  skip: update-desktop-database not available here"
+fi
+
 echo "2) a missing AppImage fails loudly"
 mv "$SRC_APPIMAGE" "$SRC_APPIMAGE.hidden"
 set +e

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Holesail GUI
+Comment=Open hs:// invite links in Holesail GUI
+NoDisplay=true
+Terminal=false
+# Template: replace @APPDIR@ with the absolute directory holding launch.sh.
+# launch.sh forwards its arguments, so %u reaches the app as a deep link; it
+# also carries the WebKit fallback env. MimeType is what makes hs:// work.
+Exec=@APPDIR@/launch.sh %u
+MimeType=x-scheme-handler/hs
