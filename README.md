@@ -100,12 +100,12 @@ command. The GUI adds what the terminal can't:
 
 ## Platforms
 
-| Platform    | Status                                      | Deliverables                                                 |
-| ----------- | ------------------------------------------- | ------------------------------------------------------------ |
-| **Linux**   | ✅ fully working                            | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak`              |
-| **Windows** | ✅ builds + boots its packaged worker in CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed |
-| **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — see the [Android](#android) section              |
-| **macOS**   | ✅ builds + boots its packaged worker in CI | `.dmg`/`.app` — bare runtime bundled, no Node needed         |
+| Platform    | Status                                      | Deliverables                                                        |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| **Linux**   | ✅ fully working                            | `.deb`, `.rpm`, `.AppImage`, pacman, `.flatpak`                     |
+| **Windows** | ✅ builds + boots its packaged worker in CI | `.msi`, `.exe` (NSIS) — bare runtime bundled, no Node needed        |
+| **Android** | ✅ backend works (bare runtime) — arm64 APK | debug APK — worker + runtime checked in CI, see [Android](#android) |
+| **macOS**   | ✅ builds + boots its packaged worker in CI | `.dmg`/`.app` — bare runtime bundled, no Node needed                |
 
 Every platform ships a flatpak bundle from CI alongside the desktop installers; see [Build a release bundle](#build-a-release-bundle).
 

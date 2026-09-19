@@ -414,6 +414,26 @@ jobs:
           # cross-compile + kotlin daemon compete for memory on the runner
           GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
 
+      - name: Verify the APK bundles a usable worker + runtime
+        run: |
+          # Android is the one platform whose runtime cannot be booted in CI (no
+          # emulator), so assert the two things that ARE checkable, both learned
+          # the hard way on macOS: the worker files made it into the APK, and the
+          # bundled runtime still EXPORTS the addon ABI symbols. Stripping those
+          # is fatal on Mach-O and harmless on ELF — a property to assert, never
+          # to assume (this is the same test that failed for darwin).
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          echo "apk: $APK ($(stat -c%s "$APK") bytes)"
+          unzip -l "$APK" | grep -q 'assets/bare/service-worker.js' \
+            || { echo "FAIL: worker entry not in the APK"; exit 1; }
+          unzip -l "$APK" | grep -q 'assets/bare/worker/engine/index.js' \
+            || { echo "FAIL: worker modules not in the APK"; exit 1; }
+          unzip -o -q "$APK" 'lib/arm64-v8a/libholesail_bare.so' -d /tmp/apkx
+          nm -D --defined-only /tmp/apkx/lib/arm64-v8a/libholesail_bare.so \
+            | grep -q bare_addon_load_dynamic \
+            || { echo "FAIL: the bundled runtime does not export the addon ABI"; exit 1; }
+          echo "OK: worker bundled, runtime exports the addon ABI"
+
       - uses: actions/upload-artifact@v5
         with:
           name: holesail-gui-android
