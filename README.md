@@ -207,10 +207,10 @@ npm run gate         # the whole pre-push gate in CI's order, fail-fast:
 
 The test talks to the exact same `service-worker.js` the GUI uses, so a green
 `npm test` verifies the full backend chain (validation → holesail → hyperdht →
-real tunnel). `npm run test:iroh` runs the same 22 sections against the
-alternate engine; the suite is engine-aware only where behaviour genuinely
-differs (the key scheme, the lookup record, the capped-burst outcome, the RSS
-bound and UDP's datagram ceiling), and every branch is asserted per engine.
+real tunnel). The suite is engine-agnostic now — the only axis left is the
+runtime, which genuinely changes behaviour (the UDP datagram ceiling and the RSS
+reading: see §16 and §20), and §22 (the iroh engine's key parser) went with that
+engine, so the section numbering has a gap.
 §22 (the iroh engine's key parser) went with the engine, so the numbering has
 a gap. `npm run test:bare` is the leg that runs the worker under the runtime a
 PACKAGED build uses — the only local check that sees a Node-only global. CI
@@ -409,6 +409,24 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.10.1">
+<summary><b>v0.10.1</b> — folder shares get a real password, not the well-known default</summary>
+
+- **A folder share used to be protected by `admin`/`admin`.** The bundled
+  Livefiles file server defaults to those credentials, the worker passed none,
+  and the session card displays the pair in use with a reveal toggle — so the UI
+  advertised a secret where there was a well-known default. On a **public**
+  tunnel (`hs://0000…`, whose key is public by design) that left the shared
+  folder effectively unauthenticated: the password was the only remaining
+  barrier and it was guessable. Each share now generates a 96-bit password and
+  shows it, and an explicit username/password from a caller still wins — a
+  deliberate divergence from the CLI's `--filemanager`, which has no card to
+  display the pair on.
+- The suite checks both directions: the generated password is accepted, and
+  `admin:admin` is **refused with a 401** (without that second assertion the
+  first would still pass if the generated password were ignored).
+
+</details>
 <details id="v0.10.0">
 <summary><b>v0.10.0</b> — one engine again: the iroh engine became its own project</summary>
 
@@ -712,9 +730,9 @@ structure to JSON`.
 - **Flatpak** — ships with releases again (CI job restored in v0.6.0); runtime
   behavior on real desktops is still being validated
 - **Bandwidth caps: per-tunnel, or one total for all of them** — the Speed-limit (KB/s) field caps a single tunnel's combined up+down; the Sessions header's **Total speed limit** is a shared budget every tunnel is charged against. There's no per-direction control yet (one combined figure per tunnel, and one total)
-- **A cap can't slow a sender it doesn't control (holesail engine)** — that engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap). The iroh engine paces the producer through QUIC flow control instead, so the same burst never accumulates — measured +1 MiB RSS, no error, tunnel stays up
+- **A cap can't slow a sender it doesn't control** — the engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
 - **Tunnel engine: holesail only** — the iroh engine became its own project (github.com/chethan62/iroh-tunnel) because `@number0/iroh`'s NAPI-RS prebuilds cannot load under the Bare runtime this app packages, and shipping it would have meant bundling Node (+~22 MB per installer) for an engine ~7x slower at bulk transfer. Its UDP datagram work, reachability probe and tests went with it
-- **File manager sharing is basic** — single root path, one role/username/password pair per tunnel; no multi-user ACLs
+- **File manager sharing is basic** — single root path, one tunnel = one `admin` username with a freshly generated password (both shown in the session card, with a reveal toggle); no multi-user ACLs
 - **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
 

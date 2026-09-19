@@ -48,4 +48,12 @@ const path = (() => {
   }
 })()
 
-module.exports = { process, Buffer, setImmediate, net, fs, path }
+const crypto = (() => {
+  try {
+    return require('bare-crypto')
+  } catch {
+    return require('crypto')
+  }
+})()
+
+module.exports = { process, Buffer, setImmediate, net, fs, path, crypto }

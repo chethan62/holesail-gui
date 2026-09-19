@@ -4,7 +4,7 @@
  * instances.
  */
 
-const { fs, path } = require('./runtime.js')
+const { fs, path, crypto } = require('./runtime.js')
 const { sessions, nextSessionId } = require('./state.js')
 const { sendEvent } = require('./transport.js')
 const {
@@ -26,6 +26,14 @@ const {
 
 const { Engine: Holesail } = require('./engine/index.js')
 const Livefiles = require('livefiles')
+
+// A fresh Basic-Auth password for each folder share. Livefiles' own default is
+// the well-known admin/admin, and the UI shows whatever pair is in use — so the
+// default would advertise protection that isn't there. 96 bits of CSPRNG output
+// as base64 with the URL-unsafe characters dropped (base64url isn't guaranteed
+// under the bare runtime). Callers that pass an explicit password still win.
+const randomPassword = () =>
+  crypto.randomBytes(12).toString('base64').replace(/[+/=]/g, '').slice(0, 16)
 
 function recordFromHs(hs, id) {
   const info = hs.info
@@ -117,6 +125,14 @@ async function startFilemanager(params) {
   // file server + a holesail tunnel in front, both on the same local
   // port. Pure JS deps (bare-fs/bare-http1) so it runs under the bare
   // runtime too.
+  //
+  // One deliberate divergence from the CLI: Livefiles' own default
+  // credentials are admin/admin, and the UI displays whatever pair is in use
+  // (with a reveal toggle) — so leaving the default would tell the user a
+  // secret is protecting the folder when the password is well known. On a
+  // PUBLIC share (hs://0000..., where the key is public by design) that left
+  // the folder effectively unauthenticated. Generate one per share instead;
+  // an explicit username/password from the caller still wins.
   const port = Number(params.port) > 0 ? Number(params.port) : 5409
   const host = params.host || '127.0.0.1'
   const limit = normalizeLimit(params.limit)
@@ -124,7 +140,7 @@ async function startFilemanager(params) {
     path: resolved,
     role: params.role,
     username: params.username,
-    password: params.password,
+    password: params.password || randomPassword(),
     host,
     port
   })

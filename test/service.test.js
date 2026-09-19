@@ -216,6 +216,13 @@ async function main() {
     )
     assert(fm.type === 'filemanager', 'filemanager session started')
     assert(fm.dir === fmDir, 'session records the shared directory')
+    // Livefiles' own default is admin/admin, and the UI displays whatever pair
+    // is in use as if it protects the share — on a public tunnel the key is
+    // public by design, so the password is the only barrier there.
+    assert(
+      fm.fsPassword && fm.fsPassword !== 'admin' && fm.fsPassword.length >= 12,
+      `folder share gets a random password (got: ${fm.fsPassword})`
+    )
     const fmClient = await rpc('client:connect', { key: fm.url }, 90000)
     assert(
       fmClient.type === 'client',
@@ -228,7 +235,7 @@ async function main() {
             host: '127.0.0.1',
             port: fmClient.port,
             path: '/',
-            auth: 'admin:admin'
+            auth: `${fm.fsUsername || 'admin'}:${fm.fsPassword}`
           },
           (res) => {
             let data = ''
@@ -242,6 +249,28 @@ async function main() {
     assert(
       page.body.includes('hello.txt'),
       'shared file is listed in the browser'
+    )
+    // ...and the well-known default is actively REFUSED. Without this the check
+    // above would still pass if the generated password were ignored.
+    const defaultAuth = await new Promise((resolve, reject) => {
+      http
+        .get(
+          {
+            host: '127.0.0.1',
+            port: fmClient.port,
+            path: '/',
+            auth: 'admin:admin'
+          },
+          (res) => {
+            res.resume()
+            resolve(res.statusCode)
+          }
+        )
+        .on('error', reject)
+    })
+    assert(
+      defaultAuth === 401,
+      `the default admin/admin is not accepted (got ${defaultAuth})`
     )
     await rpc('session:stop', { id: fmClient.id })
     await rpc('session:stop', { id: fm.id })
