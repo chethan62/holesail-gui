@@ -45,11 +45,10 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--bare') opt.bare = true
 }
 
-// Pinned; contains the prebuilt bin/bare. 1.31.0 is BROKEN on darwin-arm64:
-// the runtime starts and runs plain JS, but EVERY native addon (bare-crypto,
-// sodium-native, udx-native, hyperdht, holesail) SIGSEGVs when loaded, so the
-// worker dies on startup and a macOS install never tunnels. 1.32.0 and 1.33.4
-// both load the same addons on the same runner (probed in CI).
+// Pinned; contains the prebuilt bin/bare. 1.33.4 is current and verified on
+// Linux (full bare suite) plus all CI platforms. There is nothing wrong with
+// 1.31.0 either — an earlier bump to fix macOS measured the wrong variable (see
+// the Mach-O strip note below); this is simply the version we run.
 const BARE_RUNTIME_VERSION = '1.33.4'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -148,19 +147,37 @@ if (opt.bare) {
   execSync(`tar -xzf ${tgz}`, { cwd: out })
   cpSync(path.join(out, 'package', 'bin', binName), path.join(out, binName))
   chmodSync(path.join(out, binName), 0o755)
-  // the runtime ships with debug info (~80MB); strip it best-effort
-  // (strip/llvm-strip may not understand a foreign-platform PE/Mach-O
-  // binary when cross-prepping, e.g. --target win32-x64 on a Linux CI
-  // runner — that's fine, the failure is silently swallowed below).
-  try {
-    execSync(`llvm-strip --strip-all ${path.join(out, binName)}`, {
-      stdio: 'ignore'
-    })
-  } catch {
+  // Size win from dropping symbols — but ONLY for formats where that is safe:
+  // ELF keeps its .dynsym and PE keeps its export directory, so Linux/Windows
+  // lose ~18MB of dead symbol table and still load addons.
+  //
+  // Never do this to a Mach-O. `--strip-all` deletes the global symbol table,
+  // which is exactly what a .bare addon binds against when it loads
+  // (bare_addon_load_dynamic, bare_addon_get_dynamic, bare_register_module_v0).
+  // A stripped darwin runtime starts fine and runs plain JS, then SIGSEGVs the
+  // instant it loads any addon — so the worker died on startup and a macOS
+  // install could never tunnel. Measured on the darwin-arm64 binary:
+  //   raw 71.07MB: 2/2 ABI symbols, 117984 total
+  //   --strip-all 53.19MB: 0/2 ABI symbols, 4494 total
+  //   --strip-debug 70.59MB: 2/2 ABI symbols, 117984 total
+  // Since --strip-debug saves ~0.5MB, the answer for darwin is no strip at all.
+  // The mac CI job's "Verify the bundled runtime boots the worker" step is what
+  // catches this: it boots the real worker under the real bundled runtime.
+  //
+  // Also: strip/llvm-strip may not understand a foreign-platform PE/Mach-O when
+  // cross-prepping (e.g. --target win32-x64 on a Linux runner) — that failure is
+  // swallowed below on purpose.
+  if (!opt.target.startsWith('darwin-')) {
     try {
-      execSync(`strip ${path.join(out, binName)}`, { stdio: 'ignore' })
+      execSync(`llvm-strip --strip-all ${path.join(out, binName)}`, {
+        stdio: 'ignore'
+      })
     } catch {
-      console.log('warning: could not strip bare runtime binary')
+      try {
+        execSync(`strip ${path.join(out, binName)}`, { stdio: 'ignore' })
+      } catch {
+        console.log('warning: could not strip bare runtime binary')
+      }
     }
   }
   rmSync(path.join(out, 'package'), { recursive: true, force: true })
