@@ -31,7 +31,10 @@ if [ "$BUILD" = 1 ]; then
   NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 npx tauri build --bundles appimage
 fi
 
-APPIMAGE="$(ls -1t "$BUNDLE_DIR"/holesail-gui_*.AppImage 2>/dev/null | head -1)"
+# `|| true` matters: under `set -euo pipefail` a failing command substitution
+# exits the script here, so the "no AppImage" guard below would never run and
+# `--no-build` with no build would fail silently instead of explaining itself.
+APPIMAGE="$(ls -1t "$BUNDLE_DIR"/holesail-gui_*.AppImage 2>/dev/null | head -1 || true)"
 [ -n "$APPIMAGE" ] || {
   echo "error: no AppImage in $BUNDLE_DIR — run without --no-build first" >&2
   exit 1

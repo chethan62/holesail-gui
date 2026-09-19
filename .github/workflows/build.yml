@@ -191,6 +191,21 @@ jobs:
             echo "no AppImage built (bundler flake) — deb payload checked, AppImage skipped"
           fi
 
+      - name: Install smoke (runs the REAL installer into a throwaway HOME)
+        run: |
+          # install-linux.sh is the first thing a user runs and nothing ever
+          # exercised it. It carries real logic — newest-AppImage pick, a busy
+          # target guard, and a state migration that merges a user's event log
+          # — plus a silent-failure trap: under `set -euo pipefail` a failing
+          # command substitution exits before the "no AppImage" guard can
+          # explain itself. The smoke runs the script as-is and asserts both
+          # the install and the failure path.
+          if ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage >/dev/null 2>&1; then
+            bash scripts/ci-install-smoke.sh
+          else
+            echo "no AppImage built (bundler flake) — installer smoke skipped"
+          fi
+
       - uses: actions/upload-artifact@v5
         with:
           name: holesail-gui-linux
