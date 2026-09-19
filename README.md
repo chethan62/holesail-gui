@@ -210,11 +210,9 @@ The test talks to the exact same `service-worker.js` the GUI uses, so a green
 real tunnel). The suite is engine-agnostic now — the only axis left is the
 runtime, which genuinely changes behaviour (the UDP datagram ceiling and the RSS
 reading: see §16 and §20), and §22 (the iroh engine's key parser) went with that
-engine, so the section numbering has a gap.
-§22 (the iroh engine's key parser) went with the engine, so the numbering has
-a gap. `npm run test:bare` is the leg that runs the worker under the runtime a
-PACKAGED build uses — the only local check that sees a Node-only global. CI
-runs all three legs.
+engine, so the section numbering has a gap. `npm run test:bare` is the leg that
+runs the worker under the runtime a PACKAGED build uses — the only local check
+that sees a Node-only global. CI runs both legs.
 
 ## Build a release bundle
 
