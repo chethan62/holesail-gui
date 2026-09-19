@@ -37,4 +37,7 @@ sed "s|@APPDIR@|$HOME/Applications|" \
 point into an unwritable `$HOME`; on normal desktops it is harmless (unset
 `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` / `XDG_DATA_HOME` to use system defaults).
 
-The worker is a `node` process, so end-user machines need Node.js 18+ on PATH.
+The worker runs under the bundled **Bare** runtime (`bare`, mapped in
+`src-tauri/tauri.linux.conf.json`), so end-user machines need nothing extra —
+no Node.js on PATH. CI boots the AppImage's own worker under that runtime before
+the artifact is published, so a payload that cannot start fails the build.
