@@ -83,6 +83,7 @@
 
     <nav class="tabs">
       <button class="tab active" data-tab="share">Share a port</button>
+      <button class="tab" data-tab="folder">Share a folder</button>
       <button class="tab" data-tab="connect">Connect</button>
       <button class="tab" data-tab="saved">Saved</button>
     </nav>
@@ -92,8 +93,9 @@
         <h2>Expose a local application</h2>
         <p class="hint">
           Share any locally running app on a specific port — no port forwarding
-          or static IP needed. Others reach it with the generated connection
-          string.
+          or static IP needed. Others reach it with the generated link.
+          <strong>Looking to send a folder instead?</strong> Use the
+          <strong>Share a folder</strong> tab — it needs no port.
         </p>
         <form id="share-form" class="grid-form">
           <label>
@@ -136,7 +138,7 @@
           </label>
           <label class="check">
             <input id="share-secure" type="checkbox" checked />
-            <span class="check-text">Private mode (secure)</span>
+            <span class="check-text">Private link (encrypted)</span>
           </label>
           <div class="full warn-banner" id="share-public-warn" hidden>
             ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
@@ -175,9 +177,15 @@
             </button>
           </div>
         </form>
+      </section>
 
+      <section id="panel-folder" class="panel">
+        <h2>Share a folder</h2>
+        <p class="hint">
+          Drop a folder from your file manager (or type its path), then send the
+          link to whoever needs it — no port forwarding or static IP needed.
+        </p>
         <form id="filemanager-form" class="grid-form fm-form">
-          <h3 class="full">Share a folder</h3>
           <p class="hint full" id="fm-drop-hint">
             Drop a folder here from your file manager, or type a path below.
           </p>
@@ -192,7 +200,7 @@
           </label>
           <label class="check">
             <input id="fm-secure" type="checkbox" checked />
-            <span class="check-text">Private mode (secure)</span>
+            <span class="check-text">Private link (encrypted)</span>
           </label>
           <div class="full warn-banner" id="fm-public-warn" hidden>
             ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
@@ -246,9 +254,10 @@
       <section id="panel-connect" class="panel">
         <h2>Connect to a tunnel</h2>
         <p class="hint">
-          Paste a connection string (<code>hs://s000…</code> private or
-          <code>hs://0000…</code>
-          public). The secure flag is auto-detected from the prefix.
+          Paste the link you were sent — it starts with <code>hs://</code>.
+          Private links (<code>hs://s000…</code>) are encrypted and public ones
+          (<code>hs://0000…</code>) are not; which one you have is detected
+          automatically.
         </p>
         <form id="connect-form" class="grid-form">
           <label class="full">
@@ -425,8 +434,9 @@
       <div class="overlay-card">
         <h2>Node.js required</h2>
         <p id="node-required-msg">
-          This app needs Node.js (v18+) installed to run tunnels. Install it,
-          then retry — or restart the app (that also refreshes the PATH).
+          This build runs its tunnel engine with the bundled runtime, so this
+          only happens on a source install without it. Install a Node.js
+          runtime, then retry — or restart the app (that also refreshes PATH).
         </p>
         <div class="overlay-actions">
           <button type="button" id="node-install" class="btn primary">

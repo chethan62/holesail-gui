@@ -136,16 +136,34 @@ def main():
     def checkboxes():
         return [t for t in items() if t[1] == "check box"]
 
+    def click_named(name):
+        # Tabs are real buttons and switching tabs is now part of the smoke:
+        # the folder form lives on its own tab, so it is NOT in the initial tree.
+        for node, role, nm in items():
+            if role in ("push button", "button") and nm == name:
+                try:
+                    node.queryAction().doAction(0)
+                    return True
+                except Exception:
+                    return False
+        return False
+
     ok = True
     ok &= wait_for("nav tabs (Share, Connect)", lambda: has_text("Share") and has_text("Connect"), 30)
     # visible text inputs: share port/host (+name, custom key) + connect key/port/host
     ok &= wait_for("form entries", lambda: len(entries()) >= 4, 30)
     ok &= wait_for("controls (tunnel type, secure, UDP)", lambda: has_text("Tunnel") or len(checkboxes()) >= 2, 30)
     ok &= wait_for("share action button", lambda: has_text("Start sharing"), 30)
-    # filemanager "Share a folder" form: h3 heading + button surface by
-    # name; the folder-path input pushes the editable-entry count up
-    ok &= wait_for("filemanager form (Share a folder)", lambda: has_text("Share a folder") and has_text("Share folder"), 30)
-    ok &= wait_for("form entries incl. folder path", lambda: len(entries()) >= 5, 30)
+    # filemanager "Share a folder" has its OWN TAB: the port form and the folder
+    # form are deliberately not on one screen (a cold user only ever saw the port
+    # form). Click the tab, then assert its content. A no-op click makes the
+    # following wait time out, which is an honest FAIL rather than a silent pass.
+    ok &= wait_for("folder tab", lambda: has_text("Share a folder"), 30)
+    clicked = click_named("Share a folder")
+    print("OK: clicked the Share a folder tab" if clicked else "FAIL: could not click the Share a folder tab")
+    ok &= clicked
+    ok &= wait_for("filemanager form (Share a folder)", lambda: has_text("Share folder"), 30)
+    ok &= wait_for("form entries incl. folder path", lambda: len(entries()) >= 2, 30)
     # event-log toolbar (persistent log + copy/clear) — the buttons are
     # real interactive nodes, so they must surface by name
     ok &= wait_for("log toolbar (Copy log)", lambda: has_text("Copy log"), 30)

@@ -226,11 +226,19 @@ function renderSession(container, s) {
     })
     urlRow.append(eye)
   }
-  const copy = el('button', 'copy', '', 'Copy')
-  copy.title = 'Copy connection string'
+  const copy = el('button', 'copy', '', 'Copy invite link')
+  copy.title = 'Copy the invite link — send it to whoever needs access'
   copy.addEventListener('click', () => copyText(urlText))
   urlRow.append(copy)
   urlCol.append(urlRow)
+  urlCol.append(
+    el(
+      'p',
+      'hint',
+      '',
+      'Send this link to whoever needs access, then stop the tunnel here when done.'
+    )
+  )
 
   // filemanager sessions: show the shared directory + auth credentials
   // (Livefiles defaults to Basic auth admin/admin — the owner needs both
