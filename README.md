@@ -436,6 +436,28 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.9.2">
+<summary><b>v0.9.2</b> — macOS downloads install now: the bundle is signed</summary>
+
+- **macOS builds are ad-hoc signed, so a downloaded `.dmg` opens.** v0.9.1 fixed
+  the macOS worker dying at startup, but the `.app` inside it carried no
+  signature at all, and Apple Silicon refuses unsigned apps from the internet:
+  macOS calls them "damaged and can't be opened", which is not a prompt you can
+  click past. The macOS build now signs ad-hoc
+  (`APPLE_SIGNING_IDENTITY=-`), so first launch shows the
+  unidentified-developer warning you CAN allow under System Settings → Privacy &
+  Security. **If you downloaded v0.9.1's `.dmg`, use this one.** Not notarized —
+  that needs a paid Apple Developer account, so the prompt stays for now.
+- **CI asserts the signature rather than trusting the build to have made one** —
+  the bundle must carry `_CodeSignature/CodeResources`, that file must seal
+  `Resources/bare` (an unsigned runtime inside a signed app is the exact failure
+  that made the earlier macOS builds dead on arrival), `codesign --verify --deep
+--strict` must pass, and every nested `.bare` addon must carry a signature of
+  its own (33/33 at the time of writing — an unsigned one is something arm64
+  refuses to load).
+
+</details>
+
 <details id="v0.9.1">
 <summary><b>v0.9.1</b> — macOS builds actually worked on: they were dying at startup</summary>
 
