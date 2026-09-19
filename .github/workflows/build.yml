@@ -301,13 +301,26 @@ jobs:
           printf 'console.log("hello from bare")\n' > /tmp/hello.js
           ./bare /tmp/hello.js; echo "hello exit=$?"
           RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
-          # Which native module is it? The runtime and plain JS are fine above,
-          # so require the worker's native load path one module at a time and
-          # print each exit code. TEMPORARY probe: trim it back to the ping once
-          # the culprit is named and fixed.
+          # The probes below are EXPECTED to crash, and GitHub runs `run:` blocks
+          # with `bash -e`: without this the step dies at the first segfault and
+          # we learn only one module name per cycle (which is exactly what
+          # happened — bare-crypto is the first probe and it crashed the step).
+          set +e
           for m in bare-crypto sodium-native udx-native hyperdht holesail; do
             printf "require('%s'); console.log('OK: %s')\n" "$m" "$m" > _probe.js
             ./"$RT" _probe.js; echo "probe $m exit=$?"
+          done
+          # Is it the pinned runtime (1.31.0) loading a current addon, or the
+          # addon itself? Load bare-crypto with NEWER runtime binaries, same
+          # node_modules graph, in one cycle. TEMPORARY: trim once fixed.
+          for v in 1.32.0 1.33.4; do
+            npm pack "bare-runtime-darwin-arm64@$v" --silent >/dev/null 2>&1 || { echo "pack $v failed"; continue; }
+            mkdir -p "rt-$v" && tar -xzf "bare-runtime-darwin-arm64-$v.tgz" -C "rt-$v" 2>/dev/null
+            # the tarball's bin/bare has no exec bit (prepare-resources chmods
+            # 0755 after extracting for the same reason)
+            chmod +x "./rt-$v/package/bin/bare" 2>/dev/null
+            printf "require('bare-crypto'); console.log('OK bare-crypto on runtime %s')\n" "$v" > _probe.js
+            "./rt-$v/package/bin/bare" _probe.js; echo "runtime $v exit=$?"
           done
           rm -f _probe.js
           # Same ping as Windows/Linux, with stderr kept so a JS-level failure
