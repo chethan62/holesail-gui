@@ -115,8 +115,11 @@ and the Linux, Windows and macOS jobs also **boot the worker they packaged**
 under the runtime they bundled — that check is what found the macOS bundles
 dying at startup, so it stays strict. None of them _launch the app_ on real
 hardware: the GUI has only been exercised on Linux here. macOS builds are
-unsigned and un-notarized, so Gatekeeper wants right-click → Open on first
-launch. The flatpak job builds the GNOME-platform bundle in CI too (artifacts on
+ad-hoc signed but **not notarized**, so the first launch is a Gatekeeper prompt
+you allow under System Settings → Privacy & Security (the old
+right-click → Open bypass was removed in Sequoia). Note the signature is not
+optional on Apple Silicon: an unsigned `.app` is reported as *damaged* with no
+way to allow it. The flatpak job builds the GNOME-platform bundle in CI too (artifacts on
 every push; verified release flow ships it with releases).
 
 ## Architecture
