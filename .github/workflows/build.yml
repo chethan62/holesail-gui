@@ -291,47 +291,32 @@ jobs:
           # the worker must boot under it (macOS has no `timeout`; the worker
           # exits when its stdin closes).
           #
-          # This step FAILED the first time it ran (exit 139 = SIGSEGV) and the
-          # whole point is that macOS was never checked at all before, so the
-          # three stages below exist to say WHICH layer dies: the runtime, a
-          # plain script, or our worker + its .bare addons.
+          # This check earned its keep before it ever passed: macOS had only ever
+          # been "does the dmg build", and its first runs found the pinned bare
+          # 1.31.0 unable to load ANY native addon on darwin-arm64 (every
+          # `require` of a .bare addon = SIGSEGV, so the worker died on startup
+          # and no mac user could tunnel). Keep it, and keep it strict.
           cd dist-resources
-          echo "arch: $(uname -m), runtime: $(file -b ./bare 2>/dev/null || echo 'file unavailable')"
-          ./bare --version; echo "bare --version exit=$?"
+          echo "arch: $(uname -m) — $(./bare --version 2>&1)"
+          echo "runtime: $(file -b ./bare 2>/dev/null || echo 'file unavailable')"
           printf 'console.log("hello from bare")\n' > /tmp/hello.js
-          ./bare /tmp/hello.js; echo "hello exit=$?"
+          ./bare /tmp/hello.js
           RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
-          # The probes below are EXPECTED to crash, and GitHub runs `run:` blocks
-          # with `bash -e`: without this the step dies at the first segfault and
-          # we learn only one module name per cycle (which is exactly what
-          # happened — bare-crypto is the first probe and it crashed the step).
-          set +e
-          for m in bare-crypto sodium-native udx-native hyperdht holesail; do
-            printf "require('%s'); console.log('OK: %s')\n" "$m" "$m" > _probe.js
-            ./"$RT" _probe.js; echo "probe $m exit=$?"
-          done
-          # Is it the pinned runtime (1.31.0) loading a current addon, or the
-          # addon itself? Load bare-crypto with NEWER runtime binaries, same
-          # node_modules graph, in one cycle. TEMPORARY: trim once fixed.
-          for v in 1.32.0 1.33.4; do
-            npm pack "bare-runtime-darwin-arm64@$v" --silent >/dev/null 2>&1 || { echo "pack $v failed"; continue; }
-            mkdir -p "rt-$v" && tar -xzf "bare-runtime-darwin-arm64-$v.tgz" -C "rt-$v" 2>/dev/null
-            # the tarball's bin/bare has no exec bit (prepare-resources chmods
-            # 0755 after extracting for the same reason)
-            chmod +x "./rt-$v/package/bin/bare" 2>/dev/null
-            printf "require('bare-crypto'); console.log('OK bare-crypto on runtime %s')\n" "$v" > _probe.js
-            "./rt-$v/package/bin/bare" _probe.js; echo "runtime $v exit=$?"
-          done
-          rm -f _probe.js
-          # Same ping as Windows/Linux, with stderr kept so a JS-level failure
-          # cannot hide behind the pipe, and any crash report bare wrote.
           printf '{"id":1,"method":"ping","params":{}}\n' \
             | ./"$RT" service-worker.js > /tmp/ping.json 2>/tmp/worker-err.txt
-          echo "worker exit=$?"
-          grep -q '"result":"pong"' /tmp/ping.json
-          echo "--- worker stderr ---"; tail -30 /tmp/worker-err.txt
-          echo "--- crash reports ---"
-          ls -lt ./*.crash "$TMPDIR"/*crash* /tmp/*crash* 2>/dev/null | head -5
+          status=$?
+          echo "worker exit=$status"
+          # Explicit, not `set -e`: the ping IS the assertion. An earlier
+          # revision ran the diagnostic probes under `set +e` and then let a
+          # failing `grep -q` fall through, so it printed OK over a worker that
+          # had segfaulted — a check that can only report success is worse than
+          # no check, which is why both streams are dumped and the exit is 1.
+          if [ "$status" -ne 0 ] || ! grep -q '"result":"pong"' /tmp/ping.json; then
+            echo "FAIL: the bundled runtime did not boot the worker"
+            echo "--- stdout ---"; cat /tmp/ping.json
+            echo "--- stderr ---"; tail -30 /tmp/worker-err.txt
+            exit 1
+          fi
           echo "OK: $RT booted the worker"
 
       - uses: actions/upload-artifact@v5

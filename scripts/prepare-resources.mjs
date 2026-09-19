@@ -45,7 +45,12 @@ for (let i = 0; i < args.length; i++) {
   else if (args[i] === '--bare') opt.bare = true
 }
 
-const BARE_RUNTIME_VERSION = '1.31.0' // pinned; contains the prebuilt bin/bare
+// Pinned; contains the prebuilt bin/bare. 1.31.0 is BROKEN on darwin-arm64:
+// the runtime starts and runs plain JS, but EVERY native addon (bare-crypto,
+// sodium-native, udx-native, hyperdht, holesail) SIGSEGVs when loaded, so the
+// worker dies on startup and a macOS install never tunnels. 1.32.0 and 1.33.4
+// both load the same addons on the same runner (probed in CI).
+const BARE_RUNTIME_VERSION = '1.33.4'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const out = path.join(root, opt.out)
