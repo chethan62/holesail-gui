@@ -439,6 +439,30 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.9.4">
+<summary><b>v0.9.4</b> — a rejected key is no longer written to the log</summary>
+
+- **The iroh engine echoed part of a rejected key into an error message.** A bad
+  key was reported as `Invalid key format: <first 24 characters>…`, and the
+  renderer writes worker errors to the persistent event log — the one with a
+  **Copy log** button, meant to be pasted into bug reports. So a truncated or
+  mistyped key's first 24 characters went to disk and into the report. The
+  message now reports the input's _length_ instead (same diagnostic value — a
+  short paste is the actual cause) and carries no key material. The
+  `Invalid key format` prefix stays: the renderer maps it to a peer status.
+- **Two test suites had never run in CI.** The iroh engine is opt-in via
+  `TUNNEL_ENGINE`, and that string appeared nowhere in the build workflow — so
+  every iroh assertion, including the new one above, ran only on a developer's
+  machine. The 28 Rust tests had the same gap: they were a hand-run pre-release
+  step. Both are CI steps now, and both pass there.
+- **Docs corrected**: the macOS note called the bundles unsigned and told you to
+  right-click → Open. They have been ad-hoc signed since v0.9.2 (CI asserts the
+  signature seals the bundled runtime), and right-click → Open stopped working in
+  Sequoia — first launch is allowed under System Settings → Privacy & Security.
+  An unsigned `.app` cannot run on Apple Silicon at all. The suite is also 22
+  sections, not 21.
+
+</details>
 <details id="v0.9.3">
 <summary><b>v0.9.3</b> — flatpak installs work: their worker could not start</summary>
 
