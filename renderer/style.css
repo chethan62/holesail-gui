@@ -91,8 +91,9 @@ body {
 }
 .logo {
   /* The app icon itself, copied in by prepare-resources.mjs, so the header
-     shows the same mark as the launcher and taskbar. `pixelated` keeps the
-     mark's hard edges crisp at 22px instead of smearing them. */
+     shows the same mark as the launcher and taskbar. No image-rendering
+     override: the icon is vector-derived and anti-aliased, so `pixelated`
+     would blockify it. */
   width: 22px;
   height: 22px;
   flex: none;
