@@ -91,13 +91,12 @@ body {
 }
 .logo {
   /* The app icon itself, copied in by prepare-resources.mjs, so the header
-     shows the same mark as the launcher and taskbar. No image-rendering
-     override: the icon is vector-derived and anti-aliased, so `pixelated`
-     would blockify it. */
-  width: 22px;
-  height: 22px;
+     shows the same mark as the launcher and taskbar. 28px, not 22px: at 22px
+     the thin brown mast, boom and keel of the artwork dissolve into the dark
+     header. No image-rendering override — `pixelated` would alias the icon. */
+  width: 28px;
+  height: 28px;
   flex: none;
-  image-rendering: pixelated;
 }
 .title {
   font-size: 18px;
