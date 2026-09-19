@@ -436,6 +436,26 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.9.3">
+<summary><b>v0.9.3</b> — flatpak installs work: their worker could not start</summary>
+
+- **The flatpak bundle shipped a worker that died at startup.** The manifest
+  installs the worker from a hand-written file list, and that list said
+  `worker/*.js` — a flat glob. When the engine seam added `worker/engine/`, the
+  directory stopped being installed, so every flatpak build since v0.9.0 loaded
+  `service-worker.js`, failed to find `./engine/index.js` and exited: a flatpak
+  user got a dead worker, "connecting…" and no tunnels. Every other packaging
+  path copies the whole directory, which is why flatpak alone was affected — and
+  why nothing noticed for four releases. The manifest now copies recursively (a
+  future subdirectory cannot drift), and the flatpak job boots the worker it
+  installed before uploading the artifact.
+- **Android now gets a real check too** — CI asserts the APK contains the worker
+  entry and modules, and that the bundled runtime exports the addon ABI symbols
+  it binds against. That is the same test that caught the macOS breakage, run on
+  the one platform CI cannot boot.
+
+</details>
+
 <details id="v0.9.2">
 <summary><b>v0.9.2</b> — macOS downloads install now: the bundle is signed</summary>
 
