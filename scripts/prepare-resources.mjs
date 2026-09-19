@@ -24,6 +24,7 @@ import { execSync } from 'node:child_process'
 import {
   chmodSync,
   cpSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   rmSync,
@@ -91,6 +92,22 @@ rmSync(path.join(out, 'node_modules', 'prettier'), {
   force: true
 })
 rmSync(path.join(out, 'node_modules', '.bin', 'prettier'), { force: true })
+
+// livefiles is GPLv3 but publishes no licence file, so without this the bundle
+// would redistribute GPL code with no copy of its licence (GPLv3 §4 requires
+// giving recipients one). Drop the vendored text next to the package: it then
+// rides the existing node_modules resource mapping into every installer, and
+// holesail already ships its own AGPL text so the two copyleft deps are covered.
+const livefilesDir = path.join(out, 'node_modules', 'livefiles')
+if (existsSync(livefilesDir)) {
+  cpSync(
+    path.join(root, 'packaging', 'licenses', 'GPL-3.0.txt'),
+    path.join(livefilesDir, 'LICENSE')
+  )
+  if (!existsSync(path.join(livefilesDir, 'LICENSE'))) {
+    throw new Error('livefiles LICENSE did not land — refusing to build')
+  }
+}
 
 // Native addons ship prebuilds for every platform (prebuildify convention).
 // Tauri bundles are built per-platform, so keep only the current one.

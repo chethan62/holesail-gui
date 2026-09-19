@@ -2,7 +2,9 @@
  *
  * Keep the method names in sync with the Rust `rpc` command's ALLOWED list
  * (src-tauri/src/rpc.rs). `test:throw` is test-only and NOT in the Rust
- * allowlist — it must stay out of production reach.
+ * allowlist — it must stay out of production reach. Suite §23 parses both
+ * lists and asserts they agree in both directions, so this is checked rather
+ * than trusted (the exception above is the only one it allows).
  */
 
 const { setImmediate } = require('./runtime.js')

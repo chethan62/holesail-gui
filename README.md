@@ -439,6 +439,30 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.9.5">
+<summary><b>v0.9.5</b> — the GPLv3 dependency's licence now ships; the two method lists are checked</summary>
+
+- **Compliance: an undisclosed GPLv3 dependency shipped without its licence
+  text.** `livefiles` (the file server behind folder sharing) is GPLv3 and
+  publishes no licence file, so every installer redistributed GPL code with no
+  copy of the licence — which GPLv3 §4 requires you to pass on. The build now
+  writes a vendored copy (`packaging/licenses/GPL-3.0.txt`) in beside the bundled
+  package, so it rides the existing `node_modules` resource mapping into every
+  installer (deb/rpm/AppImage, msi/exe, dmg, APK, flatpak) with no new packaging
+  path to keep in sync, and refuses to build if that copy does not land. The
+  README's licence note covered `holesail` alone, so the second copyleft
+  dependency was undisclosed too; both are now listed with what they require.
+- **The worker's dispatch table and the Rust allowlist are now checked against
+  each other.** They are maintained by hand in two languages, and a drift is
+  silent in both directions: a method missing from Rust's `ALLOWED` list is
+  unreachable from the UI, and one missing from `dispatch.js` dies as an unknown
+  method after a full round trip. Suite §23 parses both and asserts they agree in
+  both directions, with `test:throw` as the single documented exception — a test
+  hook the suite drives directly over stdio, which must stay out of production
+  reach. The guard proved itself immediately by catching that assumption, and its
+  failure direction is verified by deleting an entry from either list.
+
+</details>
 <details id="v0.9.4">
 <summary><b>v0.9.4</b> — a rejected key is no longer written to the log</summary>
 
@@ -760,6 +784,10 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 - [holesail](https://github.com/holesail/holesail) — the peer-to-peer
   TCP/UDP tunnel engine this app is a GUI for (**AGPL-3.0** — see the license
   note below).
+- [livefiles](https://www.npmjs.com/package/livefiles) — the HTTP file server
+  behind folder sharing (**GPLv3** — see the license note below). It publishes
+  no licence file, so the build drops a copy of the GPLv3 text in beside the
+  bundled package (`packaging/licenses/GPL-3.0.txt`).
 - [Bare](https://github.com/holepunchto/bare) — holepunch's JavaScript
   runtime; powers the Android and embedded-Linux backends so end users don't
   need Node.js (Apache-2.0).
@@ -775,9 +803,20 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 
 [MIT](LICENSE) © 2026 chethan62 — for this project's own code.
 
-**Note:** the bundled `holesail` engine (the service worker) is
-[AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that
-embeds AGPL code carries source-availability obligations for the combined
-work; the GUI's own source is here, so this is effectively satisfied, but if
-you intend commercial redistribution, review AGPL implications or contact the
-upstream maintainers.
+**Note:** two bundled runtime dependencies are copyleft, and both now ship their
+licence text inside every installer:
+
+- `holesail` — the tunnel engine behind the service worker —
+  [AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that
+  embeds AGPL code carries source-availability obligations for the combined
+  work; the GUI's own source is here, so this is effectively satisfied, but if
+  you intend commercial redistribution, review AGPL implications or contact the
+  upstream maintainers.
+- `livefiles` — the HTTP file server behind folder sharing — GPLv3. The package
+  publishes no licence file, so the build writes a copy of the text from
+  [`packaging/licenses/GPL-3.0.txt`](packaging/licenses/GPL-3.0.txt) into the
+  bundled package, which satisfies GPLv3 §4's requirement to pass the licence
+  on. Its corresponding source is the upstream npm package.
+
+Every other bundled package is permissive (MIT/Apache-2.0) and ships its own
+`LICENSE` inside the bundled `node_modules`; this project's own code stays MIT.

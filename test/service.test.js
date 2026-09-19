@@ -1184,6 +1184,51 @@ async function main() {
       console.log('  ✓ rejected with a message that carries no key material')
     }
 
+    // 23) the worker's dispatch table and the Rust allowlist must agree. They
+    // are maintained by hand in two languages, and a drift is SILENT in both
+    // directions: a method missing from ALLOWED is unreachable from the UI
+    // ("Method not allowed"), one missing from dispatch.js dies as an unknown
+    // method after the whole round trip. Static check, so it needs no tunnel.
+    console.log('\n23) the two hand-maintained method lists still agree')
+    {
+      const rustSrc = fs.readFileSync('src-tauri/src/rpc.rs', 'utf8')
+      const block = rustSrc.match(/const ALLOWED: &\[&str\] = &\[([\s\S]*?)\];/)
+      assert(block, 'the Rust ALLOWED list is still parseable')
+      const rust = new Set(
+        [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+      )
+      const jsSrc = fs.readFileSync('worker/dispatch.js', 'utf8')
+      const js = new Set(
+        [...jsSrc.matchAll(/case '([^']+)':/g)].map((m) => m[1])
+      )
+      // test-only method the suite drives directly over stdio (see dispatch.js)
+      const TEST_ONLY = ['test:throw']
+      assert(
+        rust.size >= 10 && js.size >= 10,
+        `both lists actually parsed (${rust.size} rust / ${js.size} js)`
+      )
+      const missingInRust = [...js].filter(
+        (m) => !rust.has(m) && !TEST_ONLY.includes(m)
+      )
+      // dispatch.js declares its own exception: `test:throw` is test-only and
+      // must stay out of production reach, so its absence from ALLOWED is the
+      // allowlist working. Anything else dispatched-but-not-allowed is drift.
+      assert(
+        TEST_ONLY.every((m) => js.has(m)),
+        'the documented test-only exception is still a real dispatch case'
+      )
+      const missingInJs = [...rust].filter((m) => !js.has(m))
+      assert(
+        missingInRust.length === 0,
+        `every dispatchable method is allowed by Rust (missing: ${missingInRust})`
+      )
+      assert(
+        missingInJs.length === 0,
+        `every method Rust allows is dispatchable (missing: ${missingInJs})`
+      )
+      console.log(`  ✓ ${rust.size} methods agree in both directions`)
+    }
+
     console.log('\nALL TESTS PASSED ✅')
   } catch (err) {
     console.error('\nTEST FAILED ❌\n' + err.message)
