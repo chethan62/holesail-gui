@@ -27,15 +27,13 @@ jobs:
       # napi prebuilds do not load there, which is why packaged builds ship
       # holesail — so the iroh suite runs on the node leg only. Without this
       # step every iroh assertion (including suite §20-22) was local-only.
-      - name: npm test (iroh engine)
-        run: npm test
-        env:
-          TUNNEL_ENGINE: iroh
+      - name: npm run test:iroh (iroh engine)
+        run: npm run test:iroh
       - name: npm run test:bare (bare runtime)
         run: npm run test:bare
 
   clippy:
-    name: Clippy (src-tauri, -D warnings)
+    name: Rust checks (fmt, clippy, test)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -64,6 +62,13 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      # Without this step the 28 Rust tests existed only as a pre-release gate
+      # run by hand: nothing in CI executed them, so a regression could only be
+      # caught by whoever remembered to run them (the same blind spot that left
+      # the iroh suite unrun for its whole life).
+      - name: Test (cargo test)
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   ui-smoke:
     name: UI smoke (Xvfb + AT-SPI)
