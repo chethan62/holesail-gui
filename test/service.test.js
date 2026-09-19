@@ -1073,16 +1073,21 @@ async function main() {
       const jumboStats = await rpc('session:stats', { id: jumboClient.id })
       assert(jumboStats.rejectCnt >= 1, 'and the drop is counted, not silent')
     } else {
-      // holesail behaves DIFFERENTLY under the two runtimes, and the difference
-      // is upstream's, not ours — worker/ sets no socket or buffer options at
-      // all. Bare (what we ship) carries the datagram intact; the Node dev path
-      // truncates it at 2048 bytes, silently, so the far end sees a short packet
-      // and nothing is logged. Assert whichever number this runtime really
-      // produces: that is what makes a change in either one visible.
+      // Whether holesail delivers this intact or truncates it at 2048 bytes is
+      // ENVIRONMENT-dependent, not runtime-dependent, and it is upstream's
+      // either way (worker/ sets no socket or buffer options at all). Measured:
+      // 8192 intact under bare on the dev box, 2048 under bare on an ubuntu-22.04
+      // runner and 2048 under Node in both places. Asserting a number therefore
+      // tested the machine, not the code — it failed twice for that reason — so
+      // assert the MECHANISM (delivered whole or at its known 2 KB ceiling, never
+      // some third mangled length, never silently nothing) and log the number.
+      // Same policy as RSS in §16: never assert an environment-dependent value.
       assert(
-        jumbo === (BARE ? 8 * 1024 : 2048),
-        `holesail on ${BARE ? 'bare' : 'node'} delivered ${jumbo} of 8192 bytes` +
-          (BARE ? ' (intact)' : ' — truncated, not dropped')
+        jumbo === 8 * 1024 || jumbo === 2048,
+        `oversize datagram came back as ${jumbo} of 8192 bytes`
+      )
+      console.log(
+        `    (measured on ${BARE ? 'bare' : 'node'}: ${jumbo} of 8192 bytes)`
       )
     }
     const stillWorks = await jumboReply(Buffer.from('after-jumbo'), 20000)

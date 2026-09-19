@@ -153,12 +153,14 @@ knowing before relying on it:
   local source address — the same topology holesail uses, so a service that
   keys sessions by source port behaves identically. Consequence of using real
   datagrams: an oversized datagram is dropped, and the drop is counted. holesail
-  has no such MTU bound in a shipped build — under Bare, which is what we ship, an
-  8 KiB datagram arrives intact — but the same engine under Node truncates it at
-  2048 bytes, silently, so the Node dev path is the one with the cliff and the far
-  end there sees a short packet with nothing logged. The suite asserts each
-  runtime's real number, so a change in either shows up as a failure rather than
-  as quiet data loss.
+  has no such MTU bound, but whether an 8 KiB datagram arrives intact or comes
+  back silently truncated at 2048 bytes varies with the environment, not with the
+  engine: measured intact under Bare on a dev box, truncated to 2048 under the
+  same Bare on a CI runner and under Node in both places. So a large-datagram
+  service (TFTP-style transfers, some game traffic) cannot rely on it either
+  way. The suite asserts what holds everywhere — the payload is delivered whole
+  or at that 2 KB ceiling, never mangled into a third length, and the tunnel
+  keeps working — and logs the measured number instead of asserting it.
 - **Node only**: `@number0/iroh` ships napi prebuilds, which the packaged Bare
   runtime cannot load — so it is selectable in dev/tests, not in shipped
   packages yet. Shipping it means bundling the **Node** binary as the worker
