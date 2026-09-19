@@ -1,6 +1,6 @@
 {
   "name": "holesail-gui",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Desktop GUI for Holesail \u2014 share local ports and connect to P2P tunnels",
   "author": "chethan62",
   "license": "MIT",
