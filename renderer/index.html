@@ -19,14 +19,10 @@
   <body>
     <header class="topbar">
       <div class="brand">
-        <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M11.2 2.4 4.4 12.4h6.8Z" fill="#FFC131" />
-          <path d="M12.8 5.2v7.2h5.4Z" fill="#24C8DB" />
-          <path
-            d="M3.4 13.9h17.2l-2.3 4.5a3 3 0 0 1-2.7 1.6H8.4a3 3 0 0 1-2.7-1.6Z"
-            fill="#24C8DB"
-          />
-        </svg>
+        <!-- The app icon itself (copied into this directory by
+             scripts/prepare-resources.mjs) so the header can never show a
+             different mark from the launcher and taskbar. -->
+        <img class="logo" src="logo.png" alt="" />
         <span class="title">Holesail GUI</span>
         <span class="subtitle">peer-to-peer tunnels</span>
         <span

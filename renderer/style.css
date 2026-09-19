@@ -90,12 +90,13 @@ body {
   white-space: nowrap;
 }
 .logo {
-  /* The brand mark is inline SVG (the app's own icon palette) — an emoji
-     renders in whatever colour font the OS picks and never matches the
-     window/taskbar icon. */
+  /* The app icon itself, copied in by prepare-resources.mjs, so the header
+     shows the same mark as the launcher and taskbar. `pixelated` keeps the
+     mark's hard edges crisp at 22px instead of smearing them. */
   width: 22px;
   height: 22px;
   flex: none;
+  image-rendering: pixelated;
 }
 .title {
   font-size: 18px;

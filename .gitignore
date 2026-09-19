@@ -8,6 +8,7 @@ dist-resources-android-x64/
 packaging/arch/holesail-gui-bin
 packaging/arch/resources.tar.zst
 packaging/arch/holesail-gui.png
+renderer/logo.png
 packaging/arch/*.pkg.tar.zst
 packaging/arch/pkg/
 packaging/arch/src/

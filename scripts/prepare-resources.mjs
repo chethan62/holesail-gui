@@ -65,6 +65,14 @@ cpSync(
 )
 cpSync(path.join(root, 'worker'), path.join(out, 'worker'), { recursive: true })
 
+// 1b. the in-app brand logo — copied from the app icon so the header can
+//     never drift from the mark a launcher/taskbar shows. Generated, so it is
+//     gitignored (same pattern as packaging/arch/holesail-gui.png).
+cpSync(
+  path.join(root, 'src-tauri', 'icons', '128x128.png'),
+  path.join(root, 'renderer', 'logo.png')
+)
+
 // 2. production-only node_modules — a clean install against a package.json
 //    that lists only the runtime dependency.
 writeFileSync(
