@@ -27,16 +27,28 @@ export function withCredentials(link, user, pass) {
   return `${base}${SEP}u=${encodeURIComponent(user)}&p=${encodeURIComponent(pass)}`
 }
 
+// A holesail key is a fixed shape: hs:// + a short id + hex, optionally with a
+// trailing slash. EVERYTHING after it is metadata, never part of the key — a
+// fragment can arrive percent-encoded (%23) from a deep link, which a plain
+// indexOf('#') cannot see, and a fragment left on the key makes every DHT lookup
+// return null (measured: the same share's clean key resolves from this box),
+// which surfaces as "key not found on the DHT" for a tunnel that is online.
+const KEY_RE = /^hs:\/\/[0-9a-z]+\/?/i
+
 /// Split an invite link into the tunnel key and whatever credentials it
 /// carries. Always returns a usable key; user/pass are '' when absent.
 export function splitCredentials(link) {
   const raw = String(link || '')
-  const idx = raw.indexOf(SEP)
-  if (idx === -1) return { key: raw.trim(), user: '', pass: '' }
+  const match = raw.match(KEY_RE)
+  const key = match
+    ? match[0].replace(/\/+$/, '')
+    : raw.split(SEP)[0].split('%23')[0].trim()
+  const rest = raw.slice(match ? match[0].length : key.length)
+  const fragment = rest.replace(/^#|^%23/i, '')
   // Parsed by hand rather than with URLSearchParams: two known keys, and the
   // renderer's lint environment does not declare the DOM constructor.
   const pair = {}
-  for (const part of raw.slice(idx + 1).split('&')) {
+  for (const part of fragment.split('&')) {
     const eq = part.indexOf('=')
     if (eq > 0) pair[part.slice(0, eq)] = part.slice(eq + 1)
   }
@@ -48,7 +60,7 @@ export function splitCredentials(link) {
     }
   }
   return {
-    key: raw.slice(0, idx).trim(),
+    key,
     user: decode(pair.u),
     pass: decode(pair.p)
   }

@@ -303,24 +303,34 @@ function renderSession(container, s) {
     // and you are in" can work, since the local proxy is the engine's and
     // cannot inject an Authorization header. The displayed form stays masked
     // behind the reveal; Copy URL hands over the version that logs in.
+    //
+    // Two sources, because they arrive by different routes: the worker reports
+    // the owner's own filemanager session with fsUsername/fsPassword, while a
+    // RECEIVER's pair comes out of the invite link's fragment and lives in the
+    // replay params that startConnect stores. Reading only the session produced
+    // a bare http://localhost:port/ for a scanned link, and the fetch through it
+    // answered 401 — measured against a live share, which is also the negative
+    // control that proves the folder really is protected.
+    const sent = state.replay.get(s.id)?.params
+    const user = s.fsUser || sent?.fsUser
+    const pass = s.fsPass || sent?.fsPass
     const plainUrl = 'http://localhost:' + s.port + '/'
     const localUrl =
-      s.fsUser && s.fsPass
+      user && pass
         ? 'http://' +
-          encodeURIComponent(s.fsUser) +
+          encodeURIComponent(user) +
           ':' +
-          encodeURIComponent(s.fsPass) +
+          encodeURIComponent(pass) +
           '@localhost:' +
           s.port +
           '/'
         : plainUrl
     const shownUrl =
-      s.fsUser && s.fsPass && !state.revealed.has(s.id) ? plainUrl : localUrl
+      user && pass && !state.revealed.has(s.id) ? plainUrl : localUrl
     const localRow = el('div', 'url-row')
     localRow.append(el('code', 'local-url', '', shownUrl))
     const copyUrl = el('button', 'copy', '', 'Copy URL')
-    copyUrl.title =
-      s.fsUser && s.fsPass ? 'Copy local URL (logs in)' : 'Copy local URL'
+    copyUrl.title = user && pass ? 'Copy local URL (logs in)' : 'Copy local URL'
     copyUrl.addEventListener('click', () => copyText(localUrl))
     localRow.append(copyUrl)
     urlCol.append(localRow)

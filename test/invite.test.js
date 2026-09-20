@@ -63,6 +63,37 @@ function check(name, fn) {
     )
   })
 
+  check(
+    'a percent-encoded fragment is split too (deep links deliver it)',
+    () => {
+      // A deep link can hand the fragment over as %23, which a plain indexOf('#')
+      // cannot see. Measured on a live share: its clean key resolved on the DHT
+      // and the fragment-bearing one returned null, so the app said "key not found
+      // on the DHT" for a tunnel that was demonstrably online.
+      const enc = splitCredentials('hs://s0001abcdef%23u=admin&p=secret')
+      assert.strictEqual(
+        enc.key,
+        'hs://s0001abcdef',
+        'encoded fragment left on the key'
+      )
+      assert.strictEqual(enc.user, 'admin')
+      assert.strictEqual(enc.pass, 'secret')
+    }
+  )
+
+  check('the key keeps its own shape whatever trails it', () => {
+    // the key is a fixed shape; trailing junk of any kind is not part of it
+    assert.strictEqual(
+      splitCredentials('hs://s0001abcdef/').key,
+      'hs://s0001abcdef'
+    )
+    assert.strictEqual(
+      splitCredentials('hs://s0001abcdef/#u=a&p=b').key,
+      'hs://s0001abcdef'
+    )
+    assert.strictEqual(splitCredentials('hs://s0001abcdef#u=a&p=b').user, 'a')
+  })
+
   check('credentials are not stacked onto an already-tagged link', () => {
     const once = withCredentials('hs://k', 'admin', 'one')
     const twice = withCredentials(once, 'admin', 'two')
