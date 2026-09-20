@@ -18,6 +18,7 @@ import {
 } from './ui.js'
 import { rpc } from './bridge.js'
 import { reconnectSession } from './reconnect.js'
+import { withCredentials } from './invite.js'
 
 export function upsertSession(data) {
   if (data.state === 'stopped') {
@@ -159,7 +160,12 @@ function renderSession(container, s) {
   const meta = state.meta.get(s.id)
   const uptime = meta ? fmtDuration(Date.now() - meta.startedAt) : ''
 
-  const urlText = s.url || ''
+  // A filemanager session's invite link carries its credentials in the
+  // fragment, so the receiver is logged in on arrival instead of having to
+  // guess that the username is "admin" and retype a random password. The
+  // displayed form still respects the reveal gate; the QR and the copy button
+  // hand out the actionable link.
+  const urlText = withCredentials(s.url || '', s.fsUsername, s.fsPassword)
   const displayUrl =
     s.secure && !state.revealed.has(s.id) ? maskKey(urlText) : urlText
 
@@ -277,6 +283,13 @@ function renderSession(container, s) {
             (s.fsRole ? ` · role: ${s.fsRole}` : '')
         )
       )
+      // One click to hand the password over: it is a random 16-character
+      // string, and the username is Livefiles' "admin" default, so the pair
+      // was previously unguessable and untypable in equal measure.
+      const copyPass = el('button', 'copy', '', 'Copy password')
+      copyPass.title = 'Copy the share password'
+      copyPass.addEventListener('click', () => copyText(s.fsPassword || ''))
+      fmRow.append(copyPass)
     }
     urlCol.append(fmRow)
   }
@@ -285,11 +298,30 @@ function renderSession(container, s) {
   // literal 127.0.0.1 in some cases, but `localhost` always resolves to
   // the app's tunnel — hand out the URL that actually works.
   if (s.type === 'client' && s.port) {
-    const localUrl = 'http://localhost:' + s.port + '/'
+    // Credentials carried by the invite link ride in the URL's userinfo:
+    // a Chromium navigation to http://user:pass@host/ authenticates without
+    // raising its Basic-auth prompt (measured), which is the only way "scan
+    // and you are in" can work, since the local proxy is the engine's and
+    // cannot inject an Authorization header. The displayed form stays masked
+    // behind the reveal; Copy URL hands over the version that logs in.
+    const plainUrl = 'http://localhost:' + s.port + '/'
+    const localUrl =
+      s.fsUser && s.fsPass
+        ? 'http://' +
+          encodeURIComponent(s.fsUser) +
+          ':' +
+          encodeURIComponent(s.fsPass) +
+          '@localhost:' +
+          s.port +
+          '/'
+        : plainUrl
+    const shownUrl =
+      s.fsUser && s.fsPass && !state.revealed.has(s.id) ? plainUrl : localUrl
     const localRow = el('div', 'url-row')
-    localRow.append(el('code', 'local-url', '', localUrl))
+    localRow.append(el('code', 'local-url', '', shownUrl))
     const copyUrl = el('button', 'copy', '', 'Copy URL')
-    copyUrl.title = 'Copy local URL'
+    copyUrl.title =
+      s.fsUser && s.fsPass ? 'Copy local URL (logs in)' : 'Copy local URL'
     copyUrl.addEventListener('click', () => copyText(localUrl))
     localRow.append(copyUrl)
     urlCol.append(localRow)

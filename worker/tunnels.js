@@ -133,7 +133,15 @@ async function startFilemanager(params) {
   // PUBLIC share (hs://0000..., where the key is public by design) that left
   // the folder effectively unauthenticated. Generate one per share instead;
   // an explicit username/password from the caller still wins.
-  const port = Number(params.port) > 0 ? Number(params.port) : 5409
+  // A folder share's local port is an implementation detail — the receiver
+  // reaches it through the tunnel — and Livefiles exits the PROCESS when its
+  // listen fails. So never take the fixed 5409 default blindly: a second folder
+  // share, or anything else already on 5409, took the whole worker down with it
+  // (that is what made the filemanager test time out while the app was
+  // sharing). Ask the OS instead, the same way the client path does. An
+  // explicit port from the caller is still honoured, probe-free.
+  const port =
+    Number(params.port) > 0 ? Number(params.port) : await pickFreePort()
   const host = params.host || '127.0.0.1'
   const limit = normalizeLimit(params.limit)
   const fileServer = new Livefiles({
@@ -181,7 +189,16 @@ async function connectClient(params) {
   // URL parsers normalize hs://s000… to hs://s000…/ — the trailing slash
   // becomes part of the key and derives a WRONG seed (a phantom tunnel
   // that never establishes, with no error). Strip it.
-  const key = String(params.key || '').replace(/\/+$/, '')
+  //
+  // An invite link may also carry folder-share credentials in its fragment
+  // (the link a QR code or the clipboard delivers, see renderer/invite.js).
+  // A fragment is not part of the key either, and leaving it on derives the
+  // same kind of phantom — so strip it here as well, defensively. The renderer
+  // splits it before calling, so this is the second line of defence, not the
+  // only one.
+  const key = String(params.key || '')
+    .replace(/#.*$/, '')
+    .replace(/\/+$/, '')
   if (key.length === 0) {
     throw new Error('Connection string is required')
   }

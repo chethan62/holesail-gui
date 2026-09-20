@@ -186,8 +186,14 @@ if (existsSync(propsPath)) {
   const code = maj * 10000 + min * 100 + pat
   let props = readFileSync(propsPath, 'utf8')
   props = props
-    .replace(/tauri\.android\.versionName=.*/, `tauri.android.versionName=${appVersion}`)
-    .replace(/tauri\.android\.versionCode=.*/, `tauri.android.versionCode=${code}`)
+    .replace(
+      /tauri\.android\.versionName=.*/,
+      `tauri.android.versionName=${appVersion}`
+    )
+    .replace(
+      /tauri\.android\.versionCode=.*/,
+      `tauri.android.versionCode=${code}`
+    )
   writeFileSync(propsPath, props)
   console.log(`tauri.properties: versionName=${appVersion} versionCode=${code}`)
 } else {

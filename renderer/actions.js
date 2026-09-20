@@ -18,6 +18,7 @@ import { genKey, refreshSaved } from './saved.js'
 import { addRecent } from './recent.js'
 import { humanError } from './errors.js'
 import { lookupKey } from './lookup.js'
+import { splitCredentials } from './invite.js'
 
 // Re-exported so the boot wiring in app.js can import them from one place.
 export { updatePublicWarnings, lookupKey }
@@ -227,8 +228,17 @@ export async function startConnect(event) {
   event.preventDefault()
   const button = $('#connect-start')
   const portVal = $('#connect-port').value
+  // A scanned or pasted invite link may carry the folder-share credentials in
+  // its fragment; the tunnel key is everything before it. Split here so the
+  // key derives the right DHT seed, and keep the pair on the session so the
+  // card's local URL can embed it — a Chromium navigation to
+  // http://user:pass@host/ authenticates without a prompt (measured), so the
+  // receiver never has to type a random password.
+  const scanned = splitCredentials($('#connect-key').value)
   const params = {
-    key: $('#connect-key').value.trim(),
+    key: scanned.key,
+    fsUser: scanned.user || undefined,
+    fsPass: scanned.pass || undefined,
     port: portVal ? Number(portVal) : undefined,
     host: $('#connect-host').value.trim() || undefined,
     udp: $('#connect-udp').checked,
