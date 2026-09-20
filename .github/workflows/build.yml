@@ -540,8 +540,18 @@ jobs:
           # art inside the built APK against the repo family (every layer a
           # launcher can draw, all five densities), and require the negative
           # control to fail first, or the check proves nothing.
-          python3 -c "import PIL" 2>/dev/null \
-            || python3 -m pip install --quiet --break-system-packages pillow
+          # Pillow is not on the runner image, and its system pip is old enough
+          # to reject --break-system-packages ("no such option" — that failed
+          # the first run of this step). Try the plain install first, then the
+          # PEP-668 flag, then apt, and assert the import at the end either way:
+          # a missing Pillow must fail loudly, never skip the icon check.
+          if ! python3 -c "import PIL" 2>/dev/null; then
+            python3 -m pip install --quiet pillow 2>/dev/null \
+              || python3 -m pip install --quiet --break-system-packages pillow 2>/dev/null \
+              || sudo apt-get install -y -qq python3-pil >/dev/null
+          fi
+          python3 -c "import PIL" \
+            || { echo "FAIL: no Pillow on the runner — the icon check cannot run"; exit 1; }
           python3 scripts/apk-icon-check.py --self-test
           APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
           python3 scripts/apk-icon-check.py "$APK" src-tauri/icons/android
