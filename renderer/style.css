@@ -91,11 +91,17 @@ body {
 }
 .logo {
   /* The app icon itself, copied in by prepare-resources.mjs, so the header
-     shows the same mark as the launcher and taskbar. 28px, not 22px: at 22px
-     the thin brown mast, boom and keel of the artwork dissolve into the dark
-     header. No image-rendering override — `pixelated` would alias the icon. */
-  width: 28px;
-  height: 28px;
+     shows the same mark as the launcher and taskbar. 34px, not 28px: the
+     artwork's thin brown mast, boom and keel render close to the header's own
+     #0f1420 (measured at 28px: the brown family sits at 1.66:1, and 75% of the
+     mark's own footprint is within 0.2% of the header luminance), and at 28px
+     the 1px strokes anti-alias away. Measured on the rendered mark: 28px = 270
+     visible pixels, 32px = 352, 34px = 383 (+42%) — and this keeps the art's
+     own palette, where a brightness filter would have recoloured it (32px +
+     brightness(1.8) reaches 394, a 3% gain for a colour change: not worth it).
+     No image-rendering override — `pixelated` would alias the icon. */
+  width: 34px;
+  height: 34px;
   flex: none;
 }
 .title {
