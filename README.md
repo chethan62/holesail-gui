@@ -411,6 +411,31 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.11.1">
+<summary><b>v0.11.1</b> — a folder in your home is shareable again, and the port field suggests real ports</summary>
+
+- **A folder sitting directly in your home could not be shared.** The guard
+  refused the home directory _and every immediate child of it_, so its own
+  advice — "share a specific subfolder instead" — was impossible to follow:
+  `~/SAP_fico_doc` was rejected as a "broad path". Only hidden entries
+  (`~/.ssh`, `~/.gnupg`, `~/.aws`) hold secrets; a named child is the intended
+  use. Both implementations move together (`worker/guards.js` and the
+  renderer's twin in `ui.js`), and the suite now asserts the ALLOWED direction
+  as well as the refusal — the refusal-only assertion passed while the allowed
+  direction was broken, which is how this survived several releases.
+- **The Local port field suggests the ports this machine is listening on** —
+  "node 3000 · python 8000", each entry clickable to fill the field, refreshed
+  when the field is focused. (A random free port would have been the wrong
+  control: on Share a port you are exposing a service that is _already_
+  running, so a free port tunnels to nothing.)
+- **A dead renderer is caught before it ships.** A named import that does not
+  exist fails the whole module graph to link while the static markup still
+  renders — the window looks normal, every listener is silently absent, and
+  nothing reaches the event log, with eslint, prettier and both suites green.
+  The link stage is now checked: `node --input-type=module -e "import('./renderer/app.js')"`.
+
+</details>
+
 <details id="v0.11.0">
 <summary><b>v0.11.0</b> — the folder share gets its own tab, and <code>hidden</code> starts working</summary>
 
