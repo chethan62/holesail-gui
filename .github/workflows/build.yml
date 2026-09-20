@@ -454,6 +454,32 @@ jobs:
           path: ~/.android/debug.keystore
           key: android-debug-keystore-v1
 
+      # The cache above never saved anything: its own log says
+      # "Path Validation Error: Path(s) specified in the action for caching
+      # do(es) not exist", because nothing on the runner had created that file.
+      # So Gradle signed every build with a key it generated fresh, and Android
+      # refuses to replace an app signed by a DIFFERENT key — which is how a phone
+      # kept an old build (and its old icon) across several releases, silently,
+      # while every build here was green. Creating the keystore makes the cached
+      # path real, and ANDROID_USER_HOME pins where Gradle looks instead of
+      # leaving it to whatever the SDK action exported. A debug key is not a
+      # secret; clear the cache key to deliberately re-key.
+      - name: Use a stable debug keystore so APKs install over previous ones
+        run: |
+          export ANDROID_USER_HOME="$HOME/.android"
+          mkdir -p "$ANDROID_USER_HOME"
+          if [ ! -f "$ANDROID_USER_HOME/debug.keystore" ]; then
+            keytool -genkeypair \
+              -keystore "$ANDROID_USER_HOME/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          # print the fingerprint: the next run's log then PROVES the key was
+          # reused rather than regenerated
+          keytool -list -keystore "$ANDROID_USER_HOME/debug.keystore" -storepass android | tail -4
+          echo "ANDROID_USER_HOME=$ANDROID_USER_HOME" >> "$GITHUB_ENV"
+
       - name: Build debug APK
         run: npx tauri android build --apk --debug
         env:
