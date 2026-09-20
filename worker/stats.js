@@ -176,8 +176,14 @@ function wireDataCounters(entry) {
       wrapStream(sock, 'bytesDown', 'bytesUp')
     )
   }
-  // CLIENT UDP: the dgram socket (counted but NOT capped — datagram
-  // pacing is out of scope for the per-session cap).
+  // CLIENT UDP: the dgram socket. Both directions consume the session's and
+  // the shared budget, so a UDP-heavy tunnel cannot starve a capped TCP one.
+  // Outbound datagrams over budget are DROPPED, not queued: a datagram has
+  // no partial delivery, and holding them back would delay and reorder
+  // real-time traffic — worse than the loss UDP already tolerates. Inbound
+  // cannot be dropped at all (the datagram is in hand and the engine relays
+  // it), so it only consumes budget. limitConsume short-circuits to true
+  // when nothing is capped, so uncapped sessions behave exactly as before.
   // The field differs per engine: holesail's client assigns its datagram
   // socket to `proxy` (handleUDP: `this.proxy = proxySocket`), the engine's
   // engine exposes `proxySocket`. Checking only `proxySocket` left every
@@ -193,18 +199,22 @@ function wireDataCounters(entry) {
       : null)
   if (udpSocket && typeof udpSocket.on === 'function') {
     const ps = udpSocket
-    ps.on('message', (m) => bump('bytesUp', m ? m.length : 0))
+    ps.on('message', (m) => {
+      const n = m ? m.length : 0
+      bump('bytesUp', n)
+      if (n) limitConsume(entry, n)
+    })
     if (typeof ps.send === 'function') {
       const osend = ps.send.bind(ps)
       ps.send = (buf, ...rest) => {
-        bump(
-          'bytesDown',
+        const n =
           typeof buf === 'string'
             ? Buffer.byteLength(buf)
             : buf
               ? buf.length
               : 0
-        )
+        if (n && !limitConsume(entry, n)) return
+        bump('bytesDown', n)
         return osend(buf, ...rest)
       }
     }

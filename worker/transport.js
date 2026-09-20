@@ -7,7 +7,29 @@
 const { process } = require('./runtime.js')
 
 function send(obj) {
-  process.stdout.write(JSON.stringify(obj) + '\n')
+  try {
+    process.stdout.write(JSON.stringify(obj) + '\n')
+  } catch (err) {
+    // One un-serialisable field (a circular reference, a BigInt, a getter that
+    // throws) must not take down the worker: send() is the single path every
+    // event and every reply shares, so a throw here kills all tunnels at once.
+    // Degrade to a frame the parent can still parse, keeping the id when this
+    // was a reply so the caller errors instead of timing out.
+    const fallback =
+      obj && obj.id !== undefined
+        ? { id: obj.id, error: `un-serialisable response: ${err.message}` }
+        : {
+            event: 'worker:error',
+            data: {
+              message: `un-serialisable ${obj && obj.event} payload: ${err.message}`
+            }
+          }
+    try {
+      process.stdout.write(JSON.stringify(fallback) + '\n')
+    } catch {
+      // Nothing further we can do; dropping one frame beats a dead worker.
+    }
+  }
 }
 
 function sendResult(id, result) {

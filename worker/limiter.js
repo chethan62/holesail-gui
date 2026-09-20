@@ -49,7 +49,7 @@ function limiterFor(entry) {
       overflowed: false,
       paused: [],
       timer: null,
-      pendingEnd: null
+      pendingEnds: []
     }
   return entry._lim
 }
@@ -59,6 +59,14 @@ function limiterFor(entry) {
 // of queueing (it can't slow the producer down).
 function queueWrite(entry, item) {
   const lim = limiterFor(entry)
+  // Convert a string payload once, here. The drain below slices by BYTE
+  // count, and String.prototype.slice counts UTF-16 units, so a capped write
+  // carrying emoji or CJK could be cut mid-character and corrupt the far
+  // end's view. As a Buffer the same number means the same thing.
+  if (typeof item.buf === 'string') {
+    item.buf = Buffer.from(item.buf, 'utf8')
+    item.len = item.buf.length
+  }
   if (lim.queued + item.len > MAX_QUEUE_BYTES) return false
   lim.queue.push(item)
   lim.queued += item.len
@@ -71,18 +79,24 @@ function queueWrite(entry, item) {
 /// and Node drops writes-after-end silently: a capped download would look
 /// like a clean but truncated response. Found by the global-cap test, which
 /// is the first case that sends a full payload and then closes.
+///
+/// A list, not a single slot: both directions of a session can end while
+/// their bytes are still queued, and one slot let the second end overwrite
+/// the first — closing that stream before its own bytes had been written.
 function queueEnd(entry, fn) {
-  limiterFor(entry).pendingEnd = fn
+  limiterFor(entry).pendingEnds.push(fn)
   return true
 }
 
 function releaseEnd(lim) {
-  if (!lim.pendingEnd || lim.queue.length) return
-  const endFn = lim.pendingEnd
-  lim.pendingEnd = null
-  try {
-    endFn()
-  } catch {}
+  if (!lim.pendingEnds.length || lim.queue.length) return
+  const fns = lim.pendingEnds
+  lim.pendingEnds = []
+  for (const endFn of fns) {
+    try {
+      endFn()
+    } catch {}
+  }
 }
 
 /* ------------------------------- budgets -------------------------------- */

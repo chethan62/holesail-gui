@@ -65,6 +65,11 @@ fn recent_persist(app: &AppHandle, list: &[String]) {
     let data = serde_json::to_string(list).unwrap_or_else(|_| "[]".into());
     if let Ok(entry) = keyring::Entry::new("io.holesail.gui", "recent-keys") {
         if entry.set_password(&data).is_ok() {
+            // Credentials now live encrypted in the keychain — drop the
+            // plaintext fallback file so a stale copy can't outlive it. These
+            // ARE connection strings (they carry the key), so leaving the old
+            // file behind would keep secrets readable on disk.
+            let _ = std::fs::remove_file(recent_path(app));
             return;
         }
     }

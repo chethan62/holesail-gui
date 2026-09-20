@@ -49,20 +49,19 @@ function isBroadSharePath(p) {
     /[\\/]+$/,
     ''
   )
-  if (home) {
-    if (s === home || s.toLowerCase() === home.toLowerCase()) return true
-    // Every other home child used to be refused as well, which blocked the
-    // named folders users actually pick — including the "specific subfolder"
-    // this guard's own error message tells them to share. Only dot-entries
-    // are secrets; a named child is the intended use.
-    const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
-    if (idx > 0) {
-      const parent = s.slice(0, idx)
-      const child = s.slice(idx + 1)
-      if (
-        child.startsWith('.') &&
-        (parent === home || parent.toLowerCase() === home.toLowerCase())
-      )
+  if (home && (s === home || s.toLowerCase() === home.toLowerCase()))
+    return true
+  // Hidden entries directly under a home dir hold secrets (~/.ssh, ~/.gnupg,
+  // ~/.aws). Checked even when no home is known: a GUI launch can omit HOME
+  // entirely (USERPROFILE is Windows-only), and an unknown home must not turn
+  // this guard into a silent no-op for the exact paths it exists to refuse.
+  const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
+  if (idx > 0) {
+    const parent = s.slice(0, idx)
+    const child = s.slice(idx + 1)
+    if (child.startsWith('.')) {
+      if (!home) return true
+      if (parent === home || parent.toLowerCase() === home.toLowerCase())
         return true
     }
   }

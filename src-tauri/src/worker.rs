@@ -511,28 +511,16 @@ pub(crate) async fn worker_restart(app: AppHandle) -> Result<Value, String> {
     }
 }
 
-/// Manual retry after "Node.js not found": bump the respawn generation so
-/// any pending auto-respawn aborts, reset the backoff ladder, and try to
+/// Manual retry after "Node.js not found": reset the backoff ladder and try to
 /// spawn now. Success flows through the normal worker:ready path.
+///
+/// Delegates to worker_restart on purpose. Spawning directly here leaked the
+/// previous child: it bumped RESPAWN_GEN but never took WorkerState/StdinState
+/// or killed the process, so a still-running worker kept its stdin open with
+/// nobody holding its handle — two workers, one of them unreachable.
 #[tauri::command]
 pub(crate) async fn retry_spawn_worker(app: AppHandle) -> Result<Value, String> {
-    RESPAWN_GEN.fetch_add(1, Ordering::Relaxed);
-    {
-        let ds = app.state::<DiagState>();
-        let mut d = ds.0.lock().unwrap();
-        d.restart_attempt = 0;
-    }
-    match spawn_worker(&app) {
-        Ok(()) => Ok(json!({ "ok": true })),
-        Err(e) => {
-            diag_record_failure(&app, e.clone());
-            let _ = app.emit(
-                "worker:event",
-                json!({ "event": "worker:error", "data": { "message": e } }),
-            );
-            Err(e)
-        }
-    }
+    worker_restart(app).await
 }
 
 #[cfg(test)]
