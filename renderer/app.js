@@ -12,7 +12,8 @@ import {
   versionInfo,
   lanAddress,
   homeDir,
-  recentClear
+  recentClear,
+  listeningPorts
 } from './bridge.js'
 import { initTheme } from './theme.js'
 import { initRecent, renderRecent } from './recent.js'
@@ -35,7 +36,6 @@ import {
   syncWorker,
   updateWorkerStatus,
   bindNodeScreen,
-  listeningPorts,
   subscribeWorkerEvents
 } from './worker.js'
 import { handleDeepLink, stopAllTunnels } from './deep.js'
