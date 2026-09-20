@@ -303,6 +303,12 @@ can reach the service directly, no DHT involved.
 **Share a folder** — its own tab: drop a folder from your file manager (or type
 its path) and get an invite link for it, with no port to pick. The form is the
 first thing on the tab, so it is reachable without scrolling past the port form.
+The link carries its own login: the receiver's **Copy URL** hands their browser a
+URL that authenticates on arrival, so nobody has to guess a username or retype a
+password at a prompt. The card shows the pair in use (the username is the file
+server's fixed `admin`) and copies the password for hand-entry. Because the
+credentials travel in the link, **an invite link grants folder access** — send it
+the way you would send a password.
 
 **Connect** — paste the link you were sent (`hs://s000…` private, `hs://0000…`
 public; which one it is gets detected for you). The tunnel is exposed on your
@@ -410,6 +416,46 @@ arrives on the device — in both directions.
 </details>
 
 ## Changelog
+
+<details id="v0.12.0">
+<summary><b>v0.12.0</b> — a folder share's login travels with the link</summary>
+
+- **Scanning a folder share no longer lands you on a login prompt.** The invite
+  link carries its credentials in the URL fragment (`hs://…/#u=…&p=…`), so the QR
+  code and **Copy invite link** hand over a link that logs you in on arrival: the
+  receiver's **Copy URL** gives their browser
+  `http://admin:<password>@localhost:<port>/`. Chromium authenticates a
+  navigation that carries credentials embedded in the URL without raising its
+  Basic-auth prompt — measured against a throwaway 401 server, not read from
+  docs — and that measurement is what makes this work at all: the local proxy
+  belongs to the tunnel library, so there is no header seam to inject. Links
+  without a fragment behave exactly as before, and displayed forms stay masked
+  behind the reveal.
+- **A link is now the secret.** The credentials ride in it, so an invite link
+  grants folder access. Send it the way you would send a password.
+- **The folder card shows the login it is protecting** — the username the file
+  server actually uses (`admin`; the form never sent one, which is what made the
+  prompt unanswerable) — and copies the password for hand-entry.
+- **A second folder share no longer takes the whole worker down.** Folder shares
+  used a fixed 5409, and the file server exits the process when its listen fails,
+  so any second share — or anything else already on 5409 — ended every tunnel in
+  the app. They now ask the OS for a free port, as the client path already did.
+- **Android: updates install, and the worker re-extracts.** Every CI run
+  generated a fresh debug keystore, so no APK could install over a previous one
+  and the phone kept its old app (and old icon); the keystore is now cached, so
+  one uninstall clears the old signature for good. The extractor also keys its
+  stamp on the version — an updated APK now really does re-extract the worker —
+  and the stored version no longer freezes at 0.1.0.
+- **A stopped tunnel stops being remembered.** The stop branch cleared six
+  per-session maps by name and forgot the replay params, so tunnel keys — and,
+  once links carried them, credentials — stayed alive after their tunnel was
+  gone. Per-session state is cleared by shape now, so a collection added later
+  cannot be missed.
+- Smaller: port chips are real 26 px buttons with accessible names, the theme
+  toggle follows the system preference, worker parameters are validated in Rust,
+  and a bandwidth cap refuses past its ceiling instead of buffering.
+
+</details>
 
 <details id="v0.11.4">
 <summary><b>v0.11.4</b> — the QR code is no longer a dead end</summary>
