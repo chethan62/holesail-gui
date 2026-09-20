@@ -92,6 +92,40 @@ const check = (cond, msg, fail) => {
     fail
   )
 
+  /* savedSession must not confuse a saved CLIENT with a share that names the
+     same key. The owner's session url IS the invite key, so a plain url match
+     returned the owner, marked the client "running" (with the owner's badge)
+     and skipped its autostart — after a restart only the folder share came
+     back and the client's local proxy never existed. Measured by driving the
+     real app (skill: scripts/e2e-saved-cred.py), which is why this is a test
+     and not just a comment. */
+  const { savedSession } = await import('../renderer/saved.js')
+  const key = 'hs://s000abc123def456'
+  const clientRecord = { kind: 'client', key, secure: true, autostart: true }
+  state.sessions.set('own1', { id: 'own1', type: 'filemanager', url: key })
+  check(
+    savedSession(clientRecord) === null,
+    'a client record is NOT the owner share that names the same key',
+    fail
+  )
+  state.sessions.set('srv1', { id: 'srv1', type: 'server', url: key })
+  check(
+    savedSession(clientRecord) === null,
+    'a client record is NOT a server session with the same key',
+    fail
+  )
+  state.sessions.set('cli1', {
+    id: 'cli1',
+    type: 'client',
+    url: key,
+    port: 5000
+  })
+  check(
+    savedSession(clientRecord)?.id === 'cli1',
+    'a client record matches its own client session',
+    fail
+  )
+
   console.log(fail.n ? `renderer: ${fail.n} FAILED` : 'renderer: PASS')
   process.exit(fail.n ? 1 : 0)
 })()

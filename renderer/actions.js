@@ -148,6 +148,20 @@ export async function startFilemanagerShare(event) {
     addRecent(session.url)
     $('#fm-path').value = ''
     if (tunnel) {
+      // The record was written BEFORE this session existed, so it could not
+      // carry the filemanager credentials — and the worker mints a fresh random
+      // password on every start. Without this update a permanent share changes
+      // its invite password on EVERY launch, so a receiver that saved the old
+      // pair gets 401 after the owner restarts (measured across one restart:
+      // the owner's new password differed from the client's saved fsPass).
+      // One update, with the pair the worker actually used.
+      if (session.fsUsername || session.fsPassword) {
+        tunnel = await savedSave({
+          ...tunnel,
+          username: session.fsUsername || undefined,
+          password: session.fsPassword || undefined
+        })
+      }
       await refreshSaved()
       log(
         `Saved folder share "${tunnel.name}" — it will restart with the app`,

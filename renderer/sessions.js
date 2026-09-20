@@ -179,7 +179,15 @@ function renderSession(container, s) {
   // guess that the username is "admin" and retype a random password. The
   // displayed form still respects the reveal gate; the QR and the copy button
   // hand out the actionable link.
-  const urlText = withCredentials(s.url || '', s.fsUsername, s.fsPassword)
+  // The invite link is resolved when it is USED, not when the card is built:
+  // the session event can land before the worker reports
+  // fsUsername/fsPassword, and a captured constant then handed out a bare
+  // link — measured after a restart (the owner's Copy invite link copied with
+  // no fragment while livefiles kept the same password, so the receiver's
+  // fetch 401'd). Same ordering hazard the client's Copy URL had.
+  const inviteUrl = () =>
+    withCredentials(s.url || '', s.fsUsername, s.fsPassword)
+  const urlText = inviteUrl()
   const displayUrl =
     s.secure && !state.revealed.has(s.id) ? maskKey(urlText) : urlText
 
@@ -266,7 +274,7 @@ function renderSession(container, s) {
   }
   const copy = el('button', 'copy', '', 'Copy invite link')
   copy.title = 'Copy the invite link — send it to whoever needs access'
-  copy.addEventListener('click', () => copyText(urlText))
+  copy.addEventListener('click', () => copyText(inviteUrl()))
   urlRow.append(copy)
   urlCol.append(urlRow)
   urlCol.append(
@@ -326,27 +334,36 @@ function renderSession(container, s) {
     // a bare http://localhost:port/ for a scanned link, and the fetch through it
     // answered 401 — measured against a live share, which is also the negative
     // control that proves the folder really is protected.
-    const sent = state.replay.get(s.id)?.params
-    const user = s.fsUser || sent?.fsUser
-    const pass = s.fsPass || sent?.fsPass
     const plainUrl = 'http://localhost:' + s.port + '/'
-    const localUrl =
-      user && pass
+    // Resolved at CLICK time, not at render time. The replay params land in
+    // rememberSession() a moment AFTER the session event that builds this card,
+    // so a render-time constant captured the bare URL and the button kept
+    // handing it out forever — the fetch answered 401 while the saved record
+    // held the right password (measured: the tooltip said "Copy local URL" until
+    // a reveal forced a re-render, which then produced user:pass@...). Reading
+    // the state inside the handler removes the ordering dependency entirely.
+    const clientUrl = () => {
+      const sent = state.replay.get(s.id)?.params
+      const user = s.fsUser || sent?.fsUser
+      const pass = s.fsPass || sent?.fsPass
+      return user && pass
         ? 'http://' +
-          encodeURIComponent(user) +
-          ':' +
-          encodeURIComponent(pass) +
-          '@localhost:' +
-          s.port +
-          '/'
+            encodeURIComponent(user) +
+            ':' +
+            encodeURIComponent(pass) +
+            '@localhost:' +
+            s.port +
+            '/'
         : plainUrl
+    }
+    const hasCreds = clientUrl() !== plainUrl
     const shownUrl =
-      user && pass && !state.revealed.has(s.id) ? plainUrl : localUrl
+      hasCreds && state.revealed.has(s.id) ? clientUrl() : plainUrl
     const localRow = el('div', 'url-row')
     localRow.append(el('code', 'local-url', '', shownUrl))
     const copyUrl = el('button', 'copy', '', 'Copy URL')
-    copyUrl.title = user && pass ? 'Copy local URL (logs in)' : 'Copy local URL'
-    copyUrl.addEventListener('click', () => copyText(localUrl))
+    copyUrl.title = hasCreds ? 'Copy local URL (logs in)' : 'Copy local URL'
+    copyUrl.addEventListener('click', () => copyText(clientUrl()))
     localRow.append(copyUrl)
     urlCol.append(localRow)
   }

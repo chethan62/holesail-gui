@@ -53,7 +53,14 @@ function savedUrl(t) {
 /// Is there a running session for this saved tunnel?
 export function savedSession(t) {
   const url = savedUrl(t)
+  const isClient = t.kind === 'client'
   for (const s of state.sessions.values()) {
+    // A saved CLIENT and the share it connects TO are different sessions even
+    // when they name the same key — the owner's session url IS the invite key.
+    // Matching them marked the client "running" (with the owner's badge) and
+    // skipped its autostart entirely: after a restart only the folder share
+    // came back and the client's local proxy never existed (measured).
+    if (isClient !== (s.type === 'client')) continue
     if (url && s.url === url) return s
     // No derivable string (a server with no fixed key): match it to the
     // identity key it was started with — the worker reports the same seed, so
