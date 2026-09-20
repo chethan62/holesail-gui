@@ -187,12 +187,38 @@ function renderSession(container, s) {
   }
   card.append(head)
 
+  // One reveal path for the whole card: the eye beside the URL and the QR
+  // placeholder both call this, so the two can never disagree. It has to be
+  // declared at card scope — the eye lives outside the server/filemanager block
+  // that renders the QR, and a helper scoped inside it is a ReferenceError.
+  // The QR encodes the same secret as the invite link, so it stays behind the
+  // gate; the placeholder just must not be a dead end.
+  const toggleReveal = () => {
+    if (state.revealed.has(s.id)) state.revealed.delete(s.id)
+    else state.revealed.add(s.id)
+    // Targeted re-render of just this card (the QR is the expensive
+    // part of a full renderSessions() rebuild); keep focus/scroll.
+    const card = document.getElementById('session-' + s.id)
+    if (card) {
+      card.replaceChildren()
+      renderSession(card, s)
+    } else {
+      renderSessions()
+    }
+  }
+
   // body: QR (servers only) + url + meta
   const body = el('div', 'card-body')
   if (s.type === 'server' || s.type === 'filemanager') {
     const qrBox = el('div', 'qr')
     if (s.secure && !state.revealed.has(s.id)) {
-      qrBox.textContent = 'QR hidden while key is masked'
+      qrBox.append(
+        el('span', 'qr-hint', '', 'QR hidden while the key is masked')
+      )
+      const showQr = el('button', 'qr-show', '', 'Show QR')
+      showQr.type = 'button'
+      showQr.addEventListener('click', toggleReveal)
+      qrBox.append(showQr)
     } else {
       try {
         const q = qrcode(0, 'M')
@@ -215,19 +241,7 @@ function renderSession(container, s) {
   if (s.secure) {
     const eye = el('button', 'eye-btn', '', '👁')
     eye.title = 'Reveal / hide'
-    eye.addEventListener('click', () => {
-      if (state.revealed.has(s.id)) state.revealed.delete(s.id)
-      else state.revealed.add(s.id)
-      // Targeted re-render of just this card (the QR is the expensive
-      // part of a full renderSessions() rebuild); keep focus/scroll.
-      const card = document.getElementById('session-' + s.id)
-      if (card) {
-        card.replaceChildren()
-        renderSession(card, s)
-      } else {
-        renderSessions()
-      }
-    })
+    eye.addEventListener('click', toggleReveal) // the same path as the QR button
     urlRow.append(eye)
   }
   const copy = el('button', 'copy', '', 'Copy invite link')

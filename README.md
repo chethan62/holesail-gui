@@ -411,6 +411,26 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.11.4">
+<summary><b>v0.11.4</b> — the QR code is no longer a dead end</summary>
+
+- **"QR hidden while key is masked" gave you nowhere to go.** Encrypted shares
+  keep the QR behind the reveal gate on purpose — the code encodes the same
+  secret as the invite link, so drawing it while the key is masked would be a
+  lie. But the placeholder named no way out, and the eye button that reveals it
+  sits beside the URL, where it reads as belonging to the URL alone. The
+  placeholder now carries a **Show QR** button.
+- **One reveal path for the card.** The eye and the new button call the same
+  handler so they cannot drift apart. The first attempt declared that handler
+  inside the block that renders the QR while the eye lives outside it, which
+  threw `ReferenceError: toggleReveal is not defined` and left the whole card
+  unrendered — caught by driving the real card in a browser, not by reading it.
+- Verified in a real DOM: the masked URL reads `hs://abc12…aaaaaaaa`; clicking
+  Show QR produces a 164x164 image (2,442 bytes of QR data) _and_ unmasks the
+  URL; the eye puts the placeholder back.
+
+</details>
+
 <details id="v0.11.3">
 <summary><b>v0.11.3</b> — new app icon: the sailboat gains a cyan jib</summary>
 
