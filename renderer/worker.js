@@ -1,7 +1,7 @@
 /* worker.js — worker status/lifecycle + the worker:event subscription.
    Depends on state, ui, bridge, sessions, saved. */
 
-import { state, flags } from './state.js'
+import { state, flags, forgetAllSessions } from './state.js'
 import { $, log, fmtDuration, copyText } from './ui.js'
 import { rpc, onEvent, workerDiagnostics, workerRetrySpawn } from './bridge.js'
 import { upsertSession, onPeerConnected, renderSessions } from './sessions.js'
@@ -156,10 +156,10 @@ export function subscribeWorkerEvents() {
           `Service worker exited with code ${msg.data.code ?? 'signal'}`,
           'err'
         )
-        // the worker is gone — drop stale sessions so the UI reflects reality
-        state.sessions.clear()
-        state.meta.clear()
-        state.revealed.clear()
+        // The worker is gone — drop everything it told us (every per-session
+        // map: replay params, traffic history, peer counts) instead of the
+        // three collections someone remembered to name here.
+        forgetAllSessions()
         renderSessions()
         break
       case 'worker:log':

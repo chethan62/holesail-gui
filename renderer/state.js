@@ -35,3 +35,25 @@ export const flags = {
 export function rememberSession(id, type, params) {
   state.replay.set(id, { type, params })
 }
+
+/// Every per-session collection in state and flags, found by SHAPE rather than
+/// by name. Listing them at each call site is what leaked: the stopped branch
+/// forgot `replay`, so it grew without bound and kept connection strings — keys
+/// and, since invite links began carrying credentials, the share password —
+/// alive after their tunnel was gone. A collection added here later is covered.
+function perSessionBags() {
+  return [...Object.values(state), ...Object.values(flags)].filter(
+    (bag) => bag instanceof Map || bag instanceof Set
+  )
+}
+
+/// Forget one session (a clean stop, or one the worker dropped).
+export function dropSession(id) {
+  for (const bag of perSessionBags()) bag.delete(id)
+}
+
+/// Forget every session: the worker is gone, so nothing it told us is still
+/// true. Replaces the hand-written clears that missed most of the collections.
+export function forgetAllSessions() {
+  for (const bag of perSessionBags()) bag.clear()
+}

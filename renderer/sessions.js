@@ -2,7 +2,7 @@
    Depends on state.js, ui.js, and bridge.js (rpc). Actions (share/connect/
    filemanager forms) live in actions.js; saved-tunnel CRUD in saved.js. */
 
-import { state, flags } from './state.js'
+import { state, flags, dropSession } from './state.js'
 import {
   $,
   el,
@@ -22,12 +22,11 @@ import { withCredentials } from './invite.js'
 
 export function upsertSession(data) {
   if (data.state === 'stopped') {
-    state.sessions.delete(data.id)
-    state.meta.delete(data.id)
-    state.revealed.delete(data.id)
-    state.traffic.delete(data.id)
-    state.conn.delete(data.id)
-    flags.relaySessions.delete(data.id)
+    // Everything the renderer remembers about this session — including the
+    // replay params that hold its key, and now its share credentials. See
+    // dropSession for why this must not be a hand-written list of maps:
+    // `replay` was the one it forgot, so it grew without bound.
+    dropSession(data.id)
     // Re-render: the card is gone from state, so it must leave the screen too.
     // Without this the stopped session lingers until some unrelated event
     // happens to rebuild the list — which reads as "Stop did nothing".

@@ -27,7 +27,7 @@ const check = (cond, msg, fail) => {
 
 ;(async () => {
   const fail = { n: 0 }
-  const { state } = await import('../renderer/state.js')
+  const { state, rememberSession } = await import('../renderer/state.js')
   const { upsertSession } = await import('../renderer/sessions.js')
 
   /* A stopped session must leave the SCREEN, not just the state map. This was a
@@ -38,8 +38,22 @@ const check = (cond, msg, fail) => {
      assertion holds on the fixed code and fails (innerHTML stays empty) on the
      pre-fix code. */
   state.sessions.set('t1', { id: 't1', type: 'server' })
+  /* The stop must forget the replay params too. They hold the tunnel key and,
+     for a folder share, its credentials — and `replay` was precisely the map
+     the hand-written clears forgot, so it grew without bound and kept secrets
+     alive after their tunnel was gone. See dropSession in state.js. */
+  rememberSession('t1', 'client', {
+    key: 'hs://t1',
+    fsUser: 'admin',
+    fsPass: 'pw'
+  })
   upsertSession({ id: 't1', state: 'stopped' })
   check(state.sessions.size === 0, 'a stopped session leaves state', fail)
+  check(
+    !state.replay.has('t1') && state.replay.size === 0,
+    'a stopped session forgets its replay params (key + credentials)',
+    fail
+  )
   check(
     node('#sessions').innerHTML.includes('No active tunnels yet'),
     'a stopped session leaves the screen (empty state re-rendered)',
