@@ -88,9 +88,11 @@ function bindShortcuts() {
       !e.altKey &&
       !e.target.matches('input, textarea')
     ) {
-      if (e.key === '1') switchTab('share')
-      else if (e.key === '2') switchTab('connect')
-      else if (e.key === '3') switchTab('saved')
+      // number keys follow the tab row itself: hardcoded 1/2/3 silently
+      // desynced when the folder tab was inserted (2 opened Connect)
+      const tabs = [...document.querySelectorAll('.tab')]
+      const n = Number(e.key)
+      if (n >= 1 && n <= tabs.length) switchTab(tabs[n - 1].dataset.tab)
     }
   })
 }

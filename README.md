@@ -296,17 +296,21 @@ CI-verified but not yet confirmed on real Apple hardware.
 
 **Share a port** — pick a local port (e.g. 3000), optionally a custom 32+ hex char key,
 toggle private/public. A session card appears with the `hs://s000…` connection
-string — hit **Copy** and send it to whoever needs access. Server cards also show
+string — hit **Copy invite link** and send it to whoever needs access. Server cards also show
 a **Copy LAN URL** row (`http://<lan-ip>:<port>`) — a phone on the _same network_
 can reach the service directly, no DHT involved.
 
-**Connect** — paste a connection string (`hs://s000…` private or `hs://0000…`
-public; secure mode is auto-detected from the prefix). The tunnel is exposed on
-your localhost port.
+**Share a folder** — its own tab: drop a folder from your file manager (or type
+its path) and get an invite link for it, with no port to pick. The form is the
+first thing on the tab, so it is reachable without scrolling past the port form.
+
+**Connect** — paste the link you were sent (`hs://s000…` private, `hs://0000…`
+public; which one it is gets detected for you). The tunnel is exposed on your
+localhost port.
 
 Sessions can be paused/resumed/stopped; the event log at the bottom shows what the worker is doing.
 
-**Speed limits** — every form (Share, Share a folder, Connect) takes an optional
+**Speed limits** — every form (Share a port, Share a folder, Connect) takes an optional
 **Speed limit (KB/s)** for that one tunnel, and the Sessions header has a **Total
 speed limit** that shapes _all_ tunnels together (one shared budget, so five
 busy tunnels can't add up to five times the rate you allowed). Both are live:
@@ -316,7 +320,7 @@ doesn't come back uncapped. A cap can't slow a sender that ignores
 backpressure; the worker bounds a tunnel's backlog at 16 MB and stops that one
 tunnel with a clear error instead of buffering the burst into RAM.
 
-**Temporary vs Permanent** — the Tunnel type selector on the Share tab chooses
+**Temporary vs Permanent** — the Tunnel type selector on the Share a port tab chooses
 between a one-off key (new random key each start) and a **permanent** tunnel:
 fixed key, named, saved, and auto-restarted whenever the app (re)starts.
 Connect has a matching **Save this connection** checkbox for keys you use often.
@@ -406,6 +410,32 @@ arrives on the device — in both directions.
 </details>
 
 ## Changelog
+
+<details id="v0.11.0">
+<summary><b>v0.11.0</b> — the folder share gets its own tab, and <code>hidden</code> starts working</summary>
+
+- **Sharing a folder was effectively the hidden feature.** An adversarial UX
+  pass as a non-technical persona (a bookkeeper sharing a folder with a client)
+  found the folder form sitting at y=1276 in an 888-tall window, while the port
+  form — a task she did not have — had a complete submit button at y=700 and no
+  nav entry pointed at her screen. The folder share is now its own tab, above
+  the fold, and the port tab points at it.
+- **`hidden` did nothing on a form label.** The UA rule
+  `[hidden] { display: none }` is outranked by any class rule that sets
+  `display`, and `.grid-form label { display: flex }` does exactly that — so the
+  folder form rendered Name and Custom key while "Permanent" was unticked, and
+  the port form's Name field had the same latent bug. Fixed once at the root,
+  which also made the older single-element `#recent-row[hidden]` rule redundant.
+- **The delivery moment is named for its purpose.** The card's action is
+  "Copy invite link" (it was "Copy", tooltip "Copy connection string") and says
+  what to do with it; "Private mode (secure)" became "Private link
+  (encrypted)"; the Connect tab says "paste the link you were sent"; and the
+  Node-runtime screen no longer claims "v18+" or tells a user of a bundled
+  build to install Node.js.
+- **Number-key tab shortcuts follow the tab row** instead of hardcoded 1/2/3,
+  which the fourth tab would otherwise have desynced (2 opened Connect).
+
+</details>
 
 <details id="v0.10.5">
 <summary><b>v0.10.5</b> — the chosen sailboat icon, and the header logo stops aliasing</summary>
