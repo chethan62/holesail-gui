@@ -1049,9 +1049,12 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   and [sodium-native](https://github.com/holepunchto/sodium-native) — the
   encrypted DHT and networking stack underneath (MIT/Apache-2.0).
 - [Tauri](https://tauri.app) — the desktop/mobile framework (MIT/Apache-2.0).
-- The app icon is a custom flat two-color mark (teal + yellow interlocking
-  shapes on transparent), designed for this project; master artwork in
-  `src-tauri/icons/source.png`, regenerable via `tauri icon`.
+- The app icon is a custom flat sailboat (orange hull, cyan jib, brown mast and
+  boom, transparent background), designed for this project; master artwork in
+  `src-tauri/icons/source.png`, regenerable via `tauri icon`. The Android launcher
+  icons come from the same master via `scripts/android-icons.sh`, which insets the
+  adaptive **foreground** to 70% of its canvas — Android only ever shows the inner
+  ~66% of that layer, so a full-bleed mark renders jammed against the circle.
 
 ## License
 
