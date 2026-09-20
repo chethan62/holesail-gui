@@ -411,6 +411,23 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.11.3">
+<summary><b>v0.11.3</b> — new app icon: the sailboat gains a cyan jib</summary>
+
+- New artwork, generated and supplied by the user: an orange hull, brown spars, a
+  yellow-to-amber main sail and a new cyan jib. The whole family is regenerated
+  from one 1254px transparent master with `npx tauri icon`, so every size comes
+  from the same source and cannot drift.
+- Framing is normalised to the outgoing master — content fills 81.6% x 82.5% of
+  the canvas, against the previous 80.4% x 82.5% — so the mark does not change
+  size in the launcher.
+- Verified: master corner alpha 0; reads on both `#0f1420` and `#eef2f9`; no
+  colour family collapses at launcher size (cyan 20.2% -> 19.1%, gold 19.6% ->
+  18.9%, orange-red 35.1% -> 32.0%, brown 13.0% -> 16.0%). The in-app header
+  keeps deriving its logo from `128x128.png` each build.
+
+</details>
+
 <details id="v0.11.2">
 <summary><b>v0.11.2</b> — stopping a share now actually clears the card</summary>
 
