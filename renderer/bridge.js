@@ -29,6 +29,13 @@ export async function workerDiagnostics() {
   return await window.__TAURI__.core.invoke('worker_diagnostics')
 }
 
+/// Local TCP ports something is listening on (port + owning process name),
+/// for the "which port is my app on?" hint on the share form. Returns [] when
+/// the OS cannot tell us — a suggestion, never an error.
+export async function listeningPorts() {
+  return await invokeWrapped('listening_ports')
+}
+
 export async function workerRestart() {
   return await window.__TAURI__.core.invoke('worker_restart')
 }

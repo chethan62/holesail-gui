@@ -35,6 +35,7 @@ import {
   syncWorker,
   updateWorkerStatus,
   bindNodeScreen,
+  listeningPorts,
   subscribeWorkerEvents
 } from './worker.js'
 import { handleDeepLink, stopAllTunnels } from './deep.js'
@@ -143,6 +144,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.homeDir = await homeDir()
   } catch {}
   $('#share-form').addEventListener('submit', startShare)
+
+  // "Which port is my app on?" — list what the machine is listening on and let
+  // one click fill the field. Refreshed each time the form is shown, since the
+  // set changes as services start and stop. Silent when the OS cannot say.
+  const fillPorts = async () => {
+    const hint = $('#share-port-hint')
+    let ports = []
+    try {
+      ports = await listeningPorts()
+    } catch {
+      ports = []
+    }
+    if (!ports.length) {
+      hint.hidden = true
+      return
+    }
+    hint.hidden = false
+    hint.textContent = ''
+    const label = document.createTextNode('Listening here: ')
+    hint.append(label)
+    for (const { port, name } of ports) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'link-btn'
+      b.textContent = name ? `${name} ${port}` : String(port)
+      b.title = `Use port ${port}`
+      b.addEventListener('click', () => {
+        $('#share-port').value = String(port)
+        log(`Port ${port} selected from the listening list`, 'info')
+      })
+      hint.append(b)
+    }
+  }
+  fillPorts()
+  $('#share-port').addEventListener('focus', fillPorts)
   $('#connect-form').addEventListener('submit', startConnect)
   $('#filemanager-form').addEventListener('submit', startFilemanagerShare)
   bindDropZone()

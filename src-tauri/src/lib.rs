@@ -164,6 +164,7 @@ pub fn run() {
             commands::take_pending_deep_links,
             commands::version_info,
             commands::lan_address,
+            commands::listening_ports,
             commands::home_dir,
             commands::log_append,
             commands::settings_get,

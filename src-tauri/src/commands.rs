@@ -177,9 +177,86 @@ pub(crate) fn home_dir() -> String {
         .unwrap_or_default()
 }
 
+/// One local service the machine is listening on: the port, plus the owning
+/// process name when the OS will tell us (`ss -p` shows names for our own
+/// processes without privileges — exactly the set someone is sharing).
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct ListeningPort {
+    pub port: u16,
+    pub name: String,
+}
+
+/// Parse one `ss -tlnHp` row into a ListeningPort.
+///
+/// The local address is the 4th whitespace-separated column and the port is
+/// after its LAST ':' — IPv6 addresses contain colons, so splitting on the
+/// first is wrong. System ports (<1024) are dropped: they are not what anyone
+/// shares. A row with no process is still useful (the port is the hint), so it
+/// is kept with a placeholder name.
+fn parse_ss_row(line: &str) -> Option<ListeningPort> {
+    let cols: Vec<&str> = line.split_whitespace().collect();
+    if cols.len() < 4 {
+        return None;
+    }
+    let port = cols[3].rsplit(':').next()?.parse::<u16>().ok()?;
+    if port < 1024 {
+        return None;
+    }
+    let name = line
+        .split_once("users:((\"")
+        .and_then(|(_, rest)| rest.split_once('\"'))
+        .map(|(n, _)| n.to_string())
+        .unwrap_or_else(|| "?".to_string());
+    Some(ListeningPort { port, name })
+}
+
+/// Local TCP ports something is listening on, lowest first, with the owning
+/// process name where available — the answer to "which port is my app on?".
+///
+/// Shells out to `ss` (iproute2, ubiquitous on Linux) rather than walking
+/// /proc/*/fd for socket inodes, which is slower and needs privileges for other
+/// users' processes. Returns an empty list on any failure, including
+/// non-Linux: a suggestion must never break the form.
+#[tauri::command]
+pub(crate) fn listening_ports() -> Vec<ListeningPort> {
+    let out = match std::process::Command::new("ss").args(["-tlnHp"]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut found: Vec<ListeningPort> = text.lines().filter_map(parse_ss_row).collect();
+    found.sort_by_key(|l| l.port);
+    found.dedup_by_key(|l| l.port);
+    found.truncate(12); // a hint, not an inventory
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_an_ss_row_with_a_process_name() {
+        let row = "LISTEN 0 511 *:3000 *:* users:((\"node\",pid=1234,fd=21))";
+        let p = parse_ss_row(row).expect("row should parse");
+        assert_eq!(p.port, 3000);
+        assert_eq!(p.name, "node");
+    }
+
+    #[test]
+    fn takes_the_port_after_the_last_colon_not_the_first() {
+        // IPv6 local addresses are full of colons; the port is the tail.
+        let row = "LISTEN 0 511 [::1]:8644 [::]:* users:((\"kdeconnectd\",pid=9,fd=3))";
+        assert_eq!(parse_ss_row(row).unwrap().port, 8644);
+    }
+
+    #[test]
+    fn drops_system_ports_and_malformed_rows() {
+        assert!(parse_ss_row("LISTEN 0 4096 *:53 *:*").is_none());
+        assert!(parse_ss_row("LISTEN 0 4096 *:3000 *:*").is_some());
+        assert!(parse_ss_row("LISTEN 0 4096").is_none());
+        assert!(parse_ss_row("LISTEN 0 4096 *:nope *:*").is_none());
+    }
 
     #[test]
     fn trim_keeps_short_text_unchanged() {
