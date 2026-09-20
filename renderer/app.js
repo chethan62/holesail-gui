@@ -168,7 +168,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       const b = document.createElement('button')
       b.type = 'button'
       b.className = 'link-btn'
-      b.textContent = name ? `${name} ${port}` : String(port)
+      // Two spans, so the port number can be mono/tabular against a dimmed
+      // service name. Falls back to the bare number when the OS gave no name.
+      if (name) {
+        const n = document.createElement('span')
+        n.className = 'chip-name'
+        n.textContent = name
+        b.append(n)
+      }
+      const p = document.createElement('span')
+      p.className = 'chip-port'
+      p.textContent = String(port)
+      b.append(p)
+      // The gap between the spans is visual only, so the accessible name would
+      // read "node3000". Name it explicitly (and keep the full name even when
+      // the visible span is ellipsised).
+      b.setAttribute('aria-label', name ? `${name} ${port}` : String(port))
       b.title = `Use port ${port}`
       b.addEventListener('click', () => {
         $('#share-port').value = String(port)

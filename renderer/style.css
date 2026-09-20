@@ -429,31 +429,61 @@ main {
 /* "Listening here:" chips on the share form. They are buttons, so they need
    the appearance reset — WebKitGTK paints its own chrome on a bare button and
    ignores the dark theme (same family as .grid-form select and the number
-   spinner). The look is a pill, not a link, so the target is obvious. */
+   spinner). Sized as real targets: 26px tall clears the 24x24 minimum in
+   WCAG 2.5.8, which the old 2px/10px padding did not. The port number is set
+   in mono/tabular so a column of them lines up and reads as data, not prose. */
 .port-hint {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 6px 8px;
+  padding-top: 8px;
   font-size: 12px;
   color: var(--text-dim);
 }
 
 .port-hint .link-btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 2px 10px;
   font: inherit;
   font-size: 12px;
+  line-height: 1;
   color: var(--text);
   cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.port-hint .link-btn .chip-name {
+  color: var(--text-dim);
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-hint .link-btn .chip-port {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .port-hint .link-btn:hover {
   border-color: var(--accent);
+  background: var(--bg-panel);
+}
+
+.port-hint .link-btn:active {
+  background: var(--bg-input);
+  border-color: var(--accent-hover);
 }
 
 .port-hint .link-btn:focus-visible {
