@@ -166,6 +166,34 @@ if (!manifest.includes('extractNativeLibs')) {
   console.log('AndroidManifest.xml already has extractNativeLibs')
 }
 
+// 2e. tauri.properties is written once, when `android init` first runs, and
+// never again — so its versionName/versionCode froze at whatever the version
+// was then (0.1.0, while the app was 0.11.4). Android then cannot tell one
+// build from another, and the extraction stamp in BareAssets.kt keys on
+// versionName, so it would have stayed "0.1.0" forever and re-extracted (or
+// not) against the wrong value. Keep both in sync, here, where every Android
+// build passes through.
+const propsPath = path.join(GEN, 'app', 'tauri.properties')
+if (existsSync(propsPath)) {
+  const appVersion = JSON.parse(
+    readFileSync(path.join(GEN, '..', '..', 'tauri.conf.json'), 'utf8')
+  ).version
+  // versionCode is what Android compares for upgrades, so it has to increase
+  // with the version: 0.11.4 -> 1104.
+  const [maj = 0, min = 0, pat = 0] = String(appVersion)
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0)
+  const code = maj * 10000 + min * 100 + pat
+  let props = readFileSync(propsPath, 'utf8')
+  props = props
+    .replace(/tauri\.android\.versionName=.*/, `tauri.android.versionName=${appVersion}`)
+    .replace(/tauri\.android\.versionCode=.*/, `tauri.android.versionCode=${code}`)
+  writeFileSync(propsPath, props)
+  console.log(`tauri.properties: versionName=${appVersion} versionCode=${code}`)
+} else {
+  console.log('tauri.properties not found (android init has not run) — skipped')
+}
+
 // 3. write the Kotlin extractor next to MainActivity
 const mainActivity = path.join(
   GEN,
@@ -188,21 +216,37 @@ import java.io.File
 
 /**
  * Extracts the bundled bare-runtime worker bundle from the APK assets into
- * filesDir/bare on first launch. Android assets are not real filesystem
- * paths, and the Rust backend needs a real path to spawn the \`bare\`
- * binary, so the whole tree is copied out once.
+ * filesDir/bare. Android assets are not real filesystem paths, and the Rust
+ * backend needs a real one to hand to the runtime.
+ *
+ * Versioned: the tree is re-extracted whenever the installed versionName
+ * changes. The old guard ("does service-worker.js exist?") meant an updated
+ * app kept running the FIRST version's worker JS forever — the UI would
+ * update and the tunnel logic would not.
  */
 object BareAssets {
   private const val ASSET_DIR = "bare"
   private const val TARGET_DIR = "bare"
+  private const val STAMP = "extracted-version"
 
   fun extract(context: Context) {
     val target = File(context.filesDir, TARGET_DIR)
-    val marker = File(target, "service-worker.js")
-    if (marker.exists() && File(target, "bare").exists()) return
+    val stamp = File(target, STAMP)
+    val version = currentVersion(context)
+    // Unknown version: extract rather than trust a stale copy.
+    if (version != null && stamp.exists() && stamp.readText().trim() == version) return
     copyTree(context, ASSET_DIR, target)
-    File(target, "bare").setExecutable(true, false)
+    // Only the JS bundle is copied here; the runtime itself is a native lib
+    // (libholesail_bare.so) and Android extracts that in its own lib dir.
+    stamp.writeText(version ?: "unknown")
   }
+
+  private fun currentVersion(context: Context): String? =
+    try {
+      context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    } catch (e: Exception) {
+      null
+    }
 
   private fun copyTree(context: Context, assetPath: String, target: File) {
     val children = context.assets.list(assetPath) ?: return
