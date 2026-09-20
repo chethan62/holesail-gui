@@ -186,6 +186,27 @@ jobs:
           fi
           echo "OK: deb entry Icon=$DEB_ICON resolves to an installed icon"
 
+          # Resolving to a file is not the same as carrying the app's ART: a
+          # stale or template PNG resolves perfectly. Compare bytes against the
+          # repo family instead (Tauri installs 256x256@2 from 128x128@2x).
+          assert_icon_bytes() {
+            root=$1; label=$2; ok=1
+            for pair in "32x32:32x32.png" "128x128:128x128.png" "256x256@2:128x128@2x.png"; do
+              size=${pair%%:*}; ref=src-tauri/icons/${pair##*:}
+              png=$(find "$root/usr/share/icons/hicolor/$size" -name '*.png' 2>/dev/null | head -1)
+              if [ -z "$png" ]; then
+                echo "FAIL: $label installs no $size icon"; ok=0; continue
+              fi
+              cmp -s "$png" "$ref" || { echo "FAIL: $label $size icon differs from $ref"; ok=0; }
+            done
+            if [ "$ok" = 1 ]; then
+              echo "OK: $label icons are byte-identical to src-tauri/icons"
+            else
+              return 1
+            fi
+          }
+          assert_icon_bytes /tmp/deb deb
+
           # The AppImage is what the Linux updater installs, so check its payload
           # too (its worker must boot under the bare runtime it carries).
           APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
@@ -195,6 +216,7 @@ jobs:
             (cd /tmp && "$APP" --appimage-extract >/dev/null 2>&1 || true)
             if [ -x /tmp/squashfs-root/usr/lib/holesail-gui/bare ]; then
               ping_worker /tmp/squashfs-root/usr/lib/holesail-gui/bare /tmp/squashfs-root/usr/lib/holesail-gui/service-worker.js
+              assert_icon_bytes /tmp/squashfs-root AppImage
             else
               echo "AppImage built but its payload has no bare runtime — investigate"
               exit 1
@@ -507,6 +529,22 @@ jobs:
             | grep -q bare_addon_load_dynamic \
             || { echo "FAIL: the bundled runtime does not export the addon ABI"; exit 1; }
           echo "OK: worker bundled, runtime exports the addon ABI"
+
+      - name: Assert the APK carries the app's own launcher icon
+        run: |
+          # Every other Android check proves the RUNTIME arrived; none of them
+          # looks at the art. `tauri android init` fills res/mipmap-* from its
+          # template and the glue only overwrites what it is told to, so an APK
+          # can ship the wrong mark with all nine jobs green — that is how an
+          # oversized foreground reached v0.12.2 and was reported ok. Compare the
+          # art inside the built APK against the repo family (every layer a
+          # launcher can draw, all five densities), and require the negative
+          # control to fail first, or the check proves nothing.
+          python3 -c "import PIL" 2>/dev/null \
+            || python3 -m pip install --quiet --break-system-packages pillow
+          python3 scripts/apk-icon-check.py --self-test
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          python3 scripts/apk-icon-check.py "$APK" src-tauri/icons/android
 
       - uses: actions/upload-artifact@v5
         with:

@@ -214,6 +214,23 @@ engine, so the section numbering has a gap. `npm run test:bare` is the leg that
 runs the worker under the runtime a PACKAGED build uses — the only local check
 that sees a Node-only global. CI runs both legs.
 
+`scripts/apk-icon-check.py` guards the launcher art. It compares every layer the
+launcher can draw (`ic_launcher_foreground`, which is what a modern launcher
+paints through `mipmap-anydpi-v26`; the flat `ic_launcher`; and
+`ic_launcher_round`) at every density inside the built APK against
+`src-tauri/icons/android`. Byte comparison is impossible — aapt2 re-encodes the
+PNGs — so it compares the art and lets a threshold decide (a correct APK scores
+0.00, an oversized overlay scores ~24 against a threshold of 12). The android CI
+job runs it on every build, after `--self-test`, which synthesises one correct
+APK and one with an oversized foreground and requires exit 0 and exit 1 from
+them: this checker's own failure mode is silently reporting `ok`, which is how an
+oversized foreground reached v0.12.2.
+
+```bash
+python3 scripts/apk-icon-check.py --self-test                   # can the check fail? must pass
+python3 scripts/apk-icon-check.py <apk> src-tauri/icons/android  # does this APK carry our art?
+```
+
 ## Build a release bundle
 
 <details>
