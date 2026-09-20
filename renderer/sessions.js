@@ -22,8 +22,23 @@ import { withCredentials } from './invite.js'
 
 export function upsertSession(data) {
   if (data.state === 'stopped') {
-    // Everything the renderer remembers about this session — including the
-    // replay params that hold its key, and now its share credentials. See
+    // Say so in the log. The card leaves and the local proxy port is released,
+    // but nothing was written — so a stop read as silence, which is how "Stop did
+    // nothing" looks to a user even when it worked. Measured: the port is freed
+    // within seconds while the log stayed empty, so this line is the difference
+    // between "it worked" and "nothing happened".
+    const gone = state.sessions.get(data.id)
+    if (gone) {
+      const what =
+        gone.type === 'client'
+          ? `Client on localhost:${gone.port}`
+          : gone.type === 'filemanager'
+            ? `Folder share${gone.dir ? ` (${gone.dir})` : ''}`
+            : `Tunnel on port ${gone.port}`
+      log(`${what} stopped`)
+    }
+    // Everything else the renderer remembers about this session — including the
+    // replay params that hold its key, and its share credentials. See
     // dropSession for why this must not be a hand-written list of maps:
     // `replay` was the one it forgot, so it grew without bound.
     dropSession(data.id)

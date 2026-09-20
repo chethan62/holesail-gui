@@ -286,6 +286,13 @@ export async function startConnect(event) {
         secure: !cleanKey.startsWith('hs://0000'),
         udp: params.udp,
         limit: params.limit,
+        // Keep the login the invite link carried. The autostart/Saved path has
+        // only the saved record to work from, so without these a connection
+        // started from there handed out a URL with no credentials and the
+        // fetch answered 401 (measured); they live in the keychain with the
+        // rest of the record.
+        fsUser: params.fsUser,
+        fsPass: params.fsPass,
         autostart: true,
         createdAt: Date.now()
       })

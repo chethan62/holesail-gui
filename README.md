@@ -417,6 +417,31 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.1">
+<summary><b>v0.12.1</b> — fixes found by driving the real app</summary>
+
+- **A plain (non-folder) share was never affected, and still is not.** The
+  credential fragment rides only on folder-share links. Verified end to end that
+  an ordinary port share's invite link and its client's **Copy URL** are exactly
+  what they were, and that a fetch through that tunnel still answers 200.
+- **Pause, Resume and Disconnect are verified by measurement, not by eye.** With
+  a real service behind a port share: **Pause** makes the fetch stop answering,
+  **Resume** restores it, and **Disconnect** releases the client's local proxy
+  port — checked on the socket table, since that is the part a user cannot see.
+- **A stopped tunnel now says so in the log.** It removed the card and released
+  the port correctly but printed nothing, and silence is what "Stop did nothing"
+  looks like from the outside. Card, port and log now agree.
+- **A connection started from the Saved tab keeps its login.** Credentials the
+  invite link carried are stored with the saved tunnel (in the keychain, like the
+  rest of the record), so reconnecting — including the autostart at launch —
+  hands out a URL that logs in instead of a bare `localhost` URL that answers
+  401. Records saved by older versions still load.
+- **`log()` can no longer break its caller.** Persisting a log line is
+  best-effort by design, but a missing bridge throws *synchronously*, which
+  escaped the promise's `.catch()` and took the calling code down with it.
+
+</details>
+
 <details id="v0.12.0">
 <summary><b>v0.12.0</b> — a folder share's login travels with the link</summary>
 

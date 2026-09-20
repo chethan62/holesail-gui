@@ -132,7 +132,13 @@ export async function startSaved(t) {
               port: t.port ?? undefined,
               host: t.host || undefined,
               udp: t.udp,
-              limit: t.limit || 0
+              limit: t.limit || 0,
+              // A saved folder-share connection keeps the credentials its
+              // invite link carried, so starting it later still hands out a URL
+              // that logs in. Without them the card fell back to a bare
+              // localhost URL and the fetch answered 401 (measured).
+              fsUser: t.fsUser,
+              fsPass: t.fsPass
             })
     })
     addRecent(session.url)

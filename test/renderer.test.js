@@ -7,14 +7,36 @@
    renders a real session card needs a real DOM — drive the app for that
    (scripts/ci-ui-smoke.py) or open the page in a browser. */
 
+// What log() needs to run: createElement for each line, and a #log node with
+// appendChild/scrollTop. Without them a stopped session's log line threw inside
+// upsertSession and took the whole run with it — the stub doing its job, since it
+// is minimal ON PURPOSE so a renderer path needing a real DOM fails loudly here.
 const nodes = new Map()
+const stubNode = () => ({
+  innerHTML: '',
+  textContent: '',
+  className: '',
+  scrollTop: 0,
+  scrollHeight: 0,
+  children: [],
+  appendChild(child) {
+    this.children.push(child)
+  },
+  append(child) {
+    this.children.push(child)
+  },
+  addEventListener() {},
+  setAttribute() {},
+  querySelector: () => null
+})
 const node = (sel) => {
-  if (!nodes.has(sel)) nodes.set(sel, { innerHTML: '', textContent: '' })
+  if (!nodes.has(sel)) nodes.set(sel, stubNode())
   return nodes.get(sel)
 }
 globalThis.document = {
   querySelector: node,
-  getElementById: () => ({ addEventListener() {} })
+  getElementById: node,
+  createElement: () => stubNode()
 }
 
 const check = (cond, msg, fail) => {
@@ -49,6 +71,16 @@ const check = (cond, msg, fail) => {
   })
   upsertSession({ id: 't1', state: 'stopped' })
   check(state.sessions.size === 0, 'a stopped session leaves state', fail)
+  /* The stop must also SAY it stopped. It removed the card and released the local
+     proxy port correctly, but it wrote nothing to the log — which is how a
+     working stop reads as "nothing happened". Found by driving the real app
+     (scripts/e2e-app.py): the port was measurably freed while the log stayed
+     empty, so the silence was the whole of the user-visible symptom. */
+  check(
+    node('#log').children.some((c) => /stopped/.test(c.textContent)),
+    'a stopped session says so in the log',
+    fail
+  )
   check(
     !state.replay.has('t1') && state.replay.size === 0,
     'a stopped session forgets its replay params (key + credentials)',

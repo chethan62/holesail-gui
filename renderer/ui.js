@@ -29,9 +29,16 @@ export function log(message, cls = '', actions = []) {
   if (el.querySelector('.empty')) el.innerHTML = ''
   el.appendChild(line)
   el.scrollTop = el.scrollHeight
-  // Persist so the history survives restarts (bug reports). Best-effort:
-  // a missing command (mobile) or full disk must never break the UI.
-  logAppend(stamp).catch(() => {})
+  // Persist so the history survives restarts (bug reports). Best-effort: a
+  // missing command (mobile) or full disk must never break the UI — and that
+  // includes a THROW, not just a rejected promise: without a bridge the call
+  // fails synchronously and escapes the .catch below, taking the caller with
+  // it (a stopped session's log line was enough to crash the renderer test).
+  try {
+    logAppend(stamp).catch(() => {})
+  } catch {
+    /* no persistence available; the on-screen log still worked */
+  }
 }
 
 let toastTimer = null

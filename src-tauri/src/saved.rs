@@ -33,6 +33,15 @@ pub(crate) struct SavedTunnel {
     username: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     password: Option<String>,
+    /// Client kind: the credentials an invite link carried for a folder share,
+    /// kept so a connection started later — from the Saved tab, or autostarted at
+    /// launch — can still hand out a URL that logs in. Named to match the session
+    /// fields the renderer reads (camelCase in JSON, like every field here); the
+    /// record itself lives in the keychain with the rest of the saved tunnels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fs_user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fs_pass: Option<String>,
     /// Secure (private) mode. Servers: controls the keypair derivation —
     /// private vs public derive DIFFERENT keys, so this must be persisted.
     /// Defaults to true for saved tunnels created before this field existed.
@@ -286,6 +295,32 @@ fn saved_wants_autostart(store: &SavedStore) -> bool {
 mod tests {
     use super::*;
 
+    /// The credentials an invite link carried must survive the store: they are
+    /// what lets a connection started later — from the Saved tab, or autostarted
+    /// at launch — hand out a URL that logs in. Without them the card fell back
+    /// to a bare localhost URL and the fetch answered 401 (measured in the app).
+    #[test]
+    fn client_credentials_survive_a_round_trip() {
+        let mut t = tunnel("c1", "client", true);
+        t.fs_user = Some("admin".into());
+        t.fs_pass = Some("per-share-secret".into());
+        let json = serde_json::to_string(&t).expect("serialize");
+        assert!(
+            json.contains("\"fsUser\""),
+            "wire name is camelCase: {json}"
+        );
+        let back: SavedTunnel = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.fs_user.as_deref(), Some("admin"));
+        assert_eq!(back.fs_pass.as_deref(), Some("per-share-secret"));
+        // A record written before these fields existed must still load — the
+        // whole point of the serde defaults.
+        let old: SavedTunnel = serde_json::from_str(
+            r#"{"id":"o","name":"old","kind":"client","key":"k","secure":true,"udp":false,"limit":0,"autostart":false}"#,
+        )
+        .expect("pre-existing records must still load");
+        assert!(old.fs_user.is_none() && old.fs_pass.is_none());
+    }
+
     fn store_with(items: Vec<SavedTunnel>) -> SavedStore {
         SavedStore(Mutex::new(items))
     }
@@ -302,6 +337,8 @@ mod tests {
             role: None,
             username: None,
             password: None,
+            fs_user: None,
+            fs_pass: None,
             secure: true,
             udp: false,
             limit: 0,
@@ -326,6 +363,8 @@ mod tests {
                 role: None,
                 username: None,
                 password: None,
+                fs_user: None,
+                fs_pass: None,
                 secure: true,
                 udp: false,
                 limit: 0,
