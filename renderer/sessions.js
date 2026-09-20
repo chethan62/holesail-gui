@@ -27,6 +27,10 @@ export function upsertSession(data) {
     state.traffic.delete(data.id)
     state.conn.delete(data.id)
     flags.relaySessions.delete(data.id)
+    // Re-render: the card is gone from state, so it must leave the screen too.
+    // Without this the stopped session lingers until some unrelated event
+    // happens to rebuild the list — which reads as "Stop did nothing".
+    renderSessions()
   } else {
     if (data.state === 'error') {
       // the worker killed just this session after an async error — show

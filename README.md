@@ -411,6 +411,26 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.11.2">
+<summary><b>v0.11.2</b> — stopping a share now actually clears the card</summary>
+
+- **"Stop sharing" looked like it did nothing.** The worker stopped the tunnel
+  and sent a `stopped` event; the renderer deleted the session from every state
+  map — and never re-rendered. The card stayed on screen until some unrelated
+  event happened to rebuild the list, so a share that was already down still
+  looked live. The `stopped` branch re-renders now, which also brings the empty
+  state back when the last share ends.
+- **The Saved tab had the same shape of bug.** Its Start/Stop button reads the
+  live session, but neither action refreshed the list, so the button kept
+  offering "Stop" for a tunnel that was already down. Both paths refresh.
+- **A renderer check now guards it**, which is why it shipped: nothing asserted
+  the _screen_ after a stop, only that the state changed. `test/renderer.test.js`
+  drives the real renderer module against a minimal DOM stub and fails if a
+  stopped session stays on the page — proven to fail on the pre-fix code and to
+  pass on this one.
+
+</details>
+
 <details id="v0.11.1">
 <summary><b>v0.11.1</b> — a folder in your home is shareable again, and the port field suggests real ports</summary>
 

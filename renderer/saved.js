@@ -137,6 +137,7 @@ export async function startSaved(t) {
     })
     addRecent(session.url)
     log(`Started saved tunnel "${t.name}"`, 'ok')
+    await refreshSaved() // flip the button to Stop
   } catch (err) {
     toast('Failed to start: ' + err.message, true)
   }
@@ -147,6 +148,7 @@ export async function stopSaved(t) {
   if (!s) return
   try {
     await rpc('session:stop', { id: s.id })
+    await refreshSaved() // the Start/Stop button reads the live session
   } catch (err) {
     toast(err.message, true)
   }
