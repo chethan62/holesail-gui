@@ -440,6 +440,20 @@ jobs:
       - name: Wire bundle into APK assets (Kotlin extractor)
         run: node scripts/android-glue.mjs
 
+      - name: Restore the Android debug keystore (stable signature across runs)
+        uses: actions/cache@v5
+        with:
+          # Without this, every run generates a fresh ~/.android/debug.keystore
+          # on its ephemeral runner. Each APK then carries a DIFFERENT signing
+          # key, and Android refuses to install it over the existing app — the
+          # install silently does not replace anything, so the user keeps
+          # running the old build (that is how a stale launcher icon survived
+          # several releases, and why the phone showed no new version). A debug
+          # key is not a secret, so caching it is the whole fix. Clear the key
+          # (or bump its suffix) to deliberately re-key.
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Build debug APK
         run: npx tauri android build --apk --debug
         env:
