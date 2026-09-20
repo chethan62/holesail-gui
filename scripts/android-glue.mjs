@@ -70,6 +70,43 @@ if (!existsSync(path.join(GEN, 'settings.gradle'))) {
   })
 }
 
+// 1b. launcher icons. The generated project's res/mipmap-* come from Tauri's
+// Android TEMPLATE, not from src-tauri/icons/android/, and src-tauri/gen is
+// gitignored — so every CI run's `tauri android init` repopulates them with the
+// stock Tauri mark and nothing ever overwrites it. Measured on the shipped
+// v0.12.1 APK: its res/mipmap-*/ic_launcher.png was the template's cyan+amber
+// (#24c8db/#ffc131) while the app's icon is the sailboat, and the APK contains no
+// mipmap-anydpi-v26 at all, so @mipmap/ic_launcher resolves to exactly these
+// PNGs — the launcher drew Tauri's logo, not the app's.
+//
+// This lives here, ABOVE the NDK/bundle guards on purpose: the launcher icon does
+// not depend on the worker bundle or the NDK, so a missing one of those must not
+// silently leave the wrong icon on the phone. Copy the app's family in, so what
+// the launcher shows is the app's own artwork.
+const resDir = path.join(GEN, 'app', 'src', 'main', 'res')
+const srcIconDir = path.join(root, 'src-tauri', 'icons', 'android')
+if (!existsSync(srcIconDir)) {
+  console.error(
+    'src-tauri/icons/android not found — regenerate with: ' +
+      'npx tauri icon src-tauri/icons/icon.png'
+  )
+  process.exit(1)
+}
+let iconFiles = 0
+for (const entry of readdirSync(srcIconDir, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue
+  const from = path.join(srcIconDir, entry.name)
+  const to = path.join(resDir, entry.name)
+  mkdirSync(to, { recursive: true })
+  for (const f of readdirSync(from)) {
+    cpSync(path.join(from, f), path.join(to, f))
+    iconFiles++
+  }
+}
+console.log(
+  `copied ${iconFiles} launcher-icon file(s): src-tauri/icons/android -> app/src/main/res/`
+)
+
 // 2. copy the bundle into the APK assets
 const assets = path.join(GEN, 'app', 'src', 'main', 'assets', 'bare')
 rmSync(assets, { recursive: true, force: true })
