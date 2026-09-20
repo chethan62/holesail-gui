@@ -116,7 +116,11 @@ body {
 }
 .icon-btn {
   /* 32x32 always-visible target: the old padding-only button measured ~26x22
-     with no background, which read as decoration rather than a control. */
+     with no background, which read as decoration rather than a control. The
+     appearance reset is the same one the port chips and .grid-form select
+     need — WebKitGTK paints native chrome on a bare button and ignores the
+     theme. */
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -159,8 +163,11 @@ body {
 /* The theme button carries both glyphs; the active theme shows the OTHER one
    (the icon states the action, not the current mode — the same way a
    play/pause button shows what pressing it does). */
-.i-dark,
-.i-light {
+/* Scoped as `.icon-btn svg.i-…` deliberately: the base `.icon-btn svg {
+   display: block }` above outranks a plain `.i-dark { display: none }`
+   (0-1-1 beats 0-1-0), which made the button show BOTH glyphs at once. */
+.icon-btn svg.i-dark,
+.icon-btn svg.i-light {
   display: none;
 }
 body[data-theme='dark'] #theme-toggle .i-light,
@@ -1116,6 +1123,15 @@ button:focus-visible,
 .tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* One transition for every button, so the header icon buttons, the tabs and
+   the card actions all feel the same. Colour is deliberately excluded: a theme
+   switch should be immediate, not a 120ms fade of every label on screen. */
+button {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 /* pressed state so clicks feel responsive */
