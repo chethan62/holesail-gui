@@ -321,6 +321,55 @@ async function main() {
         `broad path ${broadPath} rejected (${broadErr ? broadErr.message : 'no error'})`
       )
     }
+    // …and a NAMED child of home must be shareable. Refusing every home child
+    // blocked the ordinary folders users pick — including the "specific
+    // folder" this refusal's own message tells them to use — so assert the
+    // allowed direction, not just the refused one.
+    const childDir = path.join(os.homedir(), 'holesail-guard-allowed-test')
+    fs.mkdirSync(childDir, { recursive: true })
+    let childErr = null
+    let childSession = null
+    try {
+      childSession = await rpc(
+        'filemanager:start',
+        { path: childDir, secure: true },
+        90000
+      )
+    } catch (e) {
+      childErr = e
+    } finally {
+      if (childSession && childSession.id) {
+        await rpc('session:stop', { id: childSession.id }, 20000).catch(
+          () => {}
+        )
+      }
+      try {
+        fs.rmdirSync(childDir)
+      } catch {}
+    }
+    assert(
+      !childErr,
+      `a named home subfolder is shareable (${childErr ? childErr.message : 'ok'})`
+    )
+    // …while a HIDDEN home entry stays refused: that is where secrets live.
+    // Use a dot dir this test creates, so the assertion can't pass (or fail)
+    // merely because ~/.ssh happens to exist on the machine.
+    const dotDir = path.join(os.homedir(), '.holesail-guard-dot-test')
+    fs.mkdirSync(dotDir, { recursive: true })
+    let dotErr = null
+    try {
+      await rpc('filemanager:start', { path: dotDir, secure: true }, 30000)
+    } catch (e) {
+      dotErr = e
+    } finally {
+      try {
+        fs.rmdirSync(dotDir)
+      } catch {}
+    }
+    assert(
+      dotErr && /Refusing to share a broad path/.test(dotErr.message),
+      `a hidden home entry stays refused (${dotErr ? dotErr.message : 'no error'})`
+    )
 
     console.log('12) session pause/resume cycle')
     const prServer = await rpc(

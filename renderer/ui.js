@@ -168,12 +168,18 @@ export function isBroadSharePath(p) {
   const home = (state.homeDir || '').replace(/[\\/]+$/, '')
   if (home && (s === home || s.toLowerCase() === home.toLowerCase()))
     return true
-  // home dir's immediate children (e.g. ~/Documents, ~/.ssh, ~/Downloads)
-  // — the parent of `s` equals home
+  // HIDDEN entries directly in home (~/.ssh, ~/.gnupg) are secrets; other home
+  // children are the named folders users actually share. Treating every child
+  // as broad refused ordinary folders and contradicted the guard's own advice
+  // to "share a specific subfolder instead" (see worker/guards.js).
   const idx = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'))
   if (home && idx > 0) {
     const parent = s.slice(0, idx)
-    if (parent === home || parent.toLowerCase() === home.toLowerCase())
+    const child = s.slice(idx + 1)
+    if (
+      child.startsWith('.') &&
+      (parent === home || parent.toLowerCase() === home.toLowerCase())
+    )
       return true
   }
   return false
