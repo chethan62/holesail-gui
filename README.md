@@ -434,10 +434,9 @@ arrives on the device — in both directions.
 - **A connection started from the Saved tab keeps its login.** Credentials the
   invite link carried are stored with the saved tunnel (in the keychain, like the
   rest of the record), so reconnecting — including the autostart at launch —
-  hands out a URL that logs in instead of a bare `localhost` URL that answers
-  401. Records saved by older versions still load.
+  hands out a URL that logs in instead of a bare `localhost` URL that answers 401. Records saved by older versions still load.
 - **`log()` can no longer break its caller.** Persisting a log line is
-  best-effort by design, but a missing bridge throws *synchronously*, which
+  best-effort by design, but a missing bridge throws _synchronously_, which
   escaped the promise's `.catch()` and took the calling code down with it.
 
 </details>
