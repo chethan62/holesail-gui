@@ -141,45 +141,87 @@ if (existsSync(livefilesDir)) {
 // holesail-server declares "GNU GPL v3" in its npm manifest while its repository
 // carries AGPL-3.0, so both texts land next to it: a redistributor with
 // inconsistent upstream metadata is better off shipping both than guessing.
+// The texts are DERIVED from each installed package's own declaration rather
+// than from a hand-written list — that list was wrong within the hour (it gave
+// holesail-logger the AGPL text while installed 1.1.0 declares "GPL 3.0", and
+// npm's 2.0.0 is the one that says AGPL). A new copyleft dependency is now
+// covered automatically; a licence family we hold no text for fails the build
+// rather than silently shipping nothing.
 const LICENCE_TEXTS = {
-  'AGPL-3.0': {
+  AGPL: {
     from: 'holesail/LICENSE',
-    title: 'GNU AFFERO GENERAL PUBLIC LICENSE'
+    title: 'GNU AFFERO GENERAL PUBLIC LICENSE',
+    dest: 'LICENSE.AGPL-3.0.txt'
   },
-  'GPL-3.0': {
+  GPL: {
     from: 'holesail-client/LICENSE.txt',
-    title: 'GNU GENERAL PUBLIC LICENSE'
+    title: 'GNU GENERAL PUBLIC LICENSE',
+    dest: 'LICENSE.GPL-3.0.txt'
   }
 }
-const needText = [
-  { pkg: 'holesail-server', texts: ['GPL-3.0', 'AGPL-3.0'] },
-  { pkg: 'holesail-logger', texts: ['AGPL-3.0'] },
-  { pkg: 'barely-colours', texts: ['GPL-3.0'] }
-]
+// Packages whose metadata contradicts itself get every text it mentions.
+const BOTH_TEXTS = new Set(['holesail-server'])
 
-const nm = path.join(out, 'node_modules')
-for (const { pkg, texts } of needText) {
-  const dir = path.join(nm, pkg)
-  if (!existsSync(dir)) continue // a future version may drop it
-  const hasOwn = readdirSync(dir).some((f) =>
+const nmDir = path.join(out, 'node_modules')
+const allManifests = []
+const collect = (dir) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const child = path.join(dir, entry.name)
+    if (entry.name.startsWith('@')) collect(child)
+    else if (existsSync(path.join(child, 'package.json')))
+      allManifests.push(child)
+    if (
+      entry.name !== 'node_modules' &&
+      existsSync(path.join(child, 'node_modules'))
+    ) {
+      collect(path.join(child, 'node_modules'))
+    }
+  }
+}
+collect(nmDir)
+
+for (const pkgDir of allManifests) {
+  const manifest = JSON.parse(
+    readFileSync(path.join(pkgDir, 'package.json'), 'utf-8')
+  )
+  const declared = String(manifest.license || '')
+  const upper = declared.toUpperCase()
+  if (!/\b(A?GPL)/.test(upper)) continue
+  // A package whose metadata contradicts itself (manifest GPL, repository
+  // AGPL) gets every text it mentions; everything else is derived.
+  const fams = BOTH_TEXTS.has(manifest.name) ? ['GPL', 'AGPL'] : []
+  if (fams.length === 0) {
+    if (upper.includes('AGPL')) fams.push('AGPL')
+    if (/(^|[^LA])GPL/.test(upper)) fams.push('GPL')
+  }
+  if (upper.includes('LGPL')) {
+    throw new Error(
+      `${manifest.name} declares ${declared} and this build holds no LGPL text — add one to LICENCE_TEXTS`
+    )
+  }
+  if (fams.length === 0) continue
+  const hasOwn = readdirSync(pkgDir).some((f) =>
     /^(LICEN|COPYING|NOTICE)/i.test(f)
   )
-  if (hasOwn) continue // upstream started shipping one; leave theirs alone
-  for (const key of texts) {
-    const { from, title } = LICENCE_TEXTS[key]
-    const src = path.join(nm, from)
+  if (hasOwn) continue // upstream ships its own; leave it alone
+  for (const fam of [...new Set(fams)]) {
+    const { from, title, dest } = LICENCE_TEXTS[fam]
+    const src = path.join(nmDir, from)
     if (!existsSync(src)) {
       throw new Error(
-        `no ${key} text to vendor (looked for ${from}) — refusing to build`
+        `no ${fam} text to vendor (looked for ${from}) — refusing to build`
       )
     }
     if (!readFileSync(src, 'utf-8').includes(title)) {
-      throw new Error(`${from} is not the ${key} text — refusing to build`)
+      throw new Error(`${from} is not the ${fam} text — refusing to build`)
     }
-    const dest = path.join(dir, `LICENSE.${key}.txt`)
-    cpSync(src, dest)
-    if (!existsSync(dest)) {
-      throw new Error(`licence text did not land in ${pkg} — refusing to build`)
+    const target = path.join(pkgDir, dest)
+    cpSync(src, target)
+    if (!existsSync(target)) {
+      throw new Error(
+        `licence text did not land in ${manifest.name} — refusing to build`
+      )
     }
   }
 }
