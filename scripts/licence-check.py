@@ -70,14 +70,26 @@ def unpack(target, workdir):
         with zipfile.ZipFile(target) as zf:
             zf.extractall(workdir)
         return workdir
-    # AppImage: --appimage-extract drops squashfs-root next to cwd
-    subprocess.run(
-        [target, "--appimage-extract"],
+    # AppImage: --appimage-extract drops squashfs-root next to cwd. A file
+    # downloaded with gh/curl carries no executable bit, so extract from a copy
+    # we own instead of chmod-ing the caller's artifact.
+    local = os.path.join(workdir, "payload.AppImage")
+    shutil.copy2(target, local)
+    os.chmod(local, 0o755)
+    proc = subprocess.run(
+        [local, "--appimage-extract"],
         cwd=workdir,
         capture_output=True,
         check=False,
     )
-    return os.path.join(workdir, "squashfs-root")
+    root = os.path.join(workdir, "squashfs-root")
+    if not os.path.isdir(root):
+        print(
+            "FAIL: could not extract the AppImage "
+            f"(exit {proc.returncode}): {proc.stderr.decode('utf-8', 'replace')[:200]}"
+        )
+        raise SystemExit(1)
+    return root
 
 
 def find_nm(payload_root):
