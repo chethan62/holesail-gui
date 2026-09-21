@@ -1154,23 +1154,33 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 
 [MIT](LICENSE) © 2026 chethan62 — for this project's own code.
 
-**Note:** one bundled runtime dependency is copyleft, and it ships its licence
-text inside every installer:
+**Note:** one dependency family is copyleft, and every part of it now ships its
+licence text inside each installer:
 
 - `holesail` — the tunnel engine behind the service worker —
-  [AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that
-  embeds AGPL code carries source-availability obligations for the combined
-  work; the GUI's own source is here, so this is effectively satisfied, but if
-  you intend commercial redistribution, review AGPL implications or contact the
-  upstream maintainers.
+  [AGPL-3.0](https://github.com/holesail/holesail), and its own runtime
+  dependencies `holesail-server` and `holesail-logger` (AGPL-3.0 / GPL-3.0 per
+  their repositories and manifests) plus `barely-colours` (GPL-3.0). These are
+  what the engine is built from, so unlike `livefiles` they cannot be removed.
+  Three of them publish no licence file at all, so the build vendors the
+  matching text beside each one (`scripts/prepare-resources.mjs`) and fails if it
+  cannot; `scripts/licence-check.py` then verifies the shipped payload, and CI
+  runs that on every build.
+- Distributing an app that embeds AGPL/GPL code carries source-availability
+  obligations for the combined work. The GUI's own source is here and MIT, which
+  combines into a copyleft work without conflict, so those obligations are
+  effectively satisfied — but if you intend commercial redistribution, review
+  the AGPL/GPL implications or contact the upstream maintainers. This is a
+  description of the licences and their known obligations, not legal advice.
 
 Folder sharing's HTTP file server is this repository's own code
 (`worker/fileserver.js`, MIT): it replaced `livefiles` (GPLv3), which `holesail`
 declares as a dependency for its CLI's `--filemanager` flag. The build prunes
-that package from the bundled tree, so no GPL code ships — nothing in this app
-reaches holesail's CLI, and the app's own server covers the read side the app
-actually used (browse, download, Basic auth). `src/bin/holesail.mjs` upstream
-still imports it; using the CLI is what that dependency is for.
+that package from the bundled tree, so no GPL code ships that this app does not
+run — nothing here reaches holesail's CLI, and the app's own server covers the
+read side the app actually used (browse, download, Basic auth).
+`src/bin/holesail.mjs` upstream still imports it; using the CLI is what that
+dependency is for.
 
 Every other bundled package is permissive (MIT/Apache-2.0) and ships its own
 `LICENSE` inside the bundled `node_modules`; this project's own code stays MIT.

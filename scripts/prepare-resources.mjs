@@ -27,6 +27,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync
@@ -53,7 +54,9 @@ for (let i = 0; i < args.length; i++) {
 const BARE_RUNTIME_VERSION = '1.33.4'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
-const out = path.join(root, opt.out)
+// An absolute --out means it: path.join(root, '/tmp/x') silently nests the
+// tree under the repo (hit while auditing licences).
+const out = path.isAbsolute(opt.out) ? opt.out : path.join(root, opt.out)
 
 rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
@@ -115,6 +118,69 @@ if (existsSync(livefilesDir)) {
   rmSync(livefilesDir, { recursive: true, force: true })
   if (existsSync(livefilesDir)) {
     throw new Error('livefiles is still in the bundle — refusing to build')
+  }
+}
+
+// Copyleft packages that publish no licence file of their own.
+//
+// Same obligation as livefiles had (v0.9.5), and the sweep for v0.12.6 found it
+// three more times: holesail-server, holesail-logger and barely-colours are all
+// holesail's own dependencies, all declare GPL-3.0/AGPL-3.0 in their manifests,
+// and none ships a licence text — so every installer redistributed them without
+// the licence their terms require be passed on. They cannot be pruned like
+// livefiles: requiring holesail pulls them in at runtime.
+//
+// The texts are copied from copies ALREADY inside the installed tree rather than
+// from a vendored file in this repo: `holesail/LICENSE` is the AGPL-3.0 text and
+// `holesail-client/LICENSE.txt` the GPL-3.0 one, both shipped by upstream and
+// both then carried into every installer by the same resource mapping. The title
+// line of each source is asserted so an upstream text change cannot silently
+// vendor the wrong licence, and every package we add a text to is re-checked
+// afterwards.
+//
+// holesail-server declares "GNU GPL v3" in its npm manifest while its repository
+// carries AGPL-3.0, so both texts land next to it: a redistributor with
+// inconsistent upstream metadata is better off shipping both than guessing.
+const LICENCE_TEXTS = {
+  'AGPL-3.0': {
+    from: 'holesail/LICENSE',
+    title: 'GNU AFFERO GENERAL PUBLIC LICENSE'
+  },
+  'GPL-3.0': {
+    from: 'holesail-client/LICENSE.txt',
+    title: 'GNU GENERAL PUBLIC LICENSE'
+  }
+}
+const needText = [
+  { pkg: 'holesail-server', texts: ['GPL-3.0', 'AGPL-3.0'] },
+  { pkg: 'holesail-logger', texts: ['AGPL-3.0'] },
+  { pkg: 'barely-colours', texts: ['GPL-3.0'] }
+]
+
+const nm = path.join(out, 'node_modules')
+for (const { pkg, texts } of needText) {
+  const dir = path.join(nm, pkg)
+  if (!existsSync(dir)) continue // a future version may drop it
+  const hasOwn = readdirSync(dir).some((f) =>
+    /^(LICEN|COPYING|NOTICE)/i.test(f)
+  )
+  if (hasOwn) continue // upstream started shipping one; leave theirs alone
+  for (const key of texts) {
+    const { from, title } = LICENCE_TEXTS[key]
+    const src = path.join(nm, from)
+    if (!existsSync(src)) {
+      throw new Error(
+        `no ${key} text to vendor (looked for ${from}) — refusing to build`
+      )
+    }
+    if (!readFileSync(src, 'utf-8').includes(title)) {
+      throw new Error(`${from} is not the ${key} text — refusing to build`)
+    }
+    const dest = path.join(dir, `LICENSE.${key}.txt`)
+    cpSync(src, dest)
+    if (!existsSync(dest)) {
+      throw new Error(`licence text did not land in ${pkg} — refusing to build`)
+    }
   }
 }
 
