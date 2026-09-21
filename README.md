@@ -434,6 +434,83 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.4">
+<summary><b>v0.12.4</b> — a saved connection survives a restart, and a legible header logo</summary>
+
+- **A saved connection comes back after a restart with a URL that still logs
+  in.** Driving the cycle (share a folder → save the invite → restart →
+  autostart → fetch) turned up three separate faults. A permanent folder share
+  regenerated its password on every start: its record was written before the
+  session existed, so the worker's random pair never reached it, and after a
+  restart the owner served a new password while the receiver's saved pair was
+  the old one — the fetch answered 401. A saved *client* whose key matched a
+  share this same app was running was matched to that share, so it was marked
+  running and its autostart was skipped entirely. And both copy buttons captured
+  their URL when the card was drawn, while the credentials arrive a moment later
+  — so **Copy URL** handed out a bare `localhost` URL even though the saved
+  record held the right password. The full cycle now passes 24/24, ending with
+  200 through the restored client and 401 without the credential.
+- **The header logo is legible at 34px.** The artwork's thin brown mast, boom
+  and keel sat at 1.66:1 against the header's own `#0f1420`, and at 28px the 1px
+  strokes anti-aliased into it (measured on the running app: 75% of the mark's
+  footprint within 0.2% of the header luminance). 34px keeps the artwork's own
+  palette and lifts the surviving mark pixels about 25% measured live; a
+  brightness filter gained 3% more for recolouring the user's mark, so it was
+  rejected.
+- **The launcher icons are guarded in CI now, from the repo.** The icon check
+  ran nowhere but a developer's machine and lived outside the repository, which
+  is how an oversized foreground shipped unreported. It is now
+  `scripts/apk-icon-check.py`, with a self-test — a correct APK must pass and an
+  oversized foreground must fail — and the android job runs both on every build.
+  The linux job byte-compares each installed icon in the deb and the AppImage
+  against `src-tauri/icons`, because an `Icon=` name that merely *resolves* to a
+  file can still be the wrong art. The APK handed to the phone is hashed, and
+  that hash is checked against the published release asset.
+
+</details>
+<details id="v0.12.3">
+<summary><b>v0.12.3</b> — the launcher icon sits properly inside the circle</summary>
+
+- **The Android launcher mark no longer touches the circular mask.** An adaptive
+  icon paints the foreground on a 108dp canvas but shows only its inner ~66%, so
+  artwork that fills the canvas renders jammed against the mask: measured on the
+  v0.12.2 APK the mark filled 81.7% of that layer, and on a OnePlus 13R it
+  pressed against the circle. `scripts/android-icons.sh` now trims the master's
+  mark and insets it to 70% of each foreground canvas (68.5–69.9% as measured,
+  the shortfall being anti-aliased edges under the alpha threshold) — Android
+  only, by design: a Linux launcher and the in-app header both want the mark
+  large.
+- **The icon checker was verifying the path the device does not take.** It
+  compared only the flat `ic_launcher.png`, while a modern launcher draws the
+  foreground through `mipmap-anydpi-v26` — so it reported `ok` while an
+  oversized foreground shipped. It checks both layers at every density now, with
+  the v0.12.2 APK as the negative control (its foreground rows differ by 23–24
+  where a correct build scores 0.00).
+
+</details>
+<details id="v0.12.2">
+<summary><b>v0.12.2</b> — the Android app finally carries the app's own icon</summary>
+
+- **The APK had been shipping Tauri's stock template icon since the project
+  began.** Measured on the v0.12.1 APK: its `ic_launcher.png` was the template's
+  cyan-and-amber mark while the app's icon is the sailboat. `src-tauri/gen/` is
+  gitignored, so every CI run re-created the Android project from the framework
+  template and its `res/mipmap-*` were template art; nothing copied this app's
+  family over them, and the APK carried no `mipmap-anydpi-v26` either, so
+  `@mipmap/ic_launcher` resolved to exactly those template PNGs.
+- **Two fixes.** `src-tauri/icons/android/` holds the real family again — it had
+  never been regenerated since the initial commit and still held an abandoned
+  flat two-colour mark — and `scripts/android-glue.mjs` copies that family into
+  the generated project's `res/` before the build, deliberately above its NDK and
+  worker-bundle guards: neither has anything to do with the launcher icon, and a
+  missing guard must not silently decide what the phone shows.
+- Also: `src-tauri/icons/source.png` had stopped being the master — an earlier
+  commit left it holding the same abandoned mark while its filename still
+  claimed otherwise — so regenerating from it reverted the icon on every
+  platform. Recover a master from the committed `icon.icns` (its `ic10` chunk is
+  a 1024px PNG) rather than trusting the filename.
+
+</details>
 <details id="v0.12.1">
 <summary><b>v0.12.1</b> — fixes found by driving the real app</summary>
 
