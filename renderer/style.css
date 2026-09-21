@@ -99,7 +99,15 @@ body {
      visible pixels, 32px = 352, 34px = 383 (+42%) — and this keeps the art's
      own palette, where a brightness filter would have recoloured it (32px +
      brightness(1.8) reaches 394, a 3% gain for a colour change: not worth it).
-     No image-rendering override — `pixelated` would alias the icon. */
+     No image-rendering override — `pixelated` would alias the icon.
+     A light plate behind the mark was measured and rejected: the brown family
+     needs a background of luminance >= 0.234 to reach 3:1, and a plate light
+     enough for that (~50% white) drops the cyan jib to 2.25:1 and the orange
+     hull to 1.49:1 — the mark carries both a very dark and very light colour,
+     so no single flat backdrop satisfies all three, and darkening cannot work
+     at all (brown against pure black is 1.90:1). Recolouring the browns in the
+     master is the only fix that clears 3:1 everywhere, and that would change
+     the launcher, taskbar, tray and the APK too. Left as it is. */
   width: 34px;
   height: 34px;
   flex: none;

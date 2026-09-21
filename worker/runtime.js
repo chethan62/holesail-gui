@@ -32,6 +32,14 @@ const net = (() => {
   }
 })()
 
+const http = (() => {
+  try {
+    return require('bare-http1')
+  } catch {
+    return require('http')
+  }
+})()
+
 const fs = (() => {
   try {
     return require('bare-fs')
@@ -56,4 +64,4 @@ const crypto = (() => {
   }
 })()
 
-module.exports = { process, Buffer, setImmediate, net, fs, path, crypto }
+module.exports = { process, Buffer, setImmediate, net, http, fs, path, crypto }

@@ -82,7 +82,7 @@ writeFileSync(
       name: 'holesail-gui-resources',
       private: true,
       version: '0.0.0',
-      dependencies: { holesail: '^2.4.1', livefiles: '^1.1.0' }
+      dependencies: { holesail: '^2.4.1', 'bare-http1': '^4.0.2' }
     },
     null,
     2
@@ -101,19 +101,20 @@ rmSync(path.join(out, 'node_modules', 'prettier'), {
 })
 rmSync(path.join(out, 'node_modules', '.bin', 'prettier'), { force: true })
 
-// livefiles is GPLv3 but publishes no licence file, so without this the bundle
-// would redistribute GPL code with no copy of its licence (GPLv3 §4 requires
-// giving recipients one). Drop the vendored text next to the package: it then
-// rides the existing node_modules resource mapping into every installer, and
-// holesail already ships its own AGPL text so the two copyleft deps are covered.
+// livefiles is GPLv3 and only reachable from holesail's CLI
+// (`holesail --filemanager <dir>`, i.e. src/bin/holesail.mjs) — this app runs
+// holesail's Engine, never its CLI, and its own file server is worker/
+// fileserver.js (MIT). holesail declares it as a plain dependency, so npm
+// installs it and every installer would redistribute GPL code this MIT project
+// neither uses nor means to ship. Verified rather than assumed: requiring both
+// `holesail` and `holesail-server` resolves with node_modules/livefiles absent
+// (the filemanager test and the saved-credential E2E then exercise a folder
+// share end to end on a pruned tree), and `grep -rn` finds no other require.
 const livefilesDir = path.join(out, 'node_modules', 'livefiles')
 if (existsSync(livefilesDir)) {
-  cpSync(
-    path.join(root, 'packaging', 'licenses', 'GPL-3.0.txt'),
-    path.join(livefilesDir, 'LICENSE')
-  )
-  if (!existsSync(path.join(livefilesDir, 'LICENSE'))) {
-    throw new Error('livefiles LICENSE did not land — refusing to build')
+  rmSync(livefilesDir, { recursive: true, force: true })
+  if (existsSync(livefilesDir)) {
+    throw new Error('livefiles is still in the bundle — refusing to build')
   }
 }
 

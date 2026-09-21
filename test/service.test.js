@@ -216,7 +216,7 @@ async function main() {
     )
     assert(fm.type === 'filemanager', 'filemanager session started')
     assert(fm.dir === fmDir, 'session records the shared directory')
-    // Livefiles' own default is admin/admin, and the UI displays whatever pair
+    // The file server's own default is admin/admin, and the UI displays whatever pair
     // is in use as if it protects the share — on a public tunnel the key is
     // public by design, so the password is the only barrier there.
     assert(

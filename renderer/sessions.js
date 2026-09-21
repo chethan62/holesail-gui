@@ -183,7 +183,7 @@ function renderSession(container, s) {
   // the session event can land before the worker reports
   // fsUsername/fsPassword, and a captured constant then handed out a bare
   // link — measured after a restart (the owner's Copy invite link copied with
-  // no fragment while livefiles kept the same password, so the receiver's
+  // no fragment while the server kept the same password, so the receiver's
   // fetch 401'd). Same ordering hazard the client's Copy URL had.
   const inviteUrl = () =>
     withCredentials(s.url || '', s.fsUsername, s.fsPassword)
@@ -287,7 +287,7 @@ function renderSession(container, s) {
   )
 
   // filemanager sessions: show the shared directory + auth credentials
-  // (Livefiles defaults to Basic auth admin/admin — the owner needs both
+  // (the file server defaults to Basic auth admin/admin — the owner needs both
   // to relay to whoever they share the tunnel with). The password is a
   // credential: mask it behind the same reveal gate as the tunnel key.
   if (s.type === 'filemanager') {
@@ -306,7 +306,7 @@ function renderSession(container, s) {
         )
       )
       // One click to hand the password over: it is a random 16-character
-      // string, and the username is Livefiles' "admin" default, so the pair
+      // string, and the username is the file server's "admin" default, so the pair
       // was previously unguessable and untypable in equal measure.
       const copyPass = el('button', 'copy', '', 'Copy password')
       copyPass.title = 'Copy the share password'

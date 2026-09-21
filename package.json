@@ -16,17 +16,17 @@
     "prepare:android": "node scripts/prepare-resources.mjs --bare --target android-arm64 --out dist-resources-android",
     "build:android": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk --debug",
     "build:android:release": "npm run prepare:android && node scripts/android-glue.mjs && tauri android build --apk",
-    "test": "node test/service.test.js && node test/renderer.test.js && node test/units.test.js && node test/invite.test.js && node test/session-state.test.js",
+    "test": "node test/service.test.js && node test/renderer.test.js && node test/units.test.js && node test/fileserver.test.js && node test/invite.test.js && node test/session-state.test.js",
     "gate": "npm run format:check && npm run lint && npm test && npm run test:bare && node scripts/prepare-resources.mjs --bare --target linux-x64 && cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:bare": "node scripts/prepare-resources.mjs --bare --target linux-x64 --out dist-resources-bare && WORKER_CMD=dist-resources-bare/bare WORKER_PATH=dist-resources-bare/service-worker.js node test/service.test.js && node test/renderer.test.js",
     "tauri": "tauri"
   },
   "dependencies": {
-    "holesail": "^2.4.1",
-    "livefiles": "^1.1.0"
+    "holesail": "^2.4.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "bare-http1": "^4.6.2",
     "eslint": "^10.8.1",
     "prettier": "^3.9.6"
   }

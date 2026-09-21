@@ -3,8 +3,8 @@
  * Leaf module (no imports, no DOM): pure string handling, so it can be unit
  * tested directly.
  *
- * Why a fragment: a folder share needs the Livefiles username and password
- * (Livefiles defaults the user to "admin" and compares both exactly), and the
+ * Why a fragment: a folder share needs the file server's username and password
+ * (the server defaults the user to "admin" and compares both exactly), and the
  * receiver's browser raises its own Basic-auth prompt unless the app can hand
  * the credentials over already. Measured: a Chromium navigation to
  * http://user:pass@host/ authenticates without any prompt, so the client side

@@ -1,6 +1,6 @@
 /* tunnels.js — server/client/filemanager session start/stop/pause/resume.
  * Depends on runtime.js + state.js + transport.js + guards.js + stats.js
- * + limiter.js. This is the only module that constructs Holesail/Livefiles
+ * + limiter.js. This is the only module that constructs Holesail/FileServer
  * instances.
  */
 
@@ -25,13 +25,15 @@ const {
 } = require('./limiter.js')
 
 const { Engine: Holesail } = require('./engine/index.js')
-const Livefiles = require('livefiles')
+const FileServer = require('./fileserver.js')
 
-// A fresh Basic-Auth password for each folder share. Livefiles' own default is
-// the well-known admin/admin, and the UI shows whatever pair is in use — so the
-// default would advertise protection that isn't there. 96 bits of CSPRNG output
-// as base64 with the URL-unsafe characters dropped (base64url isn't guaranteed
-// under the bare runtime). Callers that pass an explicit password still win.
+// A fresh Basic-Auth password for each folder share. The file server's own
+// default is the well-known admin/admin, and the UI shows whatever pair is in
+// use — so leaving the default would advertise protection that isn't there. On
+// a PUBLIC share (hs://0000..., where the key is public by design) that left
+// the folder effectively unauthenticated. 96 bits of CSPRNG output as base64
+// with the URL-unsafe characters dropped (base64url isn't guaranteed under the
+// bare runtime). Callers that pass an explicit password still win.
 const randomPassword = () =>
   crypto.randomBytes(12).toString('base64').replace(/[+/=]/g, '').slice(0, 16)
 
@@ -100,7 +102,7 @@ async function startFilemanager(params) {
     throw new Error('Directory path is required')
   }
   // Validate BEFORE creating the file server: a typo'd folder currently
-  // failed deep inside Livefiles (or surfaced as a generic worker error)
+  // failed deep inside the file server (or surfaced as a generic worker error)
   // while the card still showed "running". Resolve + stat up front.
   const resolved = path.resolve(dir)
   let st
@@ -121,32 +123,37 @@ async function startFilemanager(params) {
       `Refusing to share a broad path (${resolved}) — share a specific folder instead`
     )
   }
-  // Mirrors the CLI (`holesail --filemanager <dir>`): a Livefiles HTTP
-  // file server + a holesail tunnel in front, both on the same local
-  // port. Pure JS deps (bare-fs/bare-http1) so it runs under the bare
-  // runtime too.
+  // Mirrors the CLI (`holesail --filemanager <dir>`): an HTTP file server +
+  // a holesail tunnel in front, both on the same local port. Pure JS deps
+  // (bare-fs/bare-http1) so it runs under the bare runtime too.
   //
-  // One deliberate divergence from the CLI: Livefiles' own default
-  // credentials are admin/admin, and the UI displays whatever pair is in use
-  // (with a reveal toggle) — so leaving the default would tell the user a
-  // secret is protecting the folder when the password is well known. On a
-  // PUBLIC share (hs://0000..., where the key is public by design) that left
-  // the folder effectively unauthenticated. Generate one per share instead;
-  // an explicit username/password from the caller still wins.
+  // The server is `fileserver.js` — this repo's own, MIT, read-only. It replaced
+  // livefiles (GPLv3, which every release artifact then redistributed while this
+  // repo said MIT): the app only ever used livefiles' read side, so nothing was
+  // lost by not reimplementing upload/create/delete.
+  //
+  // One deliberate divergence from the CLI: livefiles' default credentials are
+  // admin/admin, and the UI displays whatever pair is in use (with a reveal
+  // toggle) — so leaving the default would tell the user a secret is protecting
+  // the folder when the password is well known. On a PUBLIC share
+  // (hs://0000..., where the key is public by design) that left the folder
+  // effectively unauthenticated. Generate one per share instead; an explicit
+  // username/password from the caller still wins.
+  //
   // A folder share's local port is an implementation detail — the receiver
-  // reaches it through the tunnel — and Livefiles exits the PROCESS when its
-  // listen fails. So never take the fixed 5409 default blindly: a second folder
-  // share, or anything else already on 5409, took the whole worker down with it
-  // (that is what made the filemanager test time out while the app was
-  // sharing). Ask the OS instead, the same way the client path does. An
-  // explicit port from the caller is still honoured, probe-free.
+  // reaches it through the tunnel — and livefiles exited the PROCESS when its
+  // listen failed, so a second folder share (or anything else on 5409) took the
+  // whole worker down with it (that is what made the filemanager test time out
+  // while the app was sharing). fileserver.js surfaces that failure to the
+  // caller instead, but the port is still asked of the OS rather than fixed:
+  // no reason to collide with anything. An explicit port from the caller is
+  // honoured, probe-free.
   const port =
     Number(params.port) > 0 ? Number(params.port) : await pickFreePort()
   const host = params.host || '127.0.0.1'
   const limit = normalizeLimit(params.limit)
-  const fileServer = new Livefiles({
+  const fileServer = new FileServer({
     path: resolved,
-    role: params.role,
     username: params.username,
     password: params.password || randomPassword(),
     host,
@@ -249,7 +256,7 @@ async function stopSession(id) {
   clearStatsEmit(id)
   stopLimitTicker(entry)
   await entry.hs.close()
-  // filemanager sessions own a Livefiles server next to the tunnel
+  // filemanager sessions own a file server next to the tunnel
   if (entry.fileServer) {
     try {
       await entry.fileServer.close()
@@ -279,7 +286,7 @@ async function resumeSession(id) {
 }
 
 function listSessions() {
-  // Strip BOTH engine instances (holesail + the Livefiles file server):
+  // Strip BOTH engine instances (holesail + the FileServer):
   // they're non-serializable object graphs that would otherwise ride along
   // in every sessions:list RPC response (payload bomb + junk in renderer
   // state). Sessions map back to their instances via sessions.get(id).

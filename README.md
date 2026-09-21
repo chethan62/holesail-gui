@@ -1154,8 +1154,8 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 
 [MIT](LICENSE) © 2026 chethan62 — for this project's own code.
 
-**Note:** two bundled runtime dependencies are copyleft, and both now ship their
-licence text inside every installer:
+**Note:** one bundled runtime dependency is copyleft, and it ships its licence
+text inside every installer:
 
 - `holesail` — the tunnel engine behind the service worker —
   [AGPL-3.0](https://github.com/holesail/holesail). Distributing an app that
@@ -1163,11 +1163,14 @@ licence text inside every installer:
   work; the GUI's own source is here, so this is effectively satisfied, but if
   you intend commercial redistribution, review AGPL implications or contact the
   upstream maintainers.
-- `livefiles` — the HTTP file server behind folder sharing — GPLv3. The package
-  publishes no licence file, so the build writes a copy of the text from
-  [`packaging/licenses/GPL-3.0.txt`](packaging/licenses/GPL-3.0.txt) into the
-  bundled package, which satisfies GPLv3 §4's requirement to pass the licence
-  on. Its corresponding source is the upstream npm package.
+
+Folder sharing's HTTP file server is this repository's own code
+(`worker/fileserver.js`, MIT): it replaced `livefiles` (GPLv3), which `holesail`
+declares as a dependency for its CLI's `--filemanager` flag. The build prunes
+that package from the bundled tree, so no GPL code ships — nothing in this app
+reaches holesail's CLI, and the app's own server covers the read side the app
+actually used (browse, download, Basic auth). `src/bin/holesail.mjs` upstream
+still imports it; using the CLI is what that dependency is for.
 
 Every other bundled package is permissive (MIT/Apache-2.0) and ships its own
 `LICENSE` inside the bundled `node_modules`; this project's own code stays MIT.
