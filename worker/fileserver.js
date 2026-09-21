@@ -297,23 +297,36 @@ ${rows.length === 0 && !parent ? '<li><a href="#">(empty folder)</a></li>' : ''}
       'Last-Modified': new Date(st.mtimeMs || st.mtime).toUTCString()
     }
     if (range) {
+      // Exactly one range is served; anything else (multiple ranges, a unit
+      // that isn't bytes, a malformed spec) makes this server IGNORE the header
+      // and send the whole entity with 200. That is what RFC 9110 allows a
+      // server to do, and 416 would be a lie: "unsatisfiable" is not the same
+      // as "I don't do that shape". Measured before this: `bytes=0-1,4-5` and
+      // `chunks=1-2` both answered 416.
       const m = /^bytes=(\d*)-(\d*)$/.exec(String(range).trim())
-      const suffix = m && !m[1] && m[2]
-      if (!m || (suffix && Number(m[2]) === 0)) {
-        res.writeHead(416, { 'Content-Range': `bytes */${st.size}` })
-        res.end()
-        return
+      if (m) {
+        const hasStart = m[1] !== ''
+        const hasEnd = m[2] !== ''
+        if (hasStart) start = Number(m[1])
+        else if (hasEnd) start = Math.max(0, st.size - Number(m[2])) // bytes=-N: the LAST N
+        // `bytes=-0` and `bytes=5-2` are genuinely unsatisfiable; an empty
+        // entity has no satisfiable range at all.
+        const bad =
+          (!hasStart && !hasEnd) ||
+          (!hasStart && hasEnd && Number(m[2]) === 0) ||
+          (hasStart && hasEnd && Number(m[1]) > Number(m[2])) ||
+          start >= st.size
+        if (bad) {
+          res.writeHead(416, { 'Content-Range': `bytes */${st.size}` })
+          res.end()
+          return
+        }
+        // For a suffix range m[2] is a LENGTH, not an end offset — clamping it
+        // as an offset is what made bytes=-3 answer 416 (start 7 > end 3).
+        if (hasEnd && hasStart) end = Math.min(Number(m[2]), st.size - 1)
+        status = 206
+        headers['Content-Range'] = `bytes ${start}-${end}/${st.size}`
       }
-      if (suffix) start = Math.max(0, st.size - Number(m[2]))
-      else start = Number(m[1])
-      if (m[2]) end = Math.min(Number(m[2]), st.size - 1)
-      if (start > end || start >= st.size) {
-        res.writeHead(416, { 'Content-Range': `bytes */${st.size}` })
-        res.end()
-        return
-      }
-      status = 206
-      headers['Content-Range'] = `bytes ${start}-${end}/${st.size}`
     }
     headers['Content-Length'] = end - start + 1
     // Disposition inline: the receiver is browsing, so images/PDF/video should

@@ -545,6 +545,18 @@ jobs:
             || { echo "FAIL: the bundled runtime does not export the addon ABI"; exit 1; }
           echo "OK: worker bundled, runtime exports the addon ABI"
 
+      - name: Audit the APK's bundled licences
+        run: |
+          # The APK is built from its OWN prepared tree (--target android-arm64),
+          # so the deb/AppImage audit in the linux job does not cover it. The
+          # checker understands an .apk (zip) directly and is stdlib-only, so it
+          # runs here without the Pillow dance the icon step needs. Self-test
+          # first: an audit that cannot fail proves nothing.
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          echo "apk: $APK"
+          python3 scripts/licence-check.py --self-test
+          python3 scripts/licence-check.py "$APK"
+
       - name: Assert the APK carries the app's own launcher icon
         run: |
           # Every other Android check proves the RUNTIME arrived; none of them

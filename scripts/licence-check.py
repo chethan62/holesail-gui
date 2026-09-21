@@ -26,7 +26,18 @@ import sys
 import tempfile
 import zipfile
 
-COPYLEFT = re.compile(r"(A?GPL|LGPL|MPL|CDDL|EPL)", re.I)
+COPYLEFT = re.compile(r"(A?GPL|LGPL|MPL|CDDL|EPL|EUPL)", re.I)
+# Recognised permissive families. Anything NOT in one of these two lists is a
+# failure, not a shrug: the README claims every bundled package is permissive
+# apart from the listed copyleft family, and an unrecognised or missing licence
+# string would quietly falsify that claim (measured: a tree with a "WTFPL"
+# package and one with no licence field at all used to PASS).
+PERMISSIVE = re.compile(
+    r"(MIT|APACHE|ISC|BSD|0BSD|ZLIB|CC0|CC-BY|UNLICENSE|PYTHON|BLUEOAK|JSON|"
+    r"X11|WTFPL|ARTISTIC|MPL-2\.0-COMPAT)",
+    re.I,
+)
+PROPRIETARY = re.compile(r"(UNLICENSED|PROPRIETARY|ALL RIGHTS RESERVED|SEE LICENSE IN)", re.I)
 TEXT_FILE = re.compile(r"^(LICEN|COPYING|NOTICE)", re.I)
 
 
@@ -106,19 +117,34 @@ def audit(payload_root):
         return 1
     table = {}
     missing = []
+    unknown = []
     for pkg_dir, manifest in packages(nm):
         lic = licence_of(manifest)
         name = manifest.get("name") or os.path.basename(pkg_dir)
+        ident = f"{name}@{manifest.get('version', '?')}"
         table.setdefault(lic, []).append(name)
         if COPYLEFT.search(lic):
             has_text = any(TEXT_FILE.match(f) for f in os.listdir(pkg_dir))
             if not has_text:
-                missing.append(f"{name}@{manifest.get('version', '?')} ({lic})")
+                missing.append(f"{ident} ({lic})")
+        elif not lic:
+            unknown.append(f"{ident} — declares no licence at all")
+        elif PROPRIETARY.search(lic):
+            unknown.append(f"{ident} — {lic}")
+        elif not PERMISSIVE.search(lic):
+            unknown.append(f"{ident} — unrecognised licence string {lic!r}")
     print(f"bundled packages audited: {sum(len(v) for v in table.values())}")
     for lic in sorted(table, key=lambda k: -len(table[k])):
         print(f"  {len(table[lic]):3d}  {lic or '(no licence field)'}")
     copyleft_count = sum(len(v) for k, v in table.items() if COPYLEFT.search(k))
     print(f"copyleft packages: {copyleft_count}")
+    if unknown:
+        print("FAIL: packages whose licence is not recognised as permissive:")
+        for u in unknown:
+            print(f"  - {u}")
+        print("  (add the licence to PERMISSIVE/COPYLEFT in this checker with a reason,")
+        print("   or remove the package — do not let it ship silently)")
+        return 1
     if missing:
         print("FAIL: copyleft packages with no licence text beside them:")
         for m in missing:
@@ -132,18 +158,21 @@ def self_test():
     """A payload WITH texts must pass, the same payload WITHOUT them must fail."""
     work = tempfile.mkdtemp()
     try:
-        for variant, expect in (("clean", 0), ("broken", 1)):
+        variants = (("clean", 0, None), ("broken", 1, None), ("unknown", 1, "mystery"))
+        for variant, expect, _ in variants:
             root = os.path.join(work, variant)
-            for pkg, lic in (
-                ("holesail", "AGPL-3.0"),
-                ("holesail-server", "GNU GPL v3"),
-                ("probably-mit", "MIT"),
-            ):
+            pkgs = [("holesail", "AGPL-3.0"), ("holesail-server", "GNU GPL v3"), ("probably-mit", "MIT")]
+            if variant == "unknown":
+                pkgs = [("holesail", "AGPL-3.0"), ("mystery", "SomeUnlistedLicence"), ("nolicence", "")]
+            for pkg, lic in pkgs:
                 d = os.path.join(root, "node_modules", pkg)
                 os.makedirs(d, exist_ok=True)
                 with open(os.path.join(d, "package.json"), "w", encoding="utf-8") as fh:
-                    json.dump({"name": pkg, "version": "1.0.0", "license": lic}, fh)
-                if variant == "clean" or lic == "MIT":
+                    entry = {"name": pkg, "version": "1.0.0"}
+                    if lic:
+                        entry["license"] = lic
+                    json.dump(entry, fh)
+                if variant == "clean" or lic == "MIT" or (variant == "unknown" and pkg == "holesail"):
                     with open(os.path.join(d, "LICENSE"), "w", encoding="utf-8") as fh:
                         fh.write("GNU AFFERO GENERAL PUBLIC LICENSE\n")
             got = audit(root)

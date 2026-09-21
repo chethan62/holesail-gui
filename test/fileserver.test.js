@@ -149,6 +149,72 @@ function request(port, urlPath, opts = {}) {
     assert.strictEqual(res.status, 416)
   })
 
+  // The shapes the first version of this file never tried, and got wrong:
+  // `bytes=-3` answered 416 (the suffix length was clamped as an end offset),
+  // and every multi/foreign range answered 416 too.
+  await check('serves a SUFFIX range (last N bytes)', async () => {
+    const res = await request(port, '/hello.txt', {
+      headers: { Range: 'bytes=-3' }
+    })
+    assert.strictEqual(res.status, 206, `status ${res.status}`)
+    assert.strictEqual(
+      res.headers['content-range'],
+      `bytes ${PAYLOAD.length - 3}-${PAYLOAD.length - 1}/${PAYLOAD.length}`
+    )
+    assert.strictEqual(res.body.toString(), PAYLOAD.slice(-3))
+  })
+
+  await check('serves an OPEN-ENDED range (start-)', async () => {
+    const res = await request(port, '/hello.txt', {
+      headers: { Range: 'bytes=5-' }
+    })
+    assert.strictEqual(res.status, 206)
+    assert.strictEqual(res.body.toString(), PAYLOAD.slice(5))
+  })
+
+  await check(
+    'IGNORES a multi-range request (200 with the whole file)',
+    async () => {
+      const res = await request(port, '/hello.txt', {
+        headers: { Range: 'bytes=0-1,4-5' }
+      })
+      assert.strictEqual(res.status, 200, `status ${res.status}`)
+      assert.strictEqual(res.body.toString(), PAYLOAD)
+      assert.strictEqual(res.headers['content-range'], undefined)
+    }
+  )
+
+  await check('IGNORES a range in a unit it does not serve (200)', async () => {
+    const res = await request(port, '/hello.txt', {
+      headers: { Range: 'chunks=1-2' }
+    })
+    assert.strictEqual(res.status, 200, `status ${res.status}`)
+    assert.strictEqual(res.body.toString(), PAYLOAD)
+  })
+
+  await check(
+    '416s a genuinely impossible range (start > end, and -0)',
+    async () => {
+      for (const spec of ['bytes=5-2', 'bytes=-0']) {
+        const res = await request(port, '/hello.txt', {
+          headers: { Range: spec }
+        })
+        assert.strictEqual(res.status, 416, `${spec} -> ${res.status}`)
+        assert.strictEqual(
+          res.headers['content-range'],
+          `bytes */${PAYLOAD.length}`
+        )
+      }
+    }
+  )
+
+  await check('HEAD on a directory: headers, no body', async () => {
+    const res = await request(port, '/', { method: 'HEAD' })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual(res.body.length, 0)
+    assert.strictEqual(Number(res.headers['content-length']) > 0, true)
+  })
+
   await check('serves binary content unchanged', async () => {
     const res = await request(port, '/sub/nested.bin')
     assert.strictEqual(res.status, 200)
