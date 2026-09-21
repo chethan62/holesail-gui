@@ -443,7 +443,7 @@ arrives on the device — in both directions.
   regenerated its password on every start: its record was written before the
   session existed, so the worker's random pair never reached it, and after a
   restart the owner served a new password while the receiver's saved pair was
-  the old one — the fetch answered 401. A saved *client* whose key matched a
+  the old one — the fetch answered 401. A saved _client_ whose key matched a
   share this same app was running was matched to that share, so it was marked
   running and its autostart was skipped entirely. And both copy buttons captured
   their URL when the card was drawn, while the credentials arrive a moment later
@@ -463,7 +463,7 @@ arrives on the device — in both directions.
   `scripts/apk-icon-check.py`, with a self-test — a correct APK must pass and an
   oversized foreground must fail — and the android job runs both on every build.
   The linux job byte-compares each installed icon in the deb and the AppImage
-  against `src-tauri/icons`, because an `Icon=` name that merely *resolves* to a
+  against `src-tauri/icons`, because an `Icon=` name that merely _resolves_ to a
   file can still be the wrong art. The APK handed to the phone is hashed, and
   that hash is checked against the published release asset.
 
