@@ -9,6 +9,8 @@
  *   - a file downloads byte-exact, ranges work (media seeking), HEAD works
  *   - '..' cannot escape the shared folder, however it is encoded
  *   - writes are refused: the share is read-only by design
+ *   - failed passwords from a real client are throttled; loopback is exempt
+ *     (the tunnel dials it, so every remote visitor shares that address)
  */
 
 const assert = require('assert')
@@ -45,11 +47,22 @@ async function check(name, fn) {
   }
 }
 
+// A non-loopback IPv4 to reach a wildcard-bound share: the throttle only counts
+// real clients, so the LAN case cannot be exercised over loopback.
+function lanIPv4() {
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list || []) {
+      if (ni.family === 'IPv4' && !ni.internal) return ni.address
+    }
+  }
+  return null
+}
+
 function request(port, urlPath, opts = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        host: '127.0.0.1',
+        host: opts.host || '127.0.0.1',
         port,
         path: urlPath,
         method: opts.method || 'GET',
@@ -106,20 +119,43 @@ function request(port, urlPath, opts = {}) {
     assert.strictEqual(res.status, 401)
   })
 
-  await check('throttles password guessing on its own server', async () => {
-    // Its own server: the shared one above already spent 3 failed guesses and
-    // must stay under the limit for the checks that follow.
+  await check(
+    'one client is one bucket, however its address is spelled',
+    () => {
+      // A dual-stack bind reports an IPv4 peer as '::ffff:a.b.c.d'; without
+      // normalising, the same client would spend the quota once per family.
+      const key = FileServer.clientAddress
+      assert.strictEqual(
+        key({ socket: { remoteAddress: '::ffff:192.168.29.5' } }),
+        '192.168.29.5'
+      )
+      assert.strictEqual(
+        key({ socket: { remoteAddress: '192.168.29.5' } }),
+        '192.168.29.5'
+      )
+      assert.strictEqual(key({ socket: { remoteAddress: '::1' } }), '::1')
+      assert.strictEqual(key({ socket: {} }), 'unknown')
+    }
+  )
+
+  await check('throttles password guessing from a LAN address', async () => {
+    const lan = lanIPv4()
+    if (!lan) {
+      console.log('      (skipped: this host has no non-loopback IPv4)')
+      return
+    }
     const s = new FileServer({
       path: root,
       username: USER,
       password: PASS,
-      host: '127.0.0.1',
+      host: '0.0.0.0',
       port: 0
     })
     await s.ready()
     try {
       const p = s.info.port
-      const ok = await request(p, '/')
+      const at = { host: lan }
+      const ok = await request(p, '/', at)
       assert.strictEqual(
         ok.status,
         200,
@@ -127,14 +163,14 @@ function request(port, urlPath, opts = {}) {
       )
 
       for (let i = 1; i <= 8; i++) {
-        const bad = await request(p, '/', { auth: `${USER}:guess-${i}` })
+        const bad = await request(p, '/', { ...at, auth: `${USER}:guess-${i}` })
         assert.strictEqual(
           bad.status,
           401,
           `guess ${i} is refused, not throttled yet`
         )
       }
-      const ninth = await request(p, '/', { auth: `${USER}:guess-9` })
+      const ninth = await request(p, '/', { ...at, auth: `${USER}:guess-9` })
       assert.strictEqual(ninth.status, 429, 'the 9th guess is throttled')
       assert.match(
         ninth.headers['retry-after'] || '',
@@ -142,7 +178,7 @@ function request(port, urlPath, opts = {}) {
         'and it says when to come back'
       )
 
-      const withGoodPassword = await request(p, '/')
+      const withGoodPassword = await request(p, '/', at)
       assert.strictEqual(
         withGoodPassword.status,
         429,
@@ -151,7 +187,7 @@ function request(port, urlPath, opts = {}) {
 
       // The window is a minute; drop it rather than wait it out.
       s.failures.clear()
-      const recovered = await request(p, '/')
+      const recovered = await request(p, '/', at)
       assert.strictEqual(
         recovered.status,
         200,
@@ -161,6 +197,38 @@ function request(port, urlPath, opts = {}) {
       await s.close()
     }
   })
+
+  await check(
+    'leaves loopback alone: tunnel visitors share that address',
+    async () => {
+      // tunnels.js dials this server over 127.0.0.1, so every remote visitor
+      // arrives as one address. Throttling it would let a single guesser hold the
+      // real visitor out for a minute; the tunnel rate-limits its own clients.
+      const s = new FileServer({
+        path: root,
+        username: USER,
+        password: PASS,
+        host: '127.0.0.1',
+        port: 0
+      })
+      await s.ready()
+      try {
+        const p = s.info.port
+        for (let i = 1; i <= 12; i++) {
+          const bad = await request(p, '/', { auth: `${USER}:guess-${i}` })
+          assert.strictEqual(
+            bad.status,
+            401,
+            `loopback guess ${i} is refused, never throttled`
+          )
+        }
+        const ok = await request(p, '/')
+        assert.strictEqual(ok.status, 200, 'and the right password still works')
+      } finally {
+        await s.close()
+      }
+    }
+  )
 
   await check('lists the shared folder (files and subfolders)', async () => {
     const res = await request(port, '/')

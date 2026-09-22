@@ -459,6 +459,31 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.12">
+<summary><b>v0.12.12</b> — the failed-auth counter counts one client once, and leaves the tunnel's leg alone</summary>
+
+- **One client, one bucket.** A dual-stack (`::`) bind reports an IPv4 peer as
+  `::ffff:a.b.c.d` and an IPv6 peer as `::1`, so the same client could spend the
+  quota once per address family — sixteen guesses a minute instead of eight. The
+  address is now normalised before it is counted. Measured on a `::` bind:
+  `remoteAddress` came back as `::ffff:127.0.0.1` for the IPv4 client and `::1`
+  for the IPv6 one.
+- **Loopback is exempt from the counter.** The tunnel dials this server over
+  `127.0.0.1` (the v0.12.9 note below says so), so _every_ remote visitor arrives
+  as that one address: nine failed guesses from any visitor would have answered
+  the share's real recipient with `429` for a minute — a lockout a remote
+  guesser could keep renewing. The tunnel rate-limits its own clients and this
+  counter exists for the direct LAN leg, so loopback is not counted while real
+  LAN addresses still are.
+- `fileserver.test.js`: the throttle check now runs against a real LAN address
+  (wildcard bind plus a non-loopback IPv4 from `os.networkInterfaces()`, and it
+  says so when the host has none, instead of passing vacuously), asserts the key
+  normalisation directly, and a new check fires twelve loopback guesses and
+  requires every one to stay `401`. Negative control: with the loopback
+  exemption disabled, that check fails on guess 9.
+
+</details>
+
 <details id="v0.12.11">
 <summary><b>v0.12.11</b> — password guessing over the LAN is now throttled</summary>
 
@@ -1324,8 +1349,12 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   end to end), and it **bypasses the tunnel's rate limit** — so the file server
   keeps its own counter: eight failed attempts from one client inside a minute
   and that client is answered `429` with a `Retry-After` until the window
-  passes, while a correct password clears the counter. Neither applies if you
-  hand over the invite link instead of the LAN URL.
+  passes, a correct password clears the counter, and while the window is open
+  that client is refused even with the right password. Traffic arriving through
+  the tunnel is not counted at all: the tunnel dials the server over loopback,
+  so every remote visitor would share that one address, and a single guesser
+  would hold the share's real recipient out. Neither applies if you hand over
+  the invite link instead of the LAN URL.
 - **The share is read-only and confined to the folder you chose.** Every `..`
   segment is dropped however it is encoded, and containment is then decided on
   the **resolved real path**, so a symlink inside the shared folder that points

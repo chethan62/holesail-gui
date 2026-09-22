@@ -103,6 +103,22 @@ function sameSecret(a, b) {
 const AUTH_WINDOW_MS = 60000
 const AUTH_MAX_FAILS = 8
 
+// One client, one bucket. A dual-stack bind reports an IPv4 peer as
+// '::ffff:a.b.c.d', which would otherwise let the same client spend the quota
+// once per address family.
+function clientAddress(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip
+}
+
+// Loopback is exempt: the tunnel dials this server over 127.0.0.1, so every
+// remote visitor would share that one address and nine failed guesses from
+// anywhere would hold the real visitor out for a minute. The tunnel rate-limits
+// its own clients; this counter exists for the direct LAN leg.
+function isLocalAddress(ip) {
+  return ip === '127.0.0.1' || ip === '::1'
+}
+
 class FileServer {
   constructor(opts = {}) {
     const root = opts.path
@@ -209,8 +225,9 @@ class FileServer {
   }
 
   handleRequest(req, res) {
-    const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
-    if (this.throttled(ip)) {
+    const ip = clientAddress(req)
+    const counted = !isLocalAddress(ip)
+    if (counted && this.throttled(ip)) {
       res.writeHead(429, {
         'Retry-After': String(Math.ceil(AUTH_WINDOW_MS / 1000)),
         'Content-Type': 'text/plain; charset=utf-8'
@@ -219,7 +236,7 @@ class FileServer {
       return
     }
     if (!this.authenticate(req)) {
-      this.noteFailure(ip)
+      if (counted) this.noteFailure(ip)
       res.writeHead(401, {
         'WWW-Authenticate': 'Basic realm="Folder share"',
         'Content-Type': 'text/plain; charset=utf-8'
@@ -227,7 +244,7 @@ class FileServer {
       res.end('Authentication required.')
       return
     }
-    this.failures.delete(ip)
+    if (counted) this.failures.delete(ip)
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, {
         Allow: 'GET, HEAD',
@@ -412,3 +429,5 @@ ${rows.length === 0 && !parent ? '<li><a href="#">(empty folder)</a></li>' : ''}
 }
 
 module.exports = FileServer
+// exported for the throttle's key normalisation test
+module.exports.clientAddress = clientAddress
