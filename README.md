@@ -1285,7 +1285,8 @@ structure to JSON`.
 - **A cap can't slow a sender it doesn't control** — the engine's TCP piper ignores socket backpressure, so a producer sending faster than the cap cannot be paused. The worker bounds a tunnel's backlog at 16 MB and stops _that_ tunnel with a clear, actionable error rather than buffering the burst into RAM (so for a transfer much larger than that, raise or remove the cap)
 - **Tunnel engine: holesail only** — the iroh engine became its own project (github.com/chethan62/iroh-tunnel) because `@number0/iroh`'s NAPI-RS prebuilds cannot load under the Bare runtime this app packages, and shipping it would have meant bundling Node (+~22 MB per installer) for an engine ~7x slower at bulk transfer. Its UDP datagram work, reachability probe and tests went with it
 - **File manager sharing is basic** — single root path, one tunnel = one `admin` username with a freshly generated password (both shown in the session card, with a reveal toggle); no multi-user ACLs
-- **Session cap is 50** — intentional, prevents fd exhaustion; raise in `service-worker.js` if you truly need more
+- **Session cap is 50** — intentional, prevents fd exhaustion; raise `MAX_SESSIONS`
+  in `worker/guards.js` if you truly need more
 - **AGPL-3.0 implications** for the bundled holesail engine if you redistribute commercially (see License)
 
 </details>
