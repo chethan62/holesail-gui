@@ -231,6 +231,23 @@ python3 scripts/apk-icon-check.py --self-test                   # can the check 
 python3 scripts/apk-icon-check.py <apk> src-tauri/icons/android  # does this APK carry our art?
 ```
 
+`scripts/licence-check.py` audits what a shipped payload actually contains. Every
+bundled package must carry a licence this checker recognises as permissive, or
+be one of the copyleft ones — and those must ship their licence text beside
+them. An unrecognised or absent licence fails the run rather than passing
+silently, because that is how this README's permissive claim could have been
+false without anyone noticing. It reads an extracted payload, an AppImage, a
+`.deb` or an `.apk` directly, needs nothing but the standard library, and its
+`--self-test` requires exit 0 for a correct tree and exit 1 for each of two
+broken ones. CI runs it on every build: on the deb and AppImage in the linux
+job, and on the APK's own prepared tree in the android job, which the other two
+never covered.
+
+```bash
+python3 scripts/licence-check.py --self-test    # can the check fail? must pass
+python3 scripts/licence-check.py <deb|AppImage|apk|dist-resources-dir>
+```
+
 ## Build a release bundle
 
 <details>
@@ -434,6 +451,80 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.8">
+<summary><b>v0.12.8</b> — the range requests a browser actually sends, and an audit that can fail</summary>
+
+- **A `Range: bytes=-3` request works.** Probing the running server, rather than
+  re-reading its tests, turned up two faults in the file server's range
+  handling. A suffix range answered `416`: the suffix length was clamped with
+  the same `min(N, size-1)` used for an end offset, so the computed start
+  exceeded the computed end. That is the shape Chromium's media stack probes an
+  MP4's `moov` atom with, so seeking or probing media in a shared folder could
+  fail. And every request that was not one clean `bytes=a-b` — multiple ranges,
+  a foreign unit, a malformed spec — also answered `416`, which claims
+  "unsatisfiable" and is simply false: those headers are now ignored and the
+  whole entity is sent with `200`, as RFC 9110 allows. `416` is kept for
+  genuinely impossible ranges. The suite grew the six shapes it never tried
+  (22 checks), and the folder-share E2E now asserts four of them through a real
+  tunnel on the installed build (28/28), with a negative control: the previous
+  release's server answers `416` to the suffix and multi-range probes where
+  this one answers `206` and `200`.
+- **The licence audit no longer shrugs at an unknown licence.** It treated a
+  package with an unrecognised licence string — or with no licence field at all
+  — as nothing to report, so this README's claim that every bundled package is
+  permissive apart from the listed copyleft family had no check behind it (a
+  tree containing a `WTFPL` package and one with no licence passed). It now
+  fails and names the package, and its `--self-test` covers the case.
+- **CI audits the APK's own bundled licences.** The Android payload is built
+  from its own prepared tree, so the deb/AppImage audit never looked at it, even
+  though the checker reads an `.apk` directly. All 133 packages, the 5 copyleft
+  ones and their texts are now checked there too.
+
+</details>
+<details id="v0.12.7">
+<summary><b>v0.12.7</b> — licence texts derived from what each package declares</summary>
+
+- **The vendored licence texts come from the shipped package's own
+  declaration.** The hand-written table behind v0.12.6 was wrong within the
+  hour: `holesail-logger`'s installed 1.1.0 declares GPL 3.0 while the npm
+  metadata for 2.0.0 says AGPL, and `holesail-server` contradicts itself
+  (its manifest says GPL, its repository says AGPL), so it now ships both texts.
+  If the packaging step meets a licence family it holds no text for, the build
+  fails rather than shipping silence.
+- `scripts/prepare-resources.mjs` honours an absolute `--out` path instead of
+  nesting it under the repository.
+
+</details>
+<details id="v0.12.6">
+<summary><b>v0.12.6</b> — every bundled licence ships its text</summary>
+
+- **Three copyleft packages shipped without their licence text.** Sweeping all
+  133 bundled packages found 5 copyleft dependencies (`holesail` AGPL-3.0,
+  `holesail-server`, `holesail-logger`, `holesail-client` GPL-3.0 and
+  `barely-colours` GPL-3.0) and three of them carried no text beside them. The
+  packaging step now vendors each one, and `scripts/licence-check.py` — with a
+  self-test, and run by CI on the published deb and AppImage — fails the build
+  if a copyleft package ever ships without one.
+
+</details>
+<details id="v0.12.5">
+<summary><b>v0.12.5</b> — the folder share runs this repository's own file server</summary>
+
+- **The file server is ours, and MIT.** The share was served by `livefiles`,
+  a GPLv3 package: not prunable, because the engine's entry point requires it.
+  Only its read path was ever reachable (no UI path sets the admin role, so its
+  upload, mkdir and delete routes were dead code), so it was replaced in one
+  pass by `worker/fileserver.js` — same contract (admin default, a 401
+  challenge, byte ranges, a listing) with two deliberate differences:
+  `ready()` rejects instead of exiting the process, and the `..` chroot is
+  filter-based. `test/fileserver.test.js` covers it, including a negative
+  control for traversal.
+- **The packaged tree carries no `livefiles`.** Verified on the installed
+  AppImage's payload, not on intent: the file server, its `bare-http1`
+  dependency and no `livefiles` anywhere. `holesail` (AGPL-3.0) is now the only
+  copyleft dependency in the bundle.
+
+</details>
 <details id="v0.12.4">
 <summary><b>v0.12.4</b> — a saved connection survives a restart, and a legible header logo</summary>
 
