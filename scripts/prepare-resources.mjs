@@ -272,6 +272,15 @@ function dirSize(dir) {
   return total
 }
 
+// tauri.conf.json bundles ../dist-resources/bare, so a non-bare run leaves the
+// desktop build unable to find it: cargo's build script then fails with
+// "resource path '../dist-resources/bare' doesn't exist", which points at the
+// bundler config rather than at how this script was invoked. Say it here.
+if (!opt.bare && !existsSync(path.join(out, 'bare')))
+  console.warn(
+    `  warning: no bare runtime in ${out} - cargo build/test needs it; re-run with --bare`
+  )
+
 const bytes = dirSize(out)
 const mb = (bytes / (1024 * 1024)).toFixed(1)
 console.log(
