@@ -1259,10 +1259,11 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 - [holesail](https://github.com/holesail/holesail) — the peer-to-peer
   TCP/UDP tunnel engine this app is a GUI for (**AGPL-3.0** — see the license
   note below).
-- [livefiles](https://www.npmjs.com/package/livefiles) — the HTTP file server
-  behind folder sharing (**GPLv3** — see the license note below). It publishes
-  no licence file, so the build drops a copy of the GPLv3 text in beside the
-  bundled package (`packaging/licenses/GPL-3.0.txt`).
+- **`worker/fileserver.js`** — the HTTP file server behind folder sharing, and
+  this repo's own (MIT): read-only, `..`-chrooted, with `Range`/`HEAD` support.
+  It replaced `livefiles` (GPLv3, which every installer had been redistributing
+  without its licence text) in v0.12.5 — see that changelog entry. Nothing to
+  vendor for it, and no separate copy of a licence to keep in sync.
 - [Bare](https://github.com/holepunchto/bare) — holepunch's JavaScript
   runtime; powers the Android and embedded-Linux backends so end users don't
   need Node.js (Apache-2.0).
@@ -1288,7 +1289,8 @@ licence text inside each installer:
   [AGPL-3.0](https://github.com/holesail/holesail), and its own runtime
   dependencies `holesail-server` and `holesail-logger` (AGPL-3.0 / GPL-3.0 per
   their repositories and manifests) plus `barely-colours` (GPL-3.0). These are
-  what the engine is built from, so unlike `livefiles` they cannot be removed.
+  what the engine is built from, so they cannot be removed — unlike the file
+  server, which is ours and replaced `livefiles` outright.
   Three of them publish no licence file at all, so the build vendors the
   matching text beside each one (`scripts/prepare-resources.mjs`) and fails if it
   cannot; `scripts/licence-check.py` then verifies the shipped payload, and CI
