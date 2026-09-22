@@ -1258,6 +1258,12 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   Keychain / Credential Manager, falling back to a 0600 file if no keychain
   daemon is reachable) **and a 0600 file on Android** — never in web storage.
   The "clear" button wipes the backing store.
+- **A folder share listens on every interface**, so it is reachable by anything
+  on the same network as well as through the tunnel — that is what makes the
+  card's **Copy LAN URL** row real. The barrier is the per-share random password
+  behind a `401` challenge (the `admin` username is fixed and public); the server
+  is read-only and chrooted with `..` rejected. Change `admin`'s password by
+  making a new share.
 
 ## Acknowledgements
 
