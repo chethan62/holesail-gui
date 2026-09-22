@@ -70,6 +70,21 @@ async function main() {
   worker = spawn(WORKER_CMD, [WORKER], { stdio: ['pipe', 'pipe', 'inherit'] })
   rl = readline.createInterface({ input: worker.stdout })
 
+  // An EPIPE here means the worker died mid-run. Unhandled, that 'error' kills
+  // the driver before its finally block can run, so the next run inherits a
+  // worker holding the test port and dies with EADDRINUSE instead of the real
+  // failure. Swallowing it lets the pending rpc time out and fail properly.
+  worker.stdin.on('error', () => {})
+
+  // A worker that dies under us must not leave a worker holding the test port
+  // for the NEXT run (EADDRINUSE instead of the real failure). Exiting always
+  // takes it with us, including on the paths that never reach the finally.
+  process.on('exit', () => {
+    try {
+      worker.kill('SIGKILL')
+    } catch {}
+  })
+
   rl.on('line', (line) => {
     let msg
     try {
