@@ -388,9 +388,11 @@ An Android project is scaffolded with `tauri android init` (already done — see
 `src-tauri/gen/android/`, regenerated on demand; the mobile capability lives in
 `src-tauri/capabilities/mobile.json`).
 
-**Invites open the app.** The manifest registers an `hs://` intent filter
-(`VIEW` + `BROWSABLE`), so tapping an invite link on the phone hands it to the
-app — the same thing the desktop's deep-link handler does with `hs://` argv.
+**Invites open the app.** The built APK carries a `VIEW`/`BROWSABLE` intent
+filter for `hs://`, merged in by the Tauri deep-link plugin, so tapping an invite
+hands it to the app exactly as the desktop's deep-link handler does. Do not
+verify that with `strings` on the binary manifest — its string pool holds `hs`
+either way; parse the element tree.
 
 **Build an APK** (on a machine with Android Studio / the SDK+NDK):
 
@@ -471,12 +473,15 @@ arrives on the device — in both directions.
   every platform. Nothing about the protection changes: the per-share random
   password is still checked behind a `401` challenge and the server is still
   read-only. LAN reach is what the card advertised, not a widening of access.
-- **An invite link now opens the app on Android.** `tauri.conf.json` declares
-  `deep-link.schemes: ["hs"]`, which registers the handler on desktop only; the
-  Android app had no `VIEW`/`BROWSABLE` filter for the scheme, so a tapped
-  `hs://` link had nothing to hand it to and the invite had to be pasted into
-  **Connect** by hand. The manifest declares the scheme now, so tapping an
-  invite behaves as it does on the desktop.
+- **Android deep links: a claim withdrawn.** This release first claimed the
+  Android app had no `hs://` intent filter, on the evidence of
+  `unzip -p app.apk AndroidManifest.xml | strings -el | grep -x hs` finding none.
+  That probe is broken, not the app: the manifest's string pool contains `hs`
+  whether or not any filter declares it, and the built APK — v0.12.8's included —
+  already carries a `VIEW`/`BROWSABLE` filter for the scheme, merged in by the
+  Tauri deep-link plugin. Parsing the element tree instead shows it plainly. So
+  v0.12.9 adds a _second_, duplicate filter (harmless: the same activity already
+  handled the scheme) which the next release removes. The lesson is the probe.
 - **Files line up with folders in a listing.** Folder rows got a glyph before
   the name and file rows did not, so file names started at the _icon_ column
   while folder names started after it.
