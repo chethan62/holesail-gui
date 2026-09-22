@@ -1,14 +1,19 @@
 # Maintainer: Reasonix <reasonix@localhost>
 # Binary package for the holesail-gui desktop app.
-# Build with ./build.sh (copies the release binary + resources, runs makepkg).
+# Build with ./build.sh (copies the release binary + resources, runs makepkg;
+# build.sh also rewrites pkgver from the repo's package.json so this cannot
+# drift from the release it is built from — it had sat at 0.1.0 while the app
+# reached 0.12.8).
 
 pkgname=holesail-gui
-pkgver=0.1.0
+pkgver=0.12.8
 pkgrel=1
 pkgdesc="Desktop GUI for Holesail — peer-to-peer TCP/UDP tunnel sharing"
 arch=('x86_64')
-url="https://github.com/holesail/holesail"
-license=('MIT')
+url="https://github.com/chethan62/holesail-gui"
+# The app's own code is MIT; the bundled tunnel engine is copyleft, and all of
+# it ships its licence text (see the repository's Licence section).
+license=('MIT' 'AGPL-3.0-only' 'GPL-3.0-only')
 depends=('webkit2gtk-4.1' 'gtk3')
 source=(
   'holesail-gui-bin'

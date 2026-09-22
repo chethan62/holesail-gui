@@ -5,6 +5,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 REPO_ROOT="$(cd ../.. && pwd)"
 
+# pkgver must name the release this binary is built from; deriving it here is
+# what stops it drifting (it sat at 0.1.0 through v0.12.7).
+VER="$(node -p "require('$REPO_ROOT/package.json').version")"
+sed -i "s/^pkgver=.*/pkgver=$VER/" ./PKGBUILD
+echo "==> PKGBUILD pkgver=$VER"
+
 echo "==> preparing resources (dist-resources/, bare runtime included)"
 (cd "$REPO_ROOT" && node scripts/prepare-resources.mjs --bare >/dev/null)
 
