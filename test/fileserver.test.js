@@ -252,6 +252,47 @@ function request(port, urlPath, opts = {}) {
     }
   )
 
+  await check(
+    'a symlink out of the share cannot escape it either',
+    async () => {
+      // A link names no '..', so the string filter above cannot see it: this
+      // is the check that decides on real paths.
+      fs.symlinkSync(path.join(tmp, 'secret.txt'), path.join(root, 'link-out'))
+      fs.symlinkSync(tmp, path.join(root, 'link-out-dir'))
+      fs.symlinkSync('hello.txt', path.join(root, 'link-in'))
+
+      for (const attempt of ['/link-out', '/link-out-dir/secret.txt']) {
+        const res = await request(port, attempt)
+        assert.ok(
+          !res.body.toString().includes('OUTSIDE-THE-SHARE'),
+          `${attempt} leaked a file outside the share (${res.status})`
+        )
+        assert.strictEqual(res.status, 404, `${attempt} should 404, not leak`)
+      }
+
+      // ...and the listing must not advertise the way out.
+      const listed = (await request(port, '/')).body.toString()
+      assert.ok(
+        !listed.includes('OUTSIDE-THE-SHARE'),
+        'the listing leaked content from outside the share'
+      )
+
+      // A link that stays inside the share still works — containment, not a
+      // blanket ban on symlinks.
+      const inside = await request(port, '/link-in')
+      assert.strictEqual(inside.status, 200)
+      assert.strictEqual(inside.body.toString(), PAYLOAD)
+    }
+  )
+
+  await check('every listed row gets a glyph, file or folder', async () => {
+    // The rows are a two-column grid; without a glyph on file rows the names
+    // do not line up with folder rows. Cheap guard: both rules must exist.
+    const body = (await request(port, '/')).body.toString()
+    assert.match(body, /\.isdir span:first-child::before/)
+    assert.match(body, /\.file span:first-child::before/)
+  })
+
   await check('refuses writes: the share is read-only', async () => {
     const res = await request(port, '/hello.txt', { method: 'POST' })
     assert.strictEqual(res.status, 405)

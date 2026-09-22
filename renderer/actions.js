@@ -2,7 +2,7 @@
    DHT lookup preflight and drag-and-drop. Depends on state, ui, bridge,
    sessions, saved, errors. */
 
-import { rememberSession } from './state.js'
+import { rememberSession, state } from './state.js'
 import {
   $,
   log,
@@ -143,7 +143,15 @@ export async function startFilemanagerShare(event) {
       secure: params.secure,
       key: params.key
     })
-    log(`File manager sharing ${path} (${session.host}:${session.port})`, 'ok')
+    // Name where a peer actually reaches it. A wildcard-bound share is
+    // reachable on the LAN at this machine's own address; printing the dial
+    // host (loopback) would say the opposite of what is true.
+    const wildcard =
+      session.fsBindHost === '0.0.0.0' || session.fsBindHost === '::'
+    const where = wildcard
+      ? `${state.lanIp || session.host}:${session.port} on the LAN`
+      : `${session.host}:${session.port}`
+    log(`File manager sharing ${path} (${where})`, 'ok')
     toast('Folder shared 📁')
     addRecent(session.url)
     $('#fm-path').value = ''

@@ -57,6 +57,10 @@ const readdirP = (p) =>
   new Promise((resolve, reject) =>
     fs.readdir(p, (e, l) => (e ? reject(e) : resolve(l)))
   )
+const realpathP = (p) =>
+  new Promise((resolve, reject) =>
+    fs.realpath(p, (e, r) => (e ? reject(e) : resolve(r)))
+  )
 
 function esc(s) {
   return String(s).replace(
@@ -104,6 +108,9 @@ class FileServer {
     }
     if (!st.isDirectory()) throw new Error(`Not a directory: ${root}`)
     this.path = path.resolve(root)
+    // The root's real path: containment is decided on real paths, because a
+    // symlink is not something the '..' filter below can see.
+    this.real = fs.realpathSync(this.path)
     // livefiles' own defaults, kept so the invite fragment and the UI keep
     // working unchanged — the worker generates a real password per share.
     this.username =
@@ -186,7 +193,9 @@ class FileServer {
       return
     }
     // chroot-style: every '..' segment is dropped, so no request can name a
-    // path outside the shared folder no matter how it is encoded.
+    // path outside the shared folder no matter how it is encoded. That filter
+    // is string-level, so serve() also checks the resolved real path — a
+    // symlink to /etc or $HOME names no '..' at all and would walk straight out.
     const urlPath = decodeURIComponent((req.url || '/').split('?')[0])
     const parts = urlPath.split('/').filter((p) => p && p !== '.' && p !== '..')
     const rel = parts.join('/')
@@ -195,6 +204,22 @@ class FileServer {
   }
 
   async serve(full, urlPath, req, res) {
+    // The containment check, on the real path. A request that follows a
+    // symlink out of the shared folder is refused; one whose link stays inside
+    // it (or that names no link at all) is served as before.
+    let real
+    try {
+      real = await realpathP(full)
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Not found.')
+      return
+    }
+    if (real !== this.real && !real.startsWith(this.real + path.sep)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Not found.')
+      return
+    }
     let st
     try {
       st = await statP(full)

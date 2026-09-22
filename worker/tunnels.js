@@ -186,6 +186,10 @@ async function startFilemanager(params) {
     ...recordFromHs(hs, id),
     type: 'filemanager',
     dir: resolved,
+    // Where the file server is really bound. The record's own `host` is the
+    // loopback side the tunnel dials, which is not where a peer reaches it, so
+    // a log line built from that would understate the share's exposure.
+    fsBindHost: host,
     fsRole: fsInfo.role || null,
     fsUsername: fsInfo.username || null,
     fsPassword: fsInfo.password || null

@@ -459,8 +459,39 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.10">
+<summary><b>v0.12.10</b> — a share can no longer be talked out of its folder by a symlink</summary>
+
+- **A symlink inside the shared folder walked straight out of it.** Containment
+  was string-level: every `..` segment is dropped, however it is encoded — but a
+  symlink names no `..` at all, and the path was never resolved. Measured on a
+  live share: a link to `/etc/passwd` planted in the folder returned **200** with
+  the real file's contents, and a link to `/etc` served anything under it; the
+  plain, encoded and encoded-slash `..` attempts all returned `404` while the
+  links did not. Containment is now decided on the **resolved real path**, in the
+  one place every request passes through: a request whose real path is outside
+  the shared folder is `404`, and one whose link stays inside still works. Both
+  cases are asserted, and the guard has a negative control — with it removed the
+  new test fails, so it is not a test that passes either way. Found by probing
+  the installed build rather than reading the comment that claimed otherwise.
+- **The share's log line said loopback while it listened on every interface.**
+  v0.12.9 bound the share to all interfaces and left the log naming the address
+  the tunnel dials, so the app reported `127.0.0.1:<port>` for a share anyone on
+  the network could reach. The line now names the LAN address the share is
+  actually reachable at. `fileserver.test.js` also asserts the file-row glyph
+  that keeps file names aligned with folder names, which nothing checked before.
+- **Docs.** The security notes now state the symlink containment, and the two
+  consequences of the direct LAN path: it is plain HTTP, so the password crosses
+  that network in the clear (the DHT path is Noise-encrypted), and it bypasses
+  the tunnel's rate limit. They previously claimed the server was "chrooted with
+  `..` rejected", which was true of the filter and false of the outcome.
+- **The duplicate `hs://` filter is gone**, reverted after the APK's element tree
+  showed the Tauri deep-link plugin already merges that filter (see v0.12.9).
+
+</details>
+
 <details id="v0.12.9">
-<summary><b>v0.12.9</b> — the LAN address a phone can actually open, and invites that open the app</summary>
+<summary><b>v0.12.9</b> — the LAN address a phone can actually open</summary>
 
 - **A folder share is reachable on the LAN, as its card always claimed.** The
   session card offers a **Copy LAN URL** row for folder shares, and this README
@@ -472,7 +503,9 @@ arrives on the device — in both directions.
   keeps dialling loopback, since connecting _to_ `0.0.0.0` is not routable on
   every platform. Nothing about the protection changes: the per-share random
   password is still checked behind a `401` challenge and the server is still
-  read-only. LAN reach is what the card advertised, not a widening of access.
+  read-only. LAN reach is what the card advertised — but it did widen the
+  exposure of an unrelated containment bug in the same server, found and fixed
+  in v0.12.10.
 - **Android deep links: a claim withdrawn.** This release first claimed the
   Android app had no `hs://` intent filter, on the evidence of
   `unzip -p app.apk AndroidManifest.xml | strings -el | grep -x hs` finding none.
@@ -1261,9 +1294,17 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 - **A folder share listens on every interface**, so it is reachable by anything
   on the same network as well as through the tunnel — that is what makes the
   card's **Copy LAN URL** row real. The barrier is the per-share random password
-  behind a `401` challenge (the `admin` username is fixed and public); the server
-  is read-only and chrooted with `..` rejected. Change `admin`'s password by
-  making a new share.
+  behind a `401` challenge (the `admin` username is fixed and public). Change
+  `admin`'s password by making a new share. Two consequences of reaching it
+  directly, rather than through the tunnel: the LAN leg is **plain HTTP**, so
+  the password crosses that network in the clear (the DHT leg is Noise-encrypted
+  end to end), and it **bypasses the tunnel's rate limit** — neither applies if
+  you hand over the invite link instead of the LAN URL.
+- **The share is read-only and confined to the folder you chose.** Every `..`
+  segment is dropped however it is encoded, and containment is then decided on
+  the **resolved real path**, so a symlink inside the shared folder that points
+  outside it (at `/etc`, at `$HOME`, at another disk) is refused with `404`
+  rather than followed. Links that stay inside the folder still work.
 
 ## Acknowledgements
 
@@ -1271,7 +1312,8 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   TCP/UDP tunnel engine this app is a GUI for (**AGPL-3.0** — see the license
   note below).
 - **`worker/fileserver.js`** — the HTTP file server behind folder sharing, and
-  this repo's own (MIT): read-only, `..`-chrooted, with `Range`/`HEAD` support.
+  this repo's own (MIT): read-only, confined to the shared folder (`..` dropped,
+  real paths required to stay inside it), with `Range`/`HEAD` support.
   It replaced `livefiles` (GPLv3, which every installer had been redistributing
   without its licence text) in v0.12.5 — see that changelog entry. Nothing to
   vendor for it, and no separate copy of a licence to keep in sync.
