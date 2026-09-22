@@ -216,6 +216,36 @@ async function main() {
     )
     assert(fm.type === 'filemanager', 'filemanager session started')
     assert(fm.dir === fmDir, 'session records the shared directory')
+    // A folder share must bind every interface, or the "Copy LAN URL" row the
+    // card shows is a dead address. Loopback is reachable either way, so probe
+    // the machine's own LAN address: on a loopback bind this is refused.
+    const lanIp = Object.values(os.networkInterfaces())
+      .flat()
+      .find((i) => i && i.family === 'IPv4' && !i.internal)?.address
+    if (lanIp) {
+      const lanStatus = await new Promise((resolve) => {
+        http
+          .get(
+            {
+              host: lanIp,
+              port: fm.port,
+              path: '/',
+              auth: `${fm.fsUsername || 'admin'}:${fm.fsPassword}`
+            },
+            (res) => {
+              res.resume()
+              resolve(res.statusCode)
+            }
+          )
+          .on('error', () => resolve('refused'))
+      })
+      assert(
+        lanStatus === 200,
+        `share answers on its LAN address ${lanIp}:${fm.port} (got ${lanStatus})`
+      )
+    } else {
+      console.log('    (no LAN address on this host — LAN reach not probed)')
+    }
     // The file server's own default is admin/admin, and the UI displays whatever pair
     // is in use as if it protects the share — on a public tunnel the key is
     // public by design, so the password is the only barrier there.

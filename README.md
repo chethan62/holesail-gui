@@ -340,9 +340,11 @@ first thing on the tab, so it is reachable without scrolling past the port form.
 The link carries its own login: the receiver's **Copy URL** hands their browser a
 URL that authenticates on arrival, so nobody has to guess a username or retype a
 password at a prompt. The card shows the pair in use (the username is the file
-server's fixed `admin`) and copies the password for hand-entry. Because the
-credentials travel in the link, **an invite link grants folder access** — send it
-the way you would send a password.
+server's fixed `admin`) and copies the password for hand-entry. Its card also
+shows a **Copy LAN URL** row, so a phone on the same network can open the folder
+without the DHT at all (the share binds all interfaces; the password still
+applies). Because the credentials travel in the link, **an invite link grants
+folder access** — send it the way you would send a password.
 
 **Connect** — paste the link you were sent (`hs://s000…` private, `hs://0000…`
 public; which one it is gets detected for you). The tunnel is exposed on your
@@ -385,6 +387,10 @@ Android, a boot receiver restores them after device reboots.
 An Android project is scaffolded with `tauri android init` (already done — see
 `src-tauri/gen/android/`, regenerated on demand; the mobile capability lives in
 `src-tauri/capabilities/mobile.json`).
+
+**Invites open the app.** The manifest registers an `hs://` intent filter
+(`VIEW` + `BROWSABLE`), so tapping an invite link on the phone hands it to the
+app — the same thing the desktop's deep-link handler does with `hs://` argv.
 
 **Build an APK** (on a machine with Android Studio / the SDK+NDK):
 
@@ -450,6 +456,36 @@ arrives on the device — in both directions.
 </details>
 
 ## Changelog
+
+<details id="v0.12.9">
+<summary><b>v0.12.9</b> — the LAN address a phone can actually open, and invites that open the app</summary>
+
+- **A folder share is reachable on the LAN, as its card always claimed.** The
+  session card offers a **Copy LAN URL** row for folder shares, and this README
+  says a phone on the same network can use it — but the file server bound
+  loopback. Measured on a live share: the app logged `127.0.0.1:<port>`, `ss`
+  showed loopback only, and a request to `<lan-ip>:<port>` was **refused**. On
+  the phone that row was therefore a dead address, and the invite link (through
+  the DHT) was the only way in. It now binds all interfaces, while the tunnel
+  keeps dialling loopback, since connecting _to_ `0.0.0.0` is not routable on
+  every platform. Nothing about the protection changes: the per-share random
+  password is still checked behind a `401` challenge and the server is still
+  read-only. LAN reach is what the card advertised, not a widening of access.
+- **An invite link now opens the app on Android.** `tauri.conf.json` declares
+  `deep-link.schemes: ["hs"]`, which registers the handler on desktop only; the
+  Android app had no `VIEW`/`BROWSABLE` filter for the scheme, so a tapped
+  `hs://` link had nothing to hand it to and the invite had to be pasted into
+  **Connect** by hand. The manifest declares the scheme now, so tapping an
+  invite behaves as it does on the desktop.
+- **Files line up with folders in a listing.** Folder rows got a glyph before
+  the name and file rows did not, so file names started at the _icon_ column
+  while folder names started after it.
+
+The service suite asserts LAN reach by requesting the share at the machine's own
+LAN address — not `127.0.0.1`, which a loopback bind answers just as well — and
+that assertion was itself checked against the previous loopback bind, where it
+reports `refused`.
+</details>
 
 <details id="v0.12.8">
 <summary><b>v0.12.8</b> — the range requests a browser actually sends, and an audit that can fail</summary>

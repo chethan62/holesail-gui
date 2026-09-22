@@ -264,6 +264,7 @@ a:hover{background:rgba(128,128,128,.12)}
 a span:first-child{flex:1;word-break:break-all}
 a span:last-child{opacity:.6;font-size:.8rem;white-space:nowrap}
 .isdir span:first-child::before{content:"\\1F4C1  "}
+.file span:first-child::before{content:"\\1F4C4  "}
 </style></head>
 <body>
 <h1>${esc(urlPath === '/' ? path.basename(this.path) || '/' : urlPath)}</h1>

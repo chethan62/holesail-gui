@@ -203,6 +203,41 @@ if (!manifest.includes('extractNativeLibs')) {
   console.log('AndroidManifest.xml already has extractNativeLibs')
 }
 
+// 2d-bis. An hs:// invite must open the app. tauri.conf.json's
+// deep-link.schemes registers the handler on DESKTOP only; on Android the
+// scheme needs a VIEW/BROWSABLE intent filter, and `src-tauri/gen/` is
+// gitignored — so the filter is applied here, the one place every Android
+// build passes through, instead of by editing the generated file by hand
+// (which would be silently lost the next time the project is regenerated).
+// Fails loudly rather than skipping: a build that quietly loses the filter
+// ships an invite link nothing on the phone can open.
+if (!manifest.includes('android:scheme="hs"')) {
+  const hsFilter = [
+    '            <!-- hs:// invites (Tauri deep-link registers desktop only) -->',
+    '            <intent-filter>',
+    '                <action android:name="android.intent.action.VIEW" />',
+    '                <category android:name="android.intent.category.DEFAULT" />',
+    '                <category android:name="android.intent.category.BROWSABLE" />',
+    '                <data android:scheme="hs" />',
+    '            </intent-filter>'
+  ].join('\n')
+  const before = manifest
+  manifest = manifest.replace(
+    /([ \t]*)<\/activity>/,
+    `\n${hsFilter}\n$1</activity>`
+  )
+  if (manifest === before) {
+    console.error(
+      'ERROR: no </activity> in AndroidManifest.xml — cannot register hs://'
+    )
+    process.exit(1)
+  }
+  writeFileSync(manifestPath, manifest)
+  console.log('patched AndroidManifest.xml (hs:// intent filter)')
+} else {
+  console.log('AndroidManifest.xml already registers hs://')
+}
+
 // 2e. tauri.properties is written once, when `android init` first runs, and
 // never again — so its versionName/versionCode froze at whatever the version
 // was then (0.1.0, while the app was 0.11.4). Android then cannot tell one

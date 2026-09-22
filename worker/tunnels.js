@@ -150,7 +150,18 @@ async function startFilemanager(params) {
   // honoured, probe-free.
   const port =
     Number(params.port) > 0 ? Number(params.port) : await pickFreePort()
-  const host = params.host || '127.0.0.1'
+  const host = params.host || '0.0.0.0'
+  // Bind every interface, not just loopback. The session card offers a
+  // "Copy LAN URL" row for folder shares, and the CLI's own filemanager is
+  // LAN-reachable, so a phone on the same network can skip the DHT entirely.
+  // With the default on loopback that row was a dead address: measured, the
+  // app logged `127.0.0.1:<port>`, `ss` showed loopback only, and a request to
+  // the LAN address was refused. The barrier is the per-share random password
+  // behind a 401 challenge, not the bind address — fileserver.js is read-only.
+  //
+  // The tunnel, however, dials the loopback side of that wildcard: connecting
+  // *to* 0.0.0.0 is not routable on every platform.
+  const dialHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const limit = normalizeLimit(params.limit)
   const fileServer = new FileServer({
     path: resolved,
@@ -164,7 +175,7 @@ async function startFilemanager(params) {
   const hs = new Holesail({
     server: true,
     port: Number(fsInfo.port) || port,
-    host: fsInfo.host || host,
+    host: dialHost,
     secure: params.secure !== false, // private by default
     key: params.key || undefined,
     udp: false // filemanager can't use UDP (CLI validateInput)
