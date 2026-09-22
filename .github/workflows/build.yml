@@ -225,15 +225,16 @@ jobs:
             echo "no AppImage built (bundler flake) — deb payload checked, AppImage skipped"
           fi
 
-      - name: Licence inventory of the packaged payload (copyleft texts must ship)
+      - name: Licence inventory of the packaged payload (must carry no copyleft)
         run: |
-          # The README makes a claim about which copyleft code the installers
-          # carry and that its licence text is included. That claim has been
-          # wrong twice — livefiles with no text (v0.9.5), then holesail-server /
-          # holesail-logger / barely-colours doing the same (v0.12.6) — because
-          # nothing checked it. This runs the checker on the real payload, with
-          # its own negative control first: a verifier that cannot fail proves
-          # nothing.
+          # The README claims the installers carry no copyleft code at all.
+          # That claim has been wrong before — livefiles with no text
+          # (v0.9.5), then holesail-server / holesail-logger / barely-colours
+          # (v0.12.6) — because nothing checked it. Since the engine migration
+          # the payload is MIT/Apache-only by construction, so the checker now
+          # fails on ANY copyleft package instead of demanding a licence text
+          # beside it. It runs on the real payload, negative control first: a
+          # verifier that cannot fail proves nothing.
           python3 scripts/licence-check.py --self-test
           python3 scripts/licence-check.py /tmp/deb
           if [ -d /tmp/squashfs-root ]; then
