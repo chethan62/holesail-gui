@@ -37,6 +37,12 @@ function sessionForError(err) {
 }
 
 function onAsyncError(kind, err) {
+  // Temporary diagnostic, env-guarded: errors.js exits the worker silently, so
+  // the only way to see WHAT killed it is to print here and run with the env
+  // var set (tests/debug only; never on by default).
+  if (process.env.HG_TRACE_ASYNC) {
+    console.error('[async-error]', kind, err && err.stack ? err.stack : err)
+  }
   const session = sessionForError(err)
   if (session) {
     // one broken tunnel must not kill the rest — drop just this session.

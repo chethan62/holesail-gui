@@ -311,6 +311,104 @@ check('session capacity passes below the ceiling and refuses at it', () => {
   }
 })
 
+// The tunnel engine's key handling is the branch logic a mistake would be worst
+// in: a wrong mode means either a client that the server's firewall refuses or
+// one that dials a stranger. Pure functions, so they run here for free (ready()
+// needs the DHT and is covered by the DHT suite; loading the module here also
+// proves the engine imports under the bare runtime).
+check('the engine parses every hs:// shape the app passes', () => {
+  const { parse } = require('../worker/engine/hs.js')
+  const hex = 'ab'.repeat(32)
+  const pub = require('z32').encode(Buffer.alloc(32, 7))
+  assert.deepStrictEqual(parse('hs://s000' + hex), { marker: true, key: hex })
+  assert.deepStrictEqual(parse('hs://0000' + pub), { marker: false, key: pub })
+  assert.deepStrictEqual(parse(hex), { marker: null, key: hex })
+})
+
+check('a malformed key throws; a bare key autodetects its mode', () => {
+  const { resolve } = require('../worker/engine/hs.js')
+  const hex = 'cd'.repeat(32)
+  const pub = require('z32').encode(Buffer.alloc(32, 7))
+  assert.strictEqual(resolve('hs://s000' + hex).secure, true)
+  assert.strictEqual(resolve('hs://0000' + pub).secure, false)
+  assert.strictEqual(resolve(hex).secure, true, 'a bare 64-hex key is secure')
+  assert.strictEqual(resolve(pub).secure, false, 'a bare z32 key is public')
+  // an explicit flag wins over the scheme marker (saved.js replays `secure`)
+  assert.strictEqual(resolve(pub, false).secure, false)
+  assert.strictEqual(resolve(pub, true).secure, true)
+  // MALFORMED must throw: the renderer distinguishes unknown from offline, so a
+  // silent null would report garbage as merely "offline" (service.test.js 14)
+  for (const bad of [
+    'hs://0000!!!not-z32!!!',
+    'hs://0000abc',
+    'hs://s000short',
+    ''
+  ]) {
+    assert.throws(() => resolve(bad), /Invalid key format/, JSON.stringify(bad))
+  }
+  // a hex key claimed public decodes to 40 bytes, not a key
+  assert.throws(() => resolve(hex, false), /Invalid key format/)
+})
+
+check('the engine info is what the app records and saved.js replays', () => {
+  const { Engine } = require('../worker/engine/hs.js')
+  const hex = 'ef'.repeat(32)
+  const srv = new Engine({ server: true, port: 45999 })
+  const pub = new Engine({ server: true, port: 45998, secure: false })
+  const cli = new Engine({ client: true, key: 'hs://s000' + hex, port: 45997 })
+  const udp = new Engine({
+    client: true,
+    key: 'hs://s000' + hex,
+    port: 45996,
+    udp: true
+  })
+  try {
+    assert.strictEqual(srv.info.type, 'server')
+    assert.strictEqual(srv.info.secure, true)
+    assert.strictEqual(srv.info.protocol, 'tcp')
+    assert.strictEqual(srv.info.port, 45999)
+    // info.key is the RAW key part: renderer/saved.js rebuilds the link as
+    // (secure === false ? 'hs://0000' : 'hs://s000') + key, so the round trip
+    // below is what makes a saved tunnel reconnectable.
+    assert.strictEqual('hs://s000' + srv.info.key, srv.info.url)
+    assert.strictEqual(srv.info.key.length, 64)
+    assert.strictEqual(pub.info.secure, false)
+    assert.strictEqual('hs://0000' + pub.info.key, pub.info.url)
+    assert.strictEqual(cli.info.type, 'client')
+    assert.strictEqual(cli.info.key, hex)
+    assert.strictEqual('hs://s000' + cli.info.key, cli.info.url)
+    assert.strictEqual(udp.info.protocol, 'udp')
+    // stats.js reads the counters and the connection sources off engine.dht,
+    // and engine.dht must be the engine's own CARRIER, never the DHT node:
+    // putting our counters on the node's own `stats` clobbers the registry
+    // dht-rpc's Query._destroy() decrements, so every query destroyed after
+    // that throws and errors.js exits the whole worker (the DHT suite died at
+    // its section 6 this way). This assert is the regression check for it.
+    assert.strictEqual(srv.dht.stats, srv.stats)
+    assert.ok(
+      'server' in srv.dht && 'proxy' in srv.dht && 'proxySocket' in srv.dht
+    )
+    assert.notStrictEqual(
+      srv.node,
+      srv.dht,
+      'the DHT node is separate from the carrier'
+    )
+    assert.notStrictEqual(
+      srv.node.stats,
+      srv.stats,
+      'the node keeps its own stats registry'
+    )
+    assert.ok(
+      srv.node.stats && srv.node.stats.queries,
+      'the node stats registry is intact (dht-rpc reads .queries.active)'
+    )
+  } finally {
+    // fire-and-forget: a sync check cannot await, and leaving four DHT nodes
+    // alive would hold the process open
+    for (const e of [srv, pub, cli, udp]) e.close().catch(() => {})
+  }
+})
+
 if (failed) {
   console.log(`\n${failed} UNIT TEST(S) FAILED ❌\n`)
   process.exitCode = 1

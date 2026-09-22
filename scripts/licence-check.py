@@ -3,19 +3,21 @@
 
 Usage: scripts/licence-check.py <payload-dir | appimage | apk> [--self-test]
 
-Why: the README tells users which copyleft code the installers carry, and that
-claim has been wrong twice — livefiles redistributed with no licence text
-(v0.9.5), then holesail-server / holesail-logger / barely-colours doing the same
-(v0.12.6). A claim nothing checks rots, so this walks the bundled node_modules,
-prints every licence it finds, and FAILS if any package that declares a
-copyleft licence ships no licence text beside it.
+Why: the README tells users the installers carry no copyleft code at all — a
+claim nothing checks rots, and this one has already been wrong four times
+(livefiles in v0.9.5; holesail-server / holesail-logger / barely-colours in
+v0.12.6). Since the engine migration the payload is MIT/Apache-only by
+construction, so this walks the bundled node_modules, prints every licence it
+finds, and FAILS if ANY package declares a copyleft licence. A licence text
+beside it is no excuse any more: shipping copyleft at all is the regression.
 
 Stdlib only (no Pillow, no third-party imports): the CI runner's python is not
 this box's python, and the icon checker already cost a release to that.
 
-Exit 0 = every copyleft package carries a text; 1 = something is missing.
---self-test synthesises a clean payload and a broken one and requires 0 then 1,
-because a verifier that cannot fail proves nothing.
+Exit 0 = no copyleft in the payload; 1 = something copyleft, unlicenced or
+unrecognised is in there.
+--self-test synthesises a permissive payload and three failing ones and
+requires 0 then 1, 1, 1, because a verifier that cannot fail proves nothing.
 """
 import json
 import os
@@ -105,7 +107,7 @@ def unpack(target, workdir):
 
 def find_nm(payload_root):
     for root, dirs, _ in os.walk(payload_root):
-        if os.path.basename(root) == "node_modules" and "holesail" in dirs:
+        if os.path.basename(root) == "node_modules" and "hyperdht" in dirs:
             return root
     return None
 
@@ -113,10 +115,13 @@ def find_nm(payload_root):
 def audit(payload_root):
     nm = find_nm(payload_root)
     if not nm:
-        print("FAIL: no bundled node_modules with holesail in it — nothing to audit")
+        print(
+            "FAIL: no bundled node_modules holding the engine (looked for hyperdht)"
+            " — nothing to audit"
+        )
         return 1
     table = {}
-    missing = []
+    copyleft = []
     unknown = []
     for pkg_dir, manifest in packages(nm):
         lic = licence_of(manifest)
@@ -124,9 +129,7 @@ def audit(payload_root):
         ident = f"{name}@{manifest.get('version', '?')}"
         table.setdefault(lic, []).append(name)
         if COPYLEFT.search(lic):
-            has_text = any(TEXT_FILE.match(f) for f in os.listdir(pkg_dir))
-            if not has_text:
-                missing.append(f"{ident} ({lic})")
+            copyleft.append(f"{ident} ({lic})")
         elif not lic:
             unknown.append(f"{ident} — declares no licence at all")
         elif PROPRIETARY.search(lic):
@@ -145,25 +148,40 @@ def audit(payload_root):
         print("  (add the licence to PERMISSIVE/COPYLEFT in this checker with a reason,")
         print("   or remove the package — do not let it ship silently)")
         return 1
-    if missing:
-        print("FAIL: copyleft packages with no licence text beside them:")
-        for m in missing:
-            print(f"  - {m}")
+    if copyleft:
+        print("FAIL: copyleft packages in the payload — the engine migration")
+        print("      replaced the holesail family, so none should remain:")
+        for c in copyleft:
+            print(f"  - {c}")
+        print("  (fix the dependency, or teach COPYLEFT/PERMISSIVE in this checker")
+        print("   with a reason — do not let it ship silently)")
         return 1
-    print("PASS: every copyleft package ships its licence text")
+    print("PASS: no copyleft packages in the payload")
     return 0
 
 
 def self_test():
-    """A payload WITH texts must pass, the same payload WITHOUT them must fail."""
+    """A permissive payload must pass; one copyleft package must fail it — even
+    when that package ships its own licence text (a text used to be the pass
+    condition, which is exactly what the migration stopped caring about)."""
     work = tempfile.mkdtemp()
     try:
-        variants = (("clean", 0, None), ("broken", 1, None), ("unknown", 1, "mystery"))
-        for variant, expect, _ in variants:
+        variants = (
+            (
+                "permissive",
+                0,
+                [("hyperdht", "MIT"), ("z32", "MIT"), ("bares", "Apache-2.0")],
+            ),
+            (
+                "copyleft-with-text",
+                1,
+                [("hyperdht", "MIT"), ("holesail", "AGPL-3.0")],
+            ),
+            ("copyleft-no-text", 1, [("hyperdht", "MIT"), ("livefiles", "GPL-3.0")]),
+            ("unknown", 1, [("hyperdht", "MIT"), ("mystery", "SomeUnlistedLicence")]),
+        )
+        for variant, expect, pkgs in variants:
             root = os.path.join(work, variant)
-            pkgs = [("holesail", "AGPL-3.0"), ("holesail-server", "GNU GPL v3"), ("probably-mit", "MIT")]
-            if variant == "unknown":
-                pkgs = [("holesail", "AGPL-3.0"), ("mystery", "SomeUnlistedLicence"), ("nolicence", "")]
             for pkg, lic in pkgs:
                 d = os.path.join(root, "node_modules", pkg)
                 os.makedirs(d, exist_ok=True)
@@ -172,9 +190,9 @@ def self_test():
                     if lic:
                         entry["license"] = lic
                     json.dump(entry, fh)
-                if variant == "clean" or lic == "MIT" or (variant == "unknown" and pkg == "holesail"):
-                    with open(os.path.join(d, "LICENSE"), "w", encoding="utf-8") as fh:
-                        fh.write("GNU AFFERO GENERAL PUBLIC LICENSE\n")
+                # every package gets a text: a text must not excuse copyleft
+                with open(os.path.join(d, "LICENSE"), "w", encoding="utf-8") as fh:
+                    fh.write("GNU AFFERO GENERAL PUBLIC LICENSE\n")
             got = audit(root)
             status = "OK" if got == expect else f"WRONG (expected {expect})"
             print(f"  self-test {variant}: exit {got} {status}")

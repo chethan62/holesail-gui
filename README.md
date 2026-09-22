@@ -147,8 +147,17 @@ under its own process (Node in dev, the bundled **Bare** runtime in packaged
 builds — see below), so the addons load as-is; the Rust backend only proxies
 JSON-RPC over stdio.
 
-**The tunnel engine is holesail** (`worker/engine/`, AGPL-3.0) — and it is the
-only one. A second engine was built and measured here: [iroh](https://iroh.computer),
+**The tunnel engine is this repo's own** (`worker/engine/hs.js`): the holesail
+protocol — HyperDHT transport, `hs://` keys, the shared-identity firewall, the
+mutable DHT record — implemented directly over `hyperdht` (MIT), `z32` (MIT) and
+`@holesail/hyper-cmd-lib-net` (Apache-2.0) for the TCP/UDP piping. The AGPL-3.0
+`holesail` package it replaced is gone from the dependency tree, so the shipped
+payload now carries no copyleft code at all ([License](#license)). Interop was
+proven before the swap, not after: a spike ran the new engine against the real
+holesail in both directions, TCP and UDP, byte-exact — 7/7 cases — and the DHT
+suite and `npm run test:bare` have driven every app path through it since.
+
+A second engine was measured here and **not** shipped: [iroh](https://iroh.computer),
 QUIC with hole-punching and relay fallback, MIT/Apache-2.0. It could never ship
 from this repo — `@number0/iroh` ships NAPI-RS prebuilds needing Node >= 20.3,
 while the packaged worker runs under Bare, which loads only its own addon ABI —
@@ -231,17 +240,18 @@ python3 scripts/apk-icon-check.py --self-test                   # can the check 
 python3 scripts/apk-icon-check.py <apk> src-tauri/icons/android  # does this APK carry our art?
 ```
 
-`scripts/licence-check.py` audits what a shipped payload actually contains. Every
-bundled package must carry a licence this checker recognises as permissive, or
-be one of the copyleft ones — and those must ship their licence text beside
-them. An unrecognised or absent licence fails the run rather than passing
-silently, because that is how this README's permissive claim could have been
-false without anyone noticing. It reads an extracted payload, an AppImage, a
-`.deb` or an `.apk` directly, needs nothing but the standard library, and its
-`--self-test` requires exit 0 for a correct tree and exit 1 for each of two
-broken ones. CI runs it on every build: on the deb and AppImage in the linux
-job, and on the APK's own prepared tree in the android job, which the other two
-never covered.
+`scripts/licence-check.py` audits what a shipped payload actually contains: it
+walks the bundled `node_modules`, prints every licence it finds, and fails if any
+package declares a copyleft licence at all — a licence text beside it is no
+longer an excuse, because since the engine migration the payload is
+MIT/Apache-only by construction. An unrecognised or absent licence fails the run
+too, rather than passing silently, because that is how this README's permissive
+claim could have been false without anyone noticing. It reads an extracted
+payload, an AppImage, a `.deb` or an `.apk` directly, needs nothing but the
+standard library, and its `--self-test` requires exit 0 for a permissive tree and
+exit 1 for each of three broken ones. CI runs it on every build: on the deb and
+AppImage in the linux job, and on the APK's own prepared tree in the android job,
+which the other two never covered.
 
 ```bash
 python3 scripts/licence-check.py --self-test    # can the check fail? must pass
@@ -458,6 +468,38 @@ arrives on the device — in both directions.
 </details>
 
 ## Changelog
+
+<details id="v0.13.0" open>
+<summary><b>v0.13.0</b> — the tunnel engine is this repo's own, and the payload carries no copyleft</summary>
+
+- **The AGPL engine is gone, not worked around.** `worker/engine/hs.js`
+  implements the holesail protocol — HyperDHT transport, `hs://` keys, the
+  shared-identity firewall, the mutable DHT record with its 50-minute refresh —
+  directly over `hyperdht` (MIT), `z32` (MIT) and
+  `@holesail/hyper-cmd-lib-net` (Apache-2.0). `holesail` (AGPL-3.0) and the
+  GPL-3.0 `holesail-server` / `holesail-logger` / `barely-colours` it dragged in
+  are no longer dependencies, so the installers carry no copyleft code and no
+  source-availability obligation attaches to them. The old build vendored the
+  licence texts those packages never shipped; the new build instead refuses to
+  build if a copyleft package ever reappears in the bundle.
+- **Interop was proven before the swap.** A spike ran the new engine against the
+  real holesail in both directions, TCP and UDP, byte-exact (7/7 cases); then
+  `npm test` (153 checks) and `npm run test:bare` drove every app path through
+  it — server, client, folder share, permanent shares, pause/resume, per-session
+  bandwidth caps, `lookup`, the oversized-datagram case and the invite and
+  session-state suites.
+- **Pin the piper, or the caps stop working.** `@holesail/hyper-cmd-lib-net`
+  stays at 1.1.2: 2.x reorders its signatures, pipes with `.pipe()` — which
+  respects `write()` back-pressure, where the bandwidth-cap overflow guard
+  depends on that back-pressure being ignored — and threads no stats object, so
+  per-session `locCnt`/`remCnt` stop updating. The engine now throws at load if
+  that API moves.
+- **`bare-dgram` stays at 1.0.1** (`overrides` in package.json): 1.1.x is a
+  bare-only addon, so the Node-mode test suite could not load the engine at all.
+- `scripts/licence-check.py` fails on ANY copyleft package now instead of
+  requiring a licence text beside it, and its self-test proves a licence text no
+  longer rescues one. The README's licence and architecture sections state what
+  actually ships.</details>
 
 <details id="v0.12.12">
 <summary><b>v0.12.12</b> — the failed-auth counter counts one client once, and leaves the tunnel's leg alone</summary>
@@ -1391,34 +1433,25 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
 
 [MIT](LICENSE) © 2026 chethan62 — for this project's own code.
 
-**Note:** one dependency family is copyleft, and every part of it now ships its
-licence text inside each installer:
+**Everything that ships is permissive.** The tunnel engine is this repository's
+own code (`worker/engine/hs.js`) over `hyperdht` (MIT), `z32` (MIT) and
+`@holesail/hyper-cmd-lib-net` (Apache-2.0), which owns the TCP/UDP piping. No
+package in the payload is copyleft:
 
-- `holesail` — the tunnel engine behind the service worker —
-  [AGPL-3.0](https://github.com/holesail/holesail), and its own runtime
-  dependencies `holesail-server` and `holesail-logger` (AGPL-3.0 / GPL-3.0 per
-  their repositories and manifests) plus `barely-colours` (GPL-3.0). These are
-  what the engine is built from, so they cannot be removed — unlike the file
-  server, which is ours and replaced `livefiles` outright.
-  Three of them publish no licence file at all, so the build vendors the
-  matching text beside each one (`scripts/prepare-resources.mjs`) and fails if it
-  cannot; `scripts/licence-check.py` then verifies the shipped payload, and CI
-  runs that on every build.
-- Distributing an app that embeds AGPL/GPL code carries source-availability
-  obligations for the combined work. The GUI's own source is here and MIT, which
-  combines into a copyleft work without conflict, so those obligations are
-  effectively satisfied — but if you intend commercial redistribution, review
-  the AGPL/GPL implications or contact the upstream maintainers. This is a
-  description of the licences and their known obligations, not legal advice.
+- The AGPL-3.0 `holesail` package — and the GPL-3.0 `holesail-server`,
+  `holesail-logger` and `barely-colours` it dragged in — _were_ the engine until
+  v0.13.0. That engine now implements the same protocol directly, so they are
+  gone from the dependency tree rather than vendored or pruned around.
+- Folder sharing's HTTP file server is this repository's own code
+  (`worker/fileserver.js`, MIT): it replaced `livefiles` (GPLv3), which only
+  holesail's CLI used.
+- `scripts/prepare-resources.mjs` refuses to build if a copyleft package appears
+  in the bundled tree, and `scripts/licence-check.py` verifies the shipped
+  payload carries none — CI runs it on every build, on the deb and AppImage trees
+  and on the APK's. `--self-test` proves the check can fail.
 
-Folder sharing's HTTP file server is this repository's own code
-(`worker/fileserver.js`, MIT): it replaced `livefiles` (GPLv3), which `holesail`
-declares as a dependency for its CLI's `--filemanager` flag. The build prunes
-that package from the bundled tree, so no GPL code ships that this app does not
-run — nothing here reaches holesail's CLI, and the app's own server covers the
-read side the app actually used (browse, download, Basic auth).
-`src/bin/holesail.mjs` upstream still imports it; using the CLI is what that
-dependency is for.
+So no source-availability obligation attaches to redistributing this app's
+installers. (A description of the licences, not legal advice.)
 
 Every other bundled package is permissive (MIT/Apache-2.0) and ships its own
 `LICENSE` inside the bundled `node_modules`; this project's own code stays MIT.

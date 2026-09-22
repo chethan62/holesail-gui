@@ -85,7 +85,23 @@ writeFileSync(
       name: 'holesail-gui-resources',
       private: true,
       version: '0.0.0',
-      dependencies: { holesail: '^2.4.1', 'bare-http1': '^4.0.2' }
+      dependencies: {
+        hyperdht: '^6.34.0',
+        z32: '^1.1.0',
+        '@holesail/hyper-cmd-lib-net': '1.1.2',
+        // worker/runtime.js resolves net/fs/path/crypto/process/http to these
+        // under the packaged (bare) runtime. They used to arrive with holesail's
+        // own tree; with holesail gone they must be declared here - without
+        // bare-crypto the bare worker dies at startup with "Cannot find module
+        // 'crypto' imported from worker/runtime.js".
+        'bare-crypto': '^1.15.3',
+        'bare-process': '^4.5.1',
+        'bare-net': '^2.3.3',
+        'bare-fs': '^4.8.0',
+        'bare-path': '^3.1.1',
+        'bare-http1': '^4.6.2'
+      },
+      overrides: { 'bare-dgram': '1.0.1' }
     },
     null,
     2
@@ -104,126 +120,46 @@ rmSync(path.join(out, 'node_modules', 'prettier'), {
 })
 rmSync(path.join(out, 'node_modules', '.bin', 'prettier'), { force: true })
 
-// livefiles is GPLv3 and only reachable from holesail's CLI
-// (`holesail --filemanager <dir>`, i.e. src/bin/holesail.mjs) — this app runs
-// holesail's Engine, never its CLI, and its own file server is worker/
-// fileserver.js (MIT). holesail declares it as a plain dependency, so npm
-// installs it and every installer would redistribute GPL code this MIT project
-// neither uses nor means to ship. Verified rather than assumed: requiring both
-// `holesail` and `holesail-server` resolves with node_modules/livefiles absent
-// (the filemanager test and the saved-credential E2E then exercise a folder
-// share end to end on a pruned tree), and `grep -rn` finds no other require.
-const livefilesDir = path.join(out, 'node_modules', 'livefiles')
-if (existsSync(livefilesDir)) {
-  rmSync(livefilesDir, { recursive: true, force: true })
-  if (existsSync(livefilesDir)) {
-    throw new Error('livefiles is still in the bundle — refusing to build')
-  }
-}
-
-// Copyleft packages that publish no licence file of their own.
+// The payload must carry NO copyleft code, and that is now an INVARIANT rather
+// than something to remediate.
 //
-// Same obligation as livefiles had (v0.9.5), and the sweep for v0.12.6 found it
-// three more times: holesail-server, holesail-logger and barely-colours are all
-// holesail's own dependencies, all declare GPL-3.0/AGPL-3.0 in their manifests,
-// and none ships a licence text — so every installer redistributed them without
-// the licence their terms require be passed on. They cannot be pruned like
-// livefiles: requiring holesail pulls them in at runtime.
-//
-// The texts are copied from copies ALREADY inside the installed tree rather than
-// from a vendored file in this repo: `holesail/LICENSE` is the AGPL-3.0 text and
-// `holesail-client/LICENSE.txt` the GPL-3.0 one, both shipped by upstream and
-// both then carried into every installer by the same resource mapping. The title
-// line of each source is asserted so an upstream text change cannot silently
-// vendor the wrong licence, and every package we add a text to is re-checked
-// afterwards.
-//
-// holesail-server declares "GNU GPL v3" in its npm manifest while its repository
-// carries AGPL-3.0, so both texts land next to it: a redistributor with
-// inconsistent upstream metadata is better off shipping both than guessing.
-// The texts are DERIVED from each installed package's own declaration rather
-// than from a hand-written list — that list was wrong within the hour (it gave
-// holesail-logger the AGPL text while installed 1.1.0 declares "GPL 3.0", and
-// npm's 2.0.0 is the one that says AGPL). A new copyleft dependency is now
-// covered automatically; a licence family we hold no text for fails the build
-// rather than silently shipping nothing.
-const LICENCE_TEXTS = {
-  AGPL: {
-    from: 'holesail/LICENSE',
-    title: 'GNU AFFERO GENERAL PUBLIC LICENSE',
-    dest: 'LICENSE.AGPL-3.0.txt'
-  },
-  GPL: {
-    from: 'holesail-client/LICENSE.txt',
-    title: 'GNU GENERAL PUBLIC LICENSE',
-    dest: 'LICENSE.GPL-3.0.txt'
-  }
-}
-// Packages whose metadata contradicts itself get every text it mentions.
-const BOTH_TEXTS = new Set(['holesail-server'])
-
-const nmDir = path.join(out, 'node_modules')
-const allManifests = []
-const collect = (dir) => {
+// Before the engine migration this spot pruned livefiles (GPLv3, reachable only
+// from holesail's CLI) and then vendored the AGPL/GPL licence texts that
+// holesail's own tree dragged in - holesail-server, holesail-logger and
+// barely-colours all declare copyleft and none ships its own text, so every
+// installer redistributed them. The migration removed holesail, and this repo's
+// engine now runs on hyperdht (MIT), z32 (MIT) and
+// @holesail/hyper-cmd-lib-net (Apache-2.0), so nothing copyleft belongs in the
+// bundle at all: if anything is, it is a regression to fix or to fail the build
+// over - never something to paper over by copying a licence text beside it.
+const COPYLEFT_RE = /\b(A?GPL|LGPL|MPL|CDDL|EPL|EUPL)\b/i
+const copyleft = []
+const scanManifests = (dir) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const child = path.join(dir, entry.name)
-    if (entry.name.startsWith('@')) collect(child)
-    else if (existsSync(path.join(child, 'package.json')))
-      allManifests.push(child)
-    if (
-      entry.name !== 'node_modules' &&
-      existsSync(path.join(child, 'node_modules'))
-    ) {
-      collect(path.join(child, 'node_modules'))
+    if (entry.name.startsWith('@')) {
+      scanManifests(child)
+      continue
+    }
+    const manifestPath = path.join(child, 'package.json')
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      const declared = String(manifest.license || '')
+      if (COPYLEFT_RE.test(declared)) {
+        copyleft.push(`${manifest.name || entry.name} (${declared})`)
+      }
+    }
+    if (existsSync(path.join(child, 'node_modules'))) {
+      scanManifests(path.join(child, 'node_modules'))
     }
   }
 }
-collect(nmDir)
-
-for (const pkgDir of allManifests) {
-  const manifest = JSON.parse(
-    readFileSync(path.join(pkgDir, 'package.json'), 'utf-8')
+scanManifests(path.join(out, 'node_modules'))
+if (copyleft.length) {
+  throw new Error(
+    `copyleft packages in the bundle: ${copyleft.join(', ')} - refusing to build`
   )
-  const declared = String(manifest.license || '')
-  const upper = declared.toUpperCase()
-  if (!/\b(A?GPL)/.test(upper)) continue
-  // A package whose metadata contradicts itself (manifest GPL, repository
-  // AGPL) gets every text it mentions; everything else is derived.
-  const fams = BOTH_TEXTS.has(manifest.name) ? ['GPL', 'AGPL'] : []
-  if (fams.length === 0) {
-    if (upper.includes('AGPL')) fams.push('AGPL')
-    if (/(^|[^LA])GPL/.test(upper)) fams.push('GPL')
-  }
-  if (upper.includes('LGPL')) {
-    throw new Error(
-      `${manifest.name} declares ${declared} and this build holds no LGPL text — add one to LICENCE_TEXTS`
-    )
-  }
-  if (fams.length === 0) continue
-  const hasOwn = readdirSync(pkgDir).some((f) =>
-    /^(LICEN|COPYING|NOTICE)/i.test(f)
-  )
-  if (hasOwn) continue // upstream ships its own; leave it alone
-  for (const fam of [...new Set(fams)]) {
-    const { from, title, dest } = LICENCE_TEXTS[fam]
-    const src = path.join(nmDir, from)
-    if (!existsSync(src)) {
-      throw new Error(
-        `no ${fam} text to vendor (looked for ${from}) — refusing to build`
-      )
-    }
-    if (!readFileSync(src, 'utf-8').includes(title)) {
-      throw new Error(`${from} is not the ${fam} text — refusing to build`)
-    }
-    const target = path.join(pkgDir, dest)
-    cpSync(src, target)
-    if (!existsSync(target)) {
-      throw new Error(
-        `licence text did not land in ${manifest.name} — refusing to build`
-      )
-    }
-  }
 }
 
 // Native addons ship prebuilds for every platform (prebuildify convention).

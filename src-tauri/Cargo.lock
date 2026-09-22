@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "holesail-gui"
-version = "0.12.12"
+version = "0.13.0"
 dependencies = [
  "keyring",
  "libc",

@@ -15,7 +15,7 @@
  * shared token bucket (see limiter.js).
  */
 
-const { Buffer } = require('./runtime.js')
+const { Buffer, process } = require('./runtime.js')
 const { sessions, statsTimers } = require('./state.js')
 const { sendEvent } = require('./transport.js')
 const {
@@ -28,6 +28,8 @@ const {
 } = require('./limiter.js')
 
 const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
+// rate-limits the HG_TRACE_CAP write log (module scope: the wrapper closes over it)
+let traceCapAt = 0
 
 // Wire per-session byte counters at the data boundaries we can actually
 // reach post-ready:
@@ -44,7 +46,16 @@ const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
 function wireDataCounters(entry) {
   const dht = entry.hs && entry.hs.dht
   if (!dht) return
+  // HG_TRACE_CAP=1 explains why a capped tunnel does not trip: it reports
+  // whether a counter stream was ever attached at all, and what the limiter
+  // saw. Silent by default.
+  const traceCap = process.env.HG_TRACE_CAP
   const stats = entry.stats
+  if (traceCap) {
+    console.error(
+      `[cap] wire: server=${!!dht.server} proxy=${!!dht.proxy} proxySocket=${!!dht.proxySocket} limit=${entry.limit}`
+    )
+  }
   const bump = (dir, n) => {
     if (n > 0) stats[dir] = (stats[dir] || 0) + n
   }
@@ -62,6 +73,7 @@ function wireDataCounters(entry) {
   const wrapStream = (stream, upDir, downDir) => {
     if (!stream || stream.__hgCounted) return
     stream.__hgCounted = true
+    if (traceCap) console.error(`[cap] wrapped a stream (up=${upDir})`)
     stream.on('data', (d) => {
       const n = d ? d.length : 0
       bump(downDir, n)
@@ -78,6 +90,12 @@ function wireDataCounters(entry) {
               ? buf.length
               : 0
         bump(upDir, n)
+        if (traceCap && n && Date.now() - traceCapAt > 1000) {
+          traceCapAt = Date.now()
+          console.error(
+            `[cap] write ${n}B on ${upDir} (limit=${entry.limit} global=${getGlobalLimit()})`
+          )
+        }
         if (n && (entry.limit || getGlobalLimit())) {
           const lim = limiterFor(entry)
           // Already given up on (the overflow below dropped this session):

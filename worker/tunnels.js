@@ -1,6 +1,6 @@
 /* tunnels.js — server/client/filemanager session start/stop/pause/resume.
  * Depends on runtime.js + state.js + transport.js + guards.js + stats.js
- * + limiter.js. This is the only module that constructs Holesail/FileServer
+ * + limiter.js. This is the only module that constructs Engine/FileServer
  * instances.
  */
 
@@ -24,7 +24,7 @@ const {
   stopLimitTicker
 } = require('./limiter.js')
 
-const { Engine: Holesail } = require('./engine/index.js')
+const { Engine } = require('./engine/index.js')
 const FileServer = require('./fileserver.js')
 
 // A fresh Basic-Auth password for each folder share. The file server's own
@@ -70,7 +70,7 @@ async function startServer(params) {
     )
   }
   const limit = normalizeLimit(params.limit)
-  const hs = new Holesail({
+  const hs = new Engine({
     server: true,
     port,
     host: params.host || '127.0.0.1',
@@ -172,7 +172,7 @@ async function startFilemanager(params) {
   })
   await fileServer.ready()
   const fsInfo = fileServer.info
-  const hs = new Holesail({
+  const hs = new Engine({
     server: true,
     port: Number(fsInfo.port) || port,
     host: dialHost,
@@ -238,7 +238,7 @@ async function connectClient(params) {
     // worker. Always bind an OS-assigned free port instead.
     port = await pickFreePort()
   }
-  const hs = new Holesail({
+  const hs = new Engine({
     client: true,
     key,
     port,
