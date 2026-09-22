@@ -459,6 +459,29 @@ arrives on the device — in both directions.
 
 ## Changelog
 
+<details id="v0.12.11">
+<summary><b>v0.12.11</b> — password guessing over the LAN is now throttled</summary>
+
+- **A folder share's password could be guessed without limit.** The tunnel in
+  front of a share rate-limits its own clients, but a share also listens on the
+  LAN (v0.12.9) and that leg went straight to the file server — the security
+  note below disclosed the bypass rather than closing it. The server now keeps
+  its own per-client counter: eight failed attempts from one address inside a
+  minute, and that address gets `429` with a `Retry-After` until the window
+  passes. A correct password clears the counter, so only a guesser is held back.
+- **The disclosure now describes the throttle** instead of the bypass. The
+  counter lives in memory, is bounded at 512 entries, and is keyed per client:
+  a restart forgives, and guesses spread across many addresses are out of scope
+  for a share that is reachable on a LAN.
+- `fileserver.test.js` asserts the contract on its own server instance (the
+  shared one already spends three failed guesses): the right password works,
+  eight guesses are refused `401`, the ninth is `429` with a `Retry-After`, a
+  _correct_ password is held too while the window is open, and the endpoint
+  serves again once the window passes. Negative control: with the guard
+  disabled the check fails.
+
+</details>
+
 <details id="v0.12.10">
 <summary><b>v0.12.10</b> — a share can no longer be talked out of its folder by a symlink</summary>
 
@@ -1298,8 +1321,11 @@ None beyond the OS — packaged builds embed the Bare runtime, so no Node.js. (D
   `admin`'s password by making a new share. Two consequences of reaching it
   directly, rather than through the tunnel: the LAN leg is **plain HTTP**, so
   the password crosses that network in the clear (the DHT leg is Noise-encrypted
-  end to end), and it **bypasses the tunnel's rate limit** — neither applies if
-  you hand over the invite link instead of the LAN URL.
+  end to end), and it **bypasses the tunnel's rate limit** — so the file server
+  keeps its own counter: eight failed attempts from one client inside a minute
+  and that client is answered `429` with a `Retry-After` until the window
+  passes, while a correct password clears the counter. Neither applies if you
+  hand over the invite link instead of the LAN URL.
 - **The share is read-only and confined to the folder you chose.** Every `..`
   segment is dropped however it is encoded, and containment is then decided on
   the **resolved real path**, so a symlink inside the shared folder that points

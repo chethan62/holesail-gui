@@ -97,6 +97,12 @@ function sameSecret(a, b) {
   return A.length === B.length && crypto.timingSafeEqual(A, B)
 }
 
+// Failed-auth throttle. The tunnel in front of this server has its own rate
+// limiting; a client on the same LAN does not go through it, so without this it
+// could guess passwords as fast as it can open sockets. Fixed window, per client.
+const AUTH_WINDOW_MS = 60000
+const AUTH_MAX_FAILS = 8
+
 class FileServer {
   constructor(opts = {}) {
     const root = opts.path
@@ -125,6 +131,10 @@ class FileServer {
       opts.host && typeof opts.host !== 'boolean' ? opts.host : '127.0.0.1'
     this.port = Number(opts.port) > 0 ? Number(opts.port) : 0
     this.server = null
+    // Throttle state: client ip -> { n, until }. In memory only, and bounded
+    // below at 512 entries; a restart forgives and guesses spread across many
+    // addresses are out of scope for a LAN share.
+    this.failures = new Map()
   }
 
   get info() {
@@ -158,6 +168,29 @@ class FileServer {
     })
   }
 
+  // Consulted before the credentials are read, so a locked-out client cannot
+  // keep spending guesses. The window is fixed from its first failure.
+  throttled(ip) {
+    const f = this.failures.get(ip)
+    if (!f) return false
+    if (Date.now() > f.until) {
+      this.failures.delete(ip)
+      return false
+    }
+    return f.n >= AUTH_MAX_FAILS
+  }
+
+  noteFailure(ip) {
+    const now = Date.now()
+    const f = this.failures.get(ip)
+    if (!f || now > f.until) {
+      if (this.failures.size > 512) this.failures.clear()
+      this.failures.set(ip, { n: 1, until: now + AUTH_WINDOW_MS })
+      return
+    }
+    f.n += 1
+  }
+
   authenticate(req) {
     const header = req.headers && req.headers.authorization
     if (!header || !header.startsWith('Basic ')) return false
@@ -176,7 +209,17 @@ class FileServer {
   }
 
   handleRequest(req, res) {
+    const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
+    if (this.throttled(ip)) {
+      res.writeHead(429, {
+        'Retry-After': String(Math.ceil(AUTH_WINDOW_MS / 1000)),
+        'Content-Type': 'text/plain; charset=utf-8'
+      })
+      res.end('Too many failed attempts. Wait a minute and try again.')
+      return
+    }
     if (!this.authenticate(req)) {
+      this.noteFailure(ip)
       res.writeHead(401, {
         'WWW-Authenticate': 'Basic realm="Folder share"',
         'Content-Type': 'text/plain; charset=utf-8'
@@ -184,6 +227,7 @@ class FileServer {
       res.end('Authentication required.')
       return
     }
+    this.failures.delete(ip)
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405, {
         Allow: 'GET, HEAD',

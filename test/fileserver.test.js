@@ -106,6 +106,62 @@ function request(port, urlPath, opts = {}) {
     assert.strictEqual(res.status, 401)
   })
 
+  await check('throttles password guessing on its own server', async () => {
+    // Its own server: the shared one above already spent 3 failed guesses and
+    // must stay under the limit for the checks that follow.
+    const s = new FileServer({
+      path: root,
+      username: USER,
+      password: PASS,
+      host: '127.0.0.1',
+      port: 0
+    })
+    await s.ready()
+    try {
+      const p = s.info.port
+      const ok = await request(p, '/')
+      assert.strictEqual(
+        ok.status,
+        200,
+        'the right password works before any guessing'
+      )
+
+      for (let i = 1; i <= 8; i++) {
+        const bad = await request(p, '/', { auth: `${USER}:guess-${i}` })
+        assert.strictEqual(
+          bad.status,
+          401,
+          `guess ${i} is refused, not throttled yet`
+        )
+      }
+      const ninth = await request(p, '/', { auth: `${USER}:guess-9` })
+      assert.strictEqual(ninth.status, 429, 'the 9th guess is throttled')
+      assert.match(
+        ninth.headers['retry-after'] || '',
+        /^\d+$/,
+        'and it says when to come back'
+      )
+
+      const withGoodPassword = await request(p, '/')
+      assert.strictEqual(
+        withGoodPassword.status,
+        429,
+        'the window blocks the endpoint, so guessing cannot continue with a slow-but-valid header'
+      )
+
+      // The window is a minute; drop it rather than wait it out.
+      s.failures.clear()
+      const recovered = await request(p, '/')
+      assert.strictEqual(
+        recovered.status,
+        200,
+        'once the window passes, the right password is served again'
+      )
+    } finally {
+      await s.close()
+    }
+  })
+
   await check('lists the shared folder (files and subfolders)', async () => {
     const res = await request(port, '/')
     assert.strictEqual(res.status, 200)
