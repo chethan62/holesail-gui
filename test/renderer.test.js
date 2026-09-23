@@ -19,6 +19,9 @@ const stubNode = () => ({
   scrollTop: 0,
   scrollHeight: 0,
   children: [],
+  // toast() toggles classes on #toast; without this the download guard's
+  // "Already downloading" path threw instead of being asserted.
+  classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
   appendChild(child) {
     this.children.push(child)
   },
@@ -49,6 +52,14 @@ const check = (cond, msg, fail) => {
 
 ;(async () => {
   const fail = { n: 0 }
+  /* A hung await used to read as a PASS: with nothing left pending (a promise
+     nobody resolves has no handle), Node exits 0 mid-run — the file printed no
+     "renderer: PASS" and still exited 0, so the harness reported green on a
+     truncated run. The timer keeps the loop alive, so a stall now fails. */
+  const watchdog = setTimeout(() => {
+    console.error('✗ renderer: never finished — the run hung')
+    process.exit(1)
+  }, 15000)
   const { state, rememberSession } = await import('../renderer/state.js')
   const { upsertSession } = await import('../renderer/sessions.js')
 
@@ -126,6 +137,60 @@ const check = (cond, msg, fail) => {
     fail
   )
 
+  /* The offer's link stays live while a download runs, so every click used to
+     start ANOTHER 106 MB download. Measured on the real app at v0.13.0: 33
+     clicks forked 33 concurrent downloads — 596 MB received, 781 MiB RSS, the
+     offer still on screen and none finished, because they shared the link. The
+     guard belongs in installUpdate() (one place, every caller routes through)
+     and it must clear again after a failure, or one flaky download retires the
+     offer for the life of the process. */
+  let downloads = 0
+  let release
+  globalThis.window = {
+    __TAURI__: {
+      core: {
+        Channel: class {},
+        invoke: (cmd) => {
+          if (cmd === 'plugin:updater|download') {
+            downloads++
+            return new Promise((r) => (release = r))
+          }
+          if (cmd === 'plugin:updater|check') {
+            return Promise.resolve({
+              version: '9.9.9',
+              currentVersion: '1.0.0',
+              rid: 1
+            })
+          }
+          return Promise.resolve()
+        }
+      }
+    }
+  }
+  const { installUpdate } = await import('../renderer/updater.js')
+  const first = installUpdate('9.9.9')
+  await new Promise((r) => setImmediate(r))
+  const second = installUpdate('9.9.9')
+  await new Promise((r) => setImmediate(r))
+  check(
+    downloads === 1,
+    'a second click while a download runs starts no second download',
+    fail
+  )
+  release(1)
+  await first
+  await second
+  const third = installUpdate('9.9.9')
+  await new Promise((r) => setImmediate(r))
+  check(
+    downloads === 2,
+    'the guard clears, so a later click can still install',
+    fail
+  )
+  release(1)
+  await third
+
   console.log(fail.n ? `renderer: ${fail.n} FAILED` : 'renderer: PASS')
+  clearTimeout(watchdog)
   process.exit(fail.n ? 1 : 0)
 })()

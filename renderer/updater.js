@@ -49,6 +49,14 @@ export async function checkForUpdate(manual = false) {
   }
 }
 
+/// One install at a time. Without this the offer's link stayed live while a
+/// download ran, so every click started ANOTHER 106 MB download of the same
+/// artifact: measured on a real v0.13.0 build, 33 clicks forked 33 concurrent
+/// downloads (596 MB received, 781 MiB RSS, offer still on screen, none
+/// finished — they shared the link, so the first one could not either). The
+/// guard lives here, in the one function every caller routes through.
+let installing = false
+
 /// Desktop only: download + install the offered update in-app. The plugin
 /// protocol is a 3-step chain — check() returns a Metadata with a `rid`
 /// (the Update lives in the webview's resource table), download(rid, Channel)
@@ -61,6 +69,12 @@ export async function installUpdate(version) {
     toast('In-app update unavailable — download from the releases page', true)
     return
   }
+  if (installing) {
+    // Not an error: a second click is the user asking "how is it going?".
+    toast(`Already downloading v${version}…`)
+    return
+  }
+  installing = true
   let contentLength = 0
   let bytesDownloaded = 0
   const ch = new core.Channel()
@@ -103,5 +117,9 @@ export async function installUpdate(version) {
   } catch (err) {
     toast('Update failed: ' + err, true)
     log(`Update install failed: ${err}`, 'err')
+  } finally {
+    // A failure must leave the offer retryable; a success relaunches the app
+    // and this never matters.
+    installing = false
   }
 }
