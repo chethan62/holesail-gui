@@ -241,9 +241,16 @@ export function badge(text, kind) {
 /* ------------------------------ navigation ------------------------------ */
 
 export function switchTab(name) {
-  document
-    .querySelectorAll('.tab')
-    .forEach((t) => t.classList.toggle('active', t.dataset.tab === name))
+  document.querySelectorAll('.tab').forEach((t) => {
+    const active = t.dataset.tab === name
+    t.classList.toggle('active', active)
+    // A tab that never announces its selection is invisible to AT-SPI: the
+    // panels were always shown/hidden correctly, the STATE was not exposed at
+    // all. All tabs stay tabbable on purpose — the app's keyboard navigation is
+    // numeric (1-4), so roving tabindex without arrow keys would remove tabs
+    // from the tab order instead of improving it.
+    t.setAttribute('aria-selected', String(active))
+  })
   document
     .querySelectorAll('.panel')
     .forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name))

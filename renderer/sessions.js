@@ -267,8 +267,26 @@ function renderSession(container, s) {
   const urlRow = el('div', 'url-row')
   urlRow.append(el('code', '', '', displayUrl))
   if (s.secure) {
-    const eye = el('button', 'eye-btn', '', '👁')
-    eye.title = 'Reveal / hide'
+    // Icon-only, so the accessible NAME is the whole button: this used to be
+    // the '👁' glyph, which AT-SPI reported verbatim (junk to a screen reader)
+    // and which tofus when the emoji font is missing. Inline SVG has no font
+    // dependency, and the label says what the click does, not what it looks
+    // like.
+    const revealed = state.revealed.has(s.id)
+    const eye = el('button', 'eye-btn')
+    eye.type = 'button'
+    // Static literal SVG, no interpolation — no untrusted value can reach it
+    // (flagged once by the XSS scanner; user data in this file always goes
+    // through textContent, per the note in ui.js).
+    eye.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+      '<path d="M1.5 8s2.4-4.2 6.5-4.2S14.5 8 14.5 8s-2.4 4.2-6.5 4.2S1.5 8 1.5 8Z"/>' +
+      '<circle cx="8" cy="8" r="1.9"/></svg>'
+    const eyeLabel = revealed
+      ? 'Hide the connection string'
+      : 'Show the connection string'
+    eye.setAttribute('aria-label', eyeLabel)
+    eye.title = eyeLabel
     eye.addEventListener('click', toggleReveal) // the same path as the QR button
     urlRow.append(eye)
   }

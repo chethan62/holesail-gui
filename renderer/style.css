@@ -780,6 +780,47 @@ button.primary:disabled {
 .url-col {
   min-width: 0;
 }
+/* The event-log disclosure. The heading stays an h2 (it navigates the page) and
+   the button inside it is the control, so Enter/Space work and the state can be
+   announced. Deliberately NOT `all: unset`: that would beat the global
+   `button:focus-visible` rule on specificity and silently remove the focus ring
+   keyboard users rely on. */
+.collapsible .disclosure {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.caret {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition: transform 0.15s ease;
+}
+.caret.up {
+  transform: rotate(180deg);
+}
+/* The reveal control is icon-only (see the note in sessions.js): the SVG needs
+   its own size + stroke, since there is no glyph to inherit them from. */
+.eye-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .eye-btn {
   background: transparent;
   border: none;

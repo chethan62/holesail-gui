@@ -53,9 +53,12 @@ function bindLogToggle() {
   $('#log-toggle').addEventListener('click', () => {
     const el = $('#log')
     el.classList.toggle('collapsed')
-    $('#log-toggle .caret').textContent = el.classList.contains('collapsed')
-      ? '▸'
-      : '▾'
+    const collapsed = el.classList.contains('collapsed')
+    // The toggle is a real button now (it was an h2 with a click handler, so
+    // Enter/Space did nothing and nothing announced the state), and the caret
+    // is an SVG that rotates via a class instead of a `▾`→`▸` text swap.
+    $('#log-toggle').setAttribute('aria-expanded', String(!collapsed))
+    $('#log-toggle .caret').classList.toggle('up', collapsed)
   })
   // toolbar: copy the on-screen log for bug reports; clear empties the view
   // (the persistent event-log.txt keeps the full history)

@@ -9,7 +9,10 @@ boxes, headings — surface in AT-SPI; plain text/span content does not):
   2. both nav tabs exist,
   3. the share form's inputs/controls are present,
   4. the worker comes online (the bare child process is spawned),
-  5. the app is still alive at the end.
+  5. the app is still alive at the end,
+  6. a tab exposes selected state (aria-selected → STATE_SELECTED),
+  7. the Event log disclosure is a button reporting expanded/collapsed,
+  8. no exposed control is named by a bare glyph (the icon rule).
 
 Exit 0 on pass; non-zero with a message on any failed assertion.
 
@@ -18,6 +21,7 @@ Usage: ci-ui-smoke.py [--timeout 120] [--app-pid <pid>]
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -139,8 +143,11 @@ def main():
     def click_named(name):
         # Tabs are real buttons and switching tabs is now part of the smoke:
         # the folder form lives on its own tab, so it is NOT in the initial tree.
+        # After the a11y pass the tabs carry role="tab", which ATK reports as
+        # "page tab": accepting only "button" turned this click into a no-op and
+        # the following wait into a FALSE failure.
         for node, role, nm in items():
-            if role in ("push button", "button") and nm == name:
+            if role in ("push button", "button", "page tab", "tab") and nm == name:
                 try:
                     node.queryAction().doAction(0)
                     return True
@@ -168,6 +175,59 @@ def main():
     # real interactive nodes, so they must surface by name
     ok &= wait_for("log toolbar (Copy log)", lambda: has_text("Copy log"), 30)
     ok &= wait_for("log toolbar (Clear)", lambda: has_text("Clear"), 30)
+
+    # --- accessibility pass ---------------------------------------------------
+    # Each of these FAILS on the pre-pass code, which is the point: a11y that
+    # nothing checks is a11y that regresses.
+    #
+    # 1. The tabs are a real tablist now. `aria-selected` is the only thing that
+    #    maps to STATE_SELECTED, so the old markup exposed no selection at all.
+    def selected_tab():
+        for node, role, nm in items():
+            if role in ("page tab", "tab"):
+                try:
+                    if node.getState().contains(pyatspi.STATE_SELECTED):
+                        return nm or "(unnamed)"
+                except Exception:
+                    continue
+        return None
+
+    sel = selected_tab()
+    print(f"OK: a tab exposes selected state ({sel!r})" if sel else
+          "FAIL: no tab exposes STATE_SELECTED — aria-selected missing?")
+    ok &= bool(sel)
+
+    # 2. The event-log disclosure must be a real button that reports
+    #    collapsed/expanded. It used to be an h2 with a click handler: no
+    #    action to invoke from the keyboard, and no state to announce.
+    def disclosure():
+        for node, role, nm in items():
+            if role in ("push button", "button") and nm == "Event log":
+                st = node.getState()
+                if st.contains(pyatspi.STATE_EXPANDED):
+                    return "expanded"
+                if st.contains(pyatspi.STATE_COLLAPSED):
+                    return "collapsed"
+                return "no expanded/collapsed state"
+        return None
+
+    disc = disclosure()
+    print(f"OK: the Event log disclosure is a button reporting {disc}" if disc in ("expanded", "collapsed")
+          else f"FAIL: Event log disclosure: {disc or 'not exposed as a button'}")
+    ok &= disc in ("expanded", "collapsed")
+
+    # 3. No name may carry a glyph where an icon belongs. This is the icon rule
+    #    (SVG or a real name, never a glyph): v0.13.0 exposed the log heading as
+    #    `Event log ▾` — the caret glyph is part of the accessible NAME, so it
+    #    is read aloud and tofus without the font. Only ar/dingbat/emoji ranges
+    #    are flagged; typographic punctuation (—, …, ₹) is legitimate text.
+    glyph = re.compile(
+        "[\u2190-\u21ff\u2300-\u27bf\u2b00-\u2bff\ufe0f\U0001f000-\U0001faff]"
+    )
+    with_glyph = sorted({nm for _n, _r, nm in items() if nm and glyph.search(nm)})
+    print("OK: no exposed name carries a glyph (icons are SVG)" if not with_glyph else
+          f"FAIL: names carrying glyphs: {with_glyph[:5]}")
+    ok &= not with_glyph
 
     # the worker is a bare child process spawned by the app (bundled runtime)
     if args.app_pid and wait_for("worker process (bare)", lambda: bool(child_processes(args.app_pid)), args.timeout):

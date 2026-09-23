@@ -81,11 +81,43 @@
       </div>
     </header>
 
-    <nav class="tabs">
-      <button class="tab active" data-tab="share">Share a port</button>
-      <button class="tab" data-tab="folder">Share a folder</button>
-      <button class="tab" data-tab="connect">Connect</button>
-      <button class="tab" data-tab="saved">Saved</button>
+    <nav class="tabs" role="tablist" aria-label="Main">
+      <button
+        class="tab active"
+        data-tab="share"
+        role="tab"
+        aria-selected="true"
+        aria-controls="panel-share"
+      >
+        Share a port
+      </button>
+      <button
+        class="tab"
+        data-tab="folder"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panel-folder"
+      >
+        Share a folder
+      </button>
+      <button
+        class="tab"
+        data-tab="connect"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panel-connect"
+      >
+        Connect
+      </button>
+      <button
+        class="tab"
+        data-tab="saved"
+        role="tab"
+        aria-selected="false"
+        aria-controls="panel-saved"
+      >
+        Saved
+      </button>
     </nav>
 
     <main>
@@ -142,7 +174,8 @@
             <span class="check-text">Private link (encrypted)</span>
           </label>
           <div class="full warn-banner" id="share-public-warn" hidden>
-            ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
+            <span aria-hidden="true">⚠️</span>
+            <strong>Public mode — no encryption.</strong> Anyone with the key
             can connect, and traffic is <strong>plaintext</strong>. Only use
             this for services you'd expose publicly anyway.
           </div>
@@ -204,7 +237,8 @@
             <span class="check-text">Private link (encrypted)</span>
           </label>
           <div class="full warn-banner" id="fm-public-warn" hidden>
-            ⚠️ <strong>Public mode — no encryption.</strong> Anyone with the key
+            <span aria-hidden="true">⚠️</span>
+            <strong>Public mode — no encryption.</strong> Anyone with the key
             can reach this folder, and traffic is <strong>plaintext</strong>.
           </div>
           <label class="full">
@@ -275,7 +309,8 @@
             <datalist id="recent-keys"></datalist>
           </label>
           <div class="full warn-banner" id="connect-public-warn" hidden>
-            ⚠️ <strong>Public connection string (`hs://0000…`).</strong> This
+            <span aria-hidden="true">⚠️</span>
+            <strong>Public connection string (`hs://0000…`).</strong> This
             tunnel is <strong>unencrypted</strong> — anyone with the key can
             connect. Only connect to services you trust.
           </div>
@@ -359,7 +394,7 @@
           </p>
         </div>
         <div class="full" id="saved-import-box" hidden>
-          <label>Paste exported JSON</label>
+          <label for="saved-import-json">Paste exported JSON</label>
           <textarea
             id="saved-import-json"
             rows="6"
@@ -405,8 +440,23 @@
       </section>
 
       <section id="log-section">
-        <h2 class="collapsible" id="log-toggle">
-          Event log <span class="caret">▾</span>
+        <h2 class="collapsible">
+          <!-- Was an h2 with a click handler: not focusable, not keyboard
+               operable, and with no way to announce collapsed/expanded. The
+               caret was a `▾` glyph (AT exposed it as literal text, and it
+               tofus without the font); it is an inline SVG now. -->
+          <button
+            type="button"
+            id="log-toggle"
+            class="disclosure"
+            aria-expanded="true"
+            aria-controls="log"
+          >
+            Event log
+            <svg class="caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 6.5 8 10.5l4-4" />
+            </svg>
+          </button>
         </h2>
         <div class="log-toolbar">
           <button
@@ -431,9 +481,16 @@
       </aside>
     </main>
 
-    <div id="node-required" class="overlay" hidden>
+    <div
+      id="node-required"
+      class="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="node-required-title"
+      hidden
+    >
       <div class="overlay-card">
-        <h2>Node.js required</h2>
+        <h2 id="node-required-title">Node.js required</h2>
         <p id="node-required-msg">
           This build runs its tunnel engine with the bundled runtime, so this
           only happens on a source install without it. Install a Node.js
@@ -455,7 +512,7 @@
       </div>
     </div>
 
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
     <script src="vendor/qrcode.js"></script>
     <script type="module" src="app.js"></script>
