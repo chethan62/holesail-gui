@@ -18,7 +18,11 @@ Exit 0 = no copyleft in the payload; 1 = something copyleft, unlicenced or
 unrecognised is in there.
 --self-test synthesises a permissive payload and three failing ones and
 requires 0 then 1, 1, 1, because a verifier that cannot fail proves nothing.
+--vendored checks the hand-vendored browser file the payload walk cannot see
+(renderer/vendor/qrcode.js) against the sha256 recorded for it — a provenance
+note nothing verifies is exactly what rots. It has its own negative control.
 """
+import hashlib
 import json
 import os
 import re
@@ -160,6 +164,42 @@ def audit(payload_root):
     return 0
 
 
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Browser JavaScript that ships in the renderer but is not an npm package, so
+# `packages()` above cannot see it. The hash IS the pin: update this table and
+# renderer/vendor/README.md together, or the check fails on purpose.
+VENDORED = {
+    "renderer/vendor/qrcode.js": (
+        "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780",
+        "MIT",
+    ),
+}
+
+
+def check_vendored(repo_root, table=None):
+    """Every vendored file must match its recorded hash. Table is injectable so
+    the self-test can prove a wrong hash fails."""
+    table = VENDORED if table is None else table
+    failures = 0
+    for rel, (want, licence) in table.items():
+        path = os.path.join(repo_root, rel)
+        try:
+            with open(path, "rb") as fh:
+                got = hashlib.sha256(fh.read()).hexdigest()
+        except OSError as exc:
+            print(f"FAIL: vendored file unreadable: {rel} ({exc})")
+            failures += 1
+            continue
+        if got != want:
+            print(f"FAIL: {rel} hashes to {got}, recorded {want}")
+            print("      (update renderer/vendor/README.md and VENDORED together)")
+            failures += 1
+        else:
+            print(f"PASS: {rel} matches its recorded {licence} pin")
+    return 1 if failures else 0
+
+
 def self_test():
     """A permissive payload must pass; one copyleft package must fail it — even
     when that package ships its own licence text (a text used to be the pass
@@ -198,6 +238,17 @@ def self_test():
             print(f"  self-test {variant}: exit {got} {status}")
             if got != expect:
                 return 1
+        # Negative control for the vendored-file check: a wrong recorded hash
+        # must fail, or the pin is decoration.
+        wrong = {"renderer/vendor/qrcode.js": ("0" * 64, "MIT")}
+        got = check_vendored(REPO, wrong)
+        ok = got == 1
+        print(
+            f"  self-test vendored-wrong-hash: exit {got} "
+            f"{'OK' if ok else 'WRONG (expected 1)'}"
+        )
+        if not ok:
+            return 1
         print("self-test PASS")
         return 0
     finally:
@@ -211,6 +262,8 @@ def main():
     target = sys.argv[1]
     if target == "--self-test" or "--self-test" in sys.argv[1:]:
         return self_test()
+    if target == "--vendored" or "--vendored" in sys.argv[1:]:
+        return check_vendored(REPO)
     work = tempfile.mkdtemp()
     try:
         return audit(unpack(target, work))

@@ -236,10 +236,40 @@ jobs:
           # beside it. It runs on the real payload, negative control first: a
           # verifier that cannot fail proves nothing.
           python3 scripts/licence-check.py --self-test
+          # hand-vendored browser JS the payload walk cannot see (its hash is the pin)
+          python3 scripts/licence-check.py --vendored
           python3 scripts/licence-check.py /tmp/deb
           if [ -d /tmp/squashfs-root ]; then
             python3 scripts/licence-check.py /tmp/squashfs-root
           fi
+
+      - name: Payload size (tracked, budgeted)
+        run: |
+          # Tracked so that a size regression is a number in the summary rather
+          # than a surprise in a release — and so the "would an all-Rust worker
+          # be smaller?" question stays answerable with data. The ceiling is a
+          # tripwire, not a target: measured 78,627,452 B for dist-resources on
+          # 2026-09-23 (v0.13.0). Note the `if`s: a bare `[ -n "$X" ] && cmd`
+          # under `set -euo pipefail` fails the step when the test is false.
+          # No untrusted input here (flagged once by the workflow scanner): the
+          # only values are the runner's own $PWD, du/stat output and a path we
+          # globbed ourselves — nothing comes from an event payload.
+          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          {
+            echo "### Payload size"
+            echo '```'
+            du -sb dist-resources dist-resources/bare
+            if [ -n "$APP" ]; then stat -c%s "$APP"; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          du -sb dist-resources dist-resources/bare
+          if [ -n "$APP" ]; then stat -c%s "$APP"; fi
+          SIZE=$(du -sb dist-resources | cut -f1)
+          if [ "$SIZE" -gt 92000000 ]; then
+            echo "FAIL: dist-resources is $SIZE B, past the 92,000,000 B budget"
+            exit 1
+          fi
+          echo "PASS: dist-resources $SIZE B, within the 92,000,000 B budget"
 
       - name: Install smoke (runs the REAL installer into a throwaway HOME)
         run: |
