@@ -255,8 +255,13 @@ which the other two never covered.
 
 ```bash
 python3 scripts/licence-check.py --self-test    # can the check fail? must pass
+python3 scripts/licence-check.py --vendored     # the hand-vendored renderer JS matches its pins
 python3 scripts/licence-check.py <deb|AppImage|apk|dist-resources-dir>
 ```
+
+`--vendored` covers the one gap the payload walk cannot: `renderer/vendor/` holds
+JavaScript that is not an npm package, so nothing inside an inventory sees it.
+The sha256 in `renderer/vendor/README.md` is the pin, and CI fails on a mismatch.
 
 ## Build a release bundle
 
@@ -469,7 +474,40 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.13.0" open>
+<details id="v0.14.0" open>
+<summary><b>v0.14.0</b> — the UI is keyboard-operable and screen-reader-legible, and the payload is now budgeted</summary>
+
+- **Accessibility pass, asserted rather than eyeballed.** Tabs are a real
+  `tablist`/`tab` pair with `aria-selected` maintained by `switchTab()` — the
+  panels were always switched correctly, but no tab ever reported
+  `STATE_SELECTED`, so the selection did not exist for assistive technology at
+  all. The event-log heading was a mouse-only toggle exposed to AT as
+  `Event log ▾` (the caret glyph was part of its accessible name); it is an
+  `<h2>` containing a real button now, operable with Enter/Space and reporting
+  `aria-expanded`. The reveal control is no longer named by its `👁` glyph —
+  junk read aloud, and tofu when the emoji font is missing — but by a
+  state-aware label saying what the click does. Plus `label for=` on the import
+  textarea, `role="status"` on the toast, and `role="dialog"` + `aria-modal` on
+  the "Node.js required" overlay.
+- **The smoke test is what makes that a claim.** `scripts/ci-ui-smoke.py`
+  asserts each of the above and FAILS on v0.13.0 — including a scan that
+  rejects any exposed name carrying a glyph. All tabs stay tabbable on purpose:
+  keyboard navigation here is numeric (1-4), so a roving tabindex without arrow
+  keys would take tabs _out_ of the tab order.
+- **The payload size is tracked and budgeted in CI.** The Linux job prints
+  `dist-resources` / `bare` / AppImage sizes into the run summary and fails past
+  92,000,000 B (measured today: 78,627,452 B). This is what keeps "would an
+  all-Rust worker be smaller?" answerable with data.
+- **The vendored QR library is pinned by hash.** `renderer/vendor/qrcode.js`
+  (MIT, Kazuhiko Arase) shipped with no recorded origin; its sha256 is recorded
+  in `renderer/vendor/README.md` and enforced by `licence-check.py --vendored`,
+  part of the licence step in CI.
+- `prepare-resources.mjs` warns when a run without `--bare` leaves no bundled
+  runtime, instead of letting the bundler fail later on a missing resource path.
+
+</details>
+
+<details id="v0.13.0">
 <summary><b>v0.13.0</b> — the tunnel engine is this repo's own, and the payload carries no copyleft</summary>
 
 - **The AGPL engine is gone, not worked around.** `worker/engine/hs.js`
