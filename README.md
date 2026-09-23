@@ -474,7 +474,32 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.14.0" open>
+<details id="v0.14.1" open>
+<summary><b>v0.14.1</b> — the update offer installs once, not once per click</summary>
+
+- **A second click on "Download & install" forked a second full download.**
+  `installUpdate()` had no in-flight guard, so every click ran the whole
+  `check → download → install` chain again for a fresh ~107 MB artifact, and the
+  download already running was never cancelled. Measured on a v0.13.0 build: a
+  5-second click loop produced **33 concurrent downloads of the same artifact**
+  — 33 established connections to the release CDN, 596 MB received, app RSS
+  781 MiB — and none finished, because they shared the link. Clicking the offer
+  twice was enough to make an update that takes 20 seconds stall for minutes.
+- The guard is a module-level flag set before the first `await` and cleared in a
+  `finally`, so a _failed_ download leaves the offer retryable instead of
+  retiring it for the life of the process. It lives in `installUpdate()` because
+  that is the one path every caller routes through, and a repeat click now says
+  "Already downloading…" rather than starting work.
+- `test/renderer.test.js` asserts it by counting `plugin:updater|download`
+  invocations across overlapping calls — no second download while one runs, and
+  the guard clears so a later click still installs. Both fail on the pre-fix code.
+- That file also gained a 15-second watchdog: a hung `await` left node with
+  nothing pending, so the run ended mid-file and the harness reported green on a
+  truncated test. A stall is now a failure.
+
+</details>
+
+<details id="v0.14.0">
 <summary><b>v0.14.0</b> — the UI is keyboard-operable and screen-reader-legible, and the payload is now budgeted</summary>
 
 - **Accessibility pass, asserted rather than eyeballed.** Tabs are a real
