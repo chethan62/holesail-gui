@@ -21,6 +21,14 @@ jobs:
         run: npm run lint
       - name: Format check (Prettier)
         run: npm run format:check
+      - name: Renderer tokens (no colour literal outside the theme blocks)
+        run: |
+          # The token layer is only worth having if nothing drifts back into a
+          # literal at the point of use — light mode cannot reach one, and a
+          # typo'd var() resolves to nothing and renders silently wrong. The
+          # self-test goes first: a verifier that cannot fail proves nothing.
+          python3 scripts/css-token-check.py --self-test
+          python3 scripts/css-token-check.py
       - name: npm test (node runtime)
         run: npm test
       - name: npm run test:bare (bare runtime)
