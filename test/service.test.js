@@ -29,6 +29,45 @@ let nextId = 1
 const pending = new Map()
 let worker, rl
 
+// A worker that dies mid-section used to stop the run in SILENCE. Measured: kill
+// the worker's process during 13d and the driver prints nothing for the next 4
+// minutes — the await that stays pending is a socket waiting for bytes through a
+// dead tunnel, and it never rejects — then the 300s guard reports only
+// "FATAL: overall test timeout", naming no section at all.
+// This names the section, and sooner: 120s sits ABOVE every legitimate silent
+// gap (a stuck rpc fails on its own 90s timeout and prints), so firing here means
+// a hang, not a slow runner.
+const STALL_MS = 120000
+let heading = 'startup'
+let stallTimer
+
+function armStall() {
+  clearTimeout(stallTimer)
+  stallTimer = setTimeout(() => {
+    console.error(
+      `\nTEST FAILED ❌ nothing happened for ${STALL_MS / 1000}s while in: ${heading}`
+    )
+    console.error(
+      '  (an await that never settles — usually a worker that died mid-section)'
+    )
+    try {
+      worker.kill('SIGKILL')
+    } catch {}
+    process.exit(1)
+    // unref: a successful run exits by draining the event loop, so a live
+    // watchdog timer would hold the process open forever AFTER "ALL TESTS
+    // PASSED" (measured: the run hung with no DRIVER_EXIT until it was killed).
+  }, STALL_MS).unref()
+}
+
+// Every section announces itself through here instead of console.log so the
+// stall guard can name the one that was running.
+function section(title) {
+  heading = title
+  console.log(title)
+  armStall()
+}
+
 function rpc(method, params, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const id = String(nextId++)
@@ -48,6 +87,7 @@ function sleep(ms) {
 function assert(cond, message) {
   if (!cond) throw new Error('ASSERT FAILED: ' + message)
   console.log('  ✓ ' + message)
+  armStall() // a passing assertion is progress: it re-arms the stall guard
 }
 
 // Close a test server without ever hanging the suite. server.close() waits for
@@ -107,11 +147,11 @@ async function main() {
   }, TIMEOUT_MS)
 
   try {
-    console.log('1) ping')
+    section('1) ping')
     const pong = await rpc('ping', {})
     assert(pong === 'pong', 'ping -> pong')
 
-    console.log('2) server:start on port ' + TEST_PORT)
+    section('2) server:start on port ' + TEST_PORT)
     const server = await rpc(
       'server:start',
       { port: TEST_PORT, secure: true },
@@ -125,7 +165,7 @@ async function main() {
     )
     console.log('    url: ' + server.url)
 
-    console.log('3) client:connect to that url')
+    section('3) client:connect to that url')
     const client = await rpc('client:connect', { key: server.url }, 90000)
     assert(client.type === 'client', 'type is client')
     assert(client.secure === true, 'secure auto-detected from prefix')
@@ -150,7 +190,7 @@ async function main() {
     const stoppedSlashed = await rpc('session:stop', { id: slashed.id })
     assert(stoppedSlashed.state === 'stopped', 'slashed client stopped')
 
-    console.log('5) sessions:list')
+    section('5) sessions:list')
     const sessions = await rpc('sessions:list', {})
     assert(sessions.length === 2, 'two active sessions')
 
@@ -178,7 +218,7 @@ async function main() {
     const pongAfter = await rpc('ping', {})
     assert(pongAfter === 'pong', 'worker still alive after the port conflict')
 
-    console.log('7) session:stop both')
+    section('7) session:stop both')
     const stop1 = await rpc('session:stop', { id: server.id })
     assert(stop1.state === 'stopped', 'server session stopped')
     const stop2 = await rpc('session:stop', { id: client.id })
@@ -187,7 +227,7 @@ async function main() {
     const after = await rpc('sessions:list', {})
     assert(after.length === 0, 'no sessions remain')
 
-    console.log('8) invalid server port rejected')
+    section('8) invalid server port rejected')
     let threw = false
     try {
       await rpc('server:start', { port: 'not-a-port' })
@@ -196,7 +236,7 @@ async function main() {
     }
     assert(threw, 'invalid port raises error')
 
-    console.log('9) async session error kills only that session')
+    section('9) async session error kills only that session')
     const survivor = await rpc(
       'server:start',
       { port: TEST_PORT + 1, secure: true },
@@ -218,7 +258,7 @@ async function main() {
     const list = await rpc('sessions:list', {})
     assert(list.length === 0, 'broken session was removed, worker did not die')
 
-    console.log('10) filemanager:start shares a directory through the tunnel')
+    section('10) filemanager:start shares a directory through the tunnel')
     const os = require('os')
     const fs = require('fs')
     const http = require('http')
@@ -325,7 +365,7 @@ async function main() {
       'filemanager session stopped cleanly'
     )
 
-    console.log('11) filemanager:start rejects missing / non-directory paths')
+    section('11) filemanager:start rejects missing / non-directory paths')
     const missingDir = path.join(
       os.tmpdir(),
       'holesail-fm-missing-' + Date.now()
@@ -416,7 +456,7 @@ async function main() {
       `a hidden home entry stays refused (${dotErr ? dotErr.message : 'no error'})`
     )
 
-    console.log('12) session pause/resume cycle')
+    section('12) session pause/resume cycle')
     const prServer = await rpc(
       'server:start',
       { port: TEST_PORT + 2, secure: true },
@@ -541,7 +581,7 @@ async function main() {
     )
     await rpc('session:stop', { id: evServer.id })
 
-    console.log('13c) session:peer fires when a client connects to a server')
+    section('13c) session:peer fires when a client connects to a server')
     const peerServer = await rpc(
       'server:start',
       { port: TEST_PORT + 6, secure: true },
@@ -591,7 +631,7 @@ async function main() {
     await rpc('session:stop', { id: peerClient.id })
     await rpc('session:stop', { id: peerServer.id })
 
-    console.log('13d) bandwidth cap throttles a session')
+    section('13d) bandwidth cap throttles a session')
     // a 50 KB/s cap on a fast local loopback tunnel should visibly
     // stretch the transfer time of 200 KB (uncapped it's near-instant)
     const capServer = await rpc(
@@ -650,7 +690,7 @@ async function main() {
     await rpc('session:stop', { id: capServer.id })
     await closeServer(echoServer, eSockets)
 
-    console.log('14) lookup: online key resolves, offline key returns null')
+    section('14) lookup: online key resolves, offline key returns null')
     const lkServer = await rpc(
       'server:start',
       { port: TEST_PORT + 3, secure: true },
@@ -685,7 +725,7 @@ async function main() {
     assert(badErr !== null, 'lookup of a malformed public key throws')
     await rpc('session:stop', { id: lkServer.id })
 
-    console.log('15) filemanager accepts a fixed key (permanent folder shares)')
+    section('15) filemanager accepts a fixed key (permanent folder shares)')
     const fmKey = 'b'.repeat(64)
     const fmDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-key-'))
     fs.writeFileSync(path.join(fmDir2, 'f.txt'), 'x')
@@ -827,7 +867,7 @@ async function main() {
     await rpc('session:stop', { id: bystander.id })
     await closeServer(blast, blastSock ? [blastSock] : [])
 
-    console.log('17) global speed limit shapes ALL tunnels together')
+    section('17) global speed limit shapes ALL tunnels together')
     // Two independent tunnels with no per-tunnel caps. Without a shared
     // bucket each would run at loopback speed and the SUM would be orders of
     // magnitude above the limit — that is what this asserts against. Note
@@ -942,7 +982,7 @@ async function main() {
     await closeServer(blasterA.srv, blasterA.sockets)
     await closeServer(blasterB.srv, blasterB.sockets)
 
-    console.log('18) UDP tunnel relays datagrams to a UDP service')
+    section('18) UDP tunnel relays datagrams to a UDP service')
     // UDP is a separate engine path (datagrams are framed over a tunnel
     // stream rather than proxied like TCP) and had no coverage at all before
     // this - a silent breakage would only show up as a dead game server or
@@ -1084,7 +1124,7 @@ async function main() {
     await rpc('session:stop', { id: concServer.id })
     await closeServer(concEcho, concSockets)
 
-    console.log('20) an oversized UDP datagram cannot take the tunnel down')
+    section('20) an oversized UDP datagram cannot take the tunnel down')
     // Datagrams are framed over a stream here, and whether a large one is
     // carried or cut short is upstream's behaviour, not ours. What must hold
     // is that the tunnel and the worker survive, so "a game server or
@@ -1145,7 +1185,7 @@ async function main() {
     jumboSock.close()
     jumboEcho.close()
 
-    console.log('21) a peer that goes away is told to the app, not hidden')
+    section('21) a peer that goes away is told to the app, not hidden')
     // Stop the SERVER session under a live transfer. The client's connection
     // dies from the far end and its app socket must learn that promptly —
     // error, FIN or close are all fine, hanging forever is not (measured
