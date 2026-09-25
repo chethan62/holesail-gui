@@ -17,6 +17,12 @@ on:
     # repository inactivity — if the canary ever stops running, check that first.
     - cron: 0 6 * * 1
   workflow_dispatch:
+    inputs:
+      hyperdht:
+        description: hyperdht spec to test. Default latest; pin a version to prove the canary can go red.
+        required: false
+        default: latest
+        type: string
 
 permissions:
   contents: read
@@ -38,8 +44,22 @@ jobs:
 
       # --no-save: the lockfile stays the release's business. The runner is
       # throwaway, so node_modules is the right place for "latest".
+      # A dispatch input is untrusted by construction, so it is validated before
+      # it reaches a command line — and passed through env rather than
+      # interpolated, so a quote in the value cannot become shell syntax.
       - name: Move the protocol deps to latest
-        run: npm install --no-save hyperdht@latest @holesail/hyper-cmd-lib-net@latest
+        env:
+          HYPERDHT_SPEC: ${{ inputs.hyperdht }}
+        run: |
+          set -euo pipefail
+          spec="${HYPERDHT_SPEC:-latest}"   # schedule runs have no inputs, so empty means latest
+          case "$spec" in
+            *[!A-Za-z0-9.@^~><=*+-]*)
+              echo "refusing hyperdht spec: $spec" >&2
+              exit 2
+              ;;
+          esac
+          npm install --no-save "hyperdht@$spec" @holesail/hyper-cmd-lib-net@latest
 
       - name: Record which versions are under test
         run: |
