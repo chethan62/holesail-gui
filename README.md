@@ -484,7 +484,26 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.2" open>
+<details id="v0.15.3" open>
+<summary><b>v0.15.3</b> — the update offer stops appearing twice</summary>
+
+- **Every check logged its own offer, and the offer line carries a live "Download
+  &amp; install" button** — so the boot check plus one tap on the topbar's "Check
+  for updates" left **two identical install buttons** in the log, for the same
+  release. Measured on the running v0.15.2 app: the accessibility tree showed one
+  button after boot, two after the manual check.
+- Both buttons were legitimate single clicks, so the existing download guard could
+  not catch it — that guard stops _concurrent_ downloads, and still does (max one
+  connection, re-verified). The fix is one line per version inside
+  `checkForUpdate()`, the one function every caller routes through: the offer is
+  logged once and re-armed only when a check finds nothing, so a later release
+  still gets its own line, and a manual check still gets its toast either way.
+- Guarded by a renderer check that makes both calls and requires exactly **one**
+  new log line; it fails against the old code, which is the negative control.
+
+</details>
+
+<details id="v0.15.2">
 <summary><b>v0.15.2</b> — the phone layout stops falling off the screen</summary>
 
 - **On Android the page scrolled sideways and the status cluster fell off it.**

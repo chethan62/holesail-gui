@@ -3,6 +3,14 @@
 
 import { $, log, toast } from './ui.js'
 
+/// The version whose offer is already on screen. The offer line carries a LIVE
+/// install button, and every check logged its own copy — so the boot check plus
+/// one tap on "Check for updates" put TWO Download & install buttons in the log
+/// for the same release (reported from the running app, and the download guard
+/// below cannot help: both buttons are legitimate single clicks). One line per
+/// version, in the one function every caller routes through.
+let offered = null
+
 /// Desktop only: the updater plugin is not built into mobile releases, so
 /// the `plugin:updater|check` command is absent there and the boot call is a
 /// silent no-op. NOTE: there is no `window.__TAURI__.updater` global in this
@@ -27,12 +35,19 @@ export async function checkForUpdate(manual = false) {
     if (shouldUpdate) {
       const v = res.version || '?'
       toast(`Update available: v${v}`)
-      log(`Update available: v${v}`, 'ok', [
-        { label: 'Download & install', onClick: () => installUpdate(v) }
-      ])
-    } else if (manual) {
-      toast('You are up to date')
-      log('Update check: up to date', 'ok')
+      if (v !== offered) {
+        offered = v
+        log(`Update available: v${v}`, 'ok', [
+          { label: 'Download & install', onClick: () => installUpdate(v) }
+        ])
+      }
+    } else {
+      // nothing on offer anymore — a later release may take the slot
+      offered = null
+      if (manual) {
+        toast('You are up to date')
+        log('Update check: up to date', 'ok')
+      }
     }
   } catch (err) {
     // offline / no published release yet — only worth telling a human who

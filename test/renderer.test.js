@@ -190,6 +190,22 @@ const check = (cond, msg, fail) => {
   release(1)
   await third
 
+  /* Every check logged its own offer, and the offer line carries a LIVE install
+     button — so the boot check plus one tap on "Check for updates" put TWO
+     Download & install buttons in the log for the same release (reported from
+     the running app). One line per version, in the one function every caller
+     routes through; the manual click still gets its toast. */
+  const { checkForUpdate } = await import('../renderer/updater.js')
+  const logNode = node('#log')
+  const linesBefore = logNode.children.length
+  await checkForUpdate()
+  await checkForUpdate(true)
+  check(
+    logNode.children.length === linesBefore + 1,
+    'two checks for one version log ONE offer, not two',
+    fail
+  )
+
   console.log(fail.n ? `renderer: ${fail.n} FAILED` : 'renderer: PASS')
   clearTimeout(watchdog)
   process.exit(fail.n ? 1 : 0)
