@@ -122,6 +122,11 @@ optional on Apple Silicon: an unsigned `.app` is reported as _damaged_ with no
 way to allow it. The flatpak job builds the GNOME-platform bundle in CI too (artifacts on
 every push; verified release flow ships it with releases).
 
+The renderer runs in the platform's webview, and the Linux build carries its own
+engine rather than using the system's — so which CSS/JS features actually work is
+a measured question, answered in **[docs/ui-support.md](docs/ui-support.md)**
+(shipped WebKitGTK 2.50.4, feature by feature).
+
 ## Architecture
 
 <details>
