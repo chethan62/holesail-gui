@@ -129,6 +129,11 @@ a measured question, answered in **[docs/ui-support.md](docs/ui-support.md)**
 
 ## Architecture
 
+The layer map and the **invariants that must not break** — each one with the test
+that enforces it — live in **[docs/architecture.md](docs/architecture.md)**: the
+runtime seam, the wire shape, the two hand-maintained method lists, the respawn
+ladder. The short version follows.
+
 <details>
 <summary>How the pieces fit</summary>
 
