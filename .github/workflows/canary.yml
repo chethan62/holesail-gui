@@ -5,10 +5,15 @@
 # question — does the app still work against whatever upstream shipped *this*
 # week — so drift is discovered by a Monday job instead of by a user's tunnel.
 #
-# Informational only. It never gates a release: it runs on a schedule, it is
-# marked continue-on-error, and it reports by opening an issue rather than by
-# failing a build. If it is red, the answer is a decision (pin harder, fix, or
-# adopt), never an automatic block.
+# Informational only, and structurally so: this workflow is never a dependency of
+# a release job (it runs on a schedule or by hand), so a red run here cannot block
+# anything. If it is red, the answer is a decision (pin harder, fix, or adopt),
+# never an automatic block.
+#
+# It is NOT marked continue-on-error, and that is deliberate: a tolerated failure
+# is also invisible to the report job's `if: failure()`, so a red canary would
+# have failed silently with no issue opened (measured — the report job was
+# skipped). A canary that cannot report is not a canary.
 name: canary
 
 on:
@@ -32,8 +37,6 @@ jobs:
   canary:
     name: Latest upstream protocol deps
     runs-on: ubuntu-22.04
-    # Informational: a red canary must not look like a broken repo.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
