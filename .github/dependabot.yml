@@ -21,7 +21,7 @@ updates:
     groups:
       npm-minor-patch:
         patterns:
-          - "*"
+          - '*'
         update-types:
           - minor
           - patch
@@ -29,7 +29,7 @@ updates:
       - dependency-name: hyperdht
         update-types:
           - version-update:semver-major
-      - dependency-name: "@holesail/hyper-cmd-lib-net"
+      - dependency-name: '@holesail/hyper-cmd-lib-net'
         update-types:
           - version-update:semver-major
       # bare-dgram is listed explicitly as well as by wildcard: the wildcard is
@@ -50,7 +50,7 @@ updates:
     groups:
       cargo-minor-patch:
         patterns:
-          - "*"
+          - '*'
         update-types:
           - minor
           - patch
@@ -62,4 +62,4 @@ updates:
     groups:
       actions:
         patterns:
-          - "*"
+          - '*'

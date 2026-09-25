@@ -1,0 +1,92 @@
+# Weekly upstream canary.
+#
+# The app does not own its wire protocol: hyperdht and @holesail/hyper-cmd-lib-net
+# do. A release pins versions that were tested; this workflow asks the other
+# question — does the app still work against whatever upstream shipped *this*
+# week — so drift is discovered by a Monday job instead of by a user's tunnel.
+#
+# Informational only. It never gates a release: it runs on a schedule, it is
+# marked continue-on-error, and it reports by opening an issue rather than by
+# failing a build. If it is red, the answer is a decision (pin harder, fix, or
+# adopt), never an automatic block.
+name: canary
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. GitHub disables scheduled workflows after 60 days of
+    # repository inactivity — if the canary ever stops running, check that first.
+    - cron: 0 6 * * 1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    name: Latest upstream protocol deps
+    runs-on: ubuntu-22.04
+    # Informational: a red canary must not look like a broken repo.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # --no-save: the lockfile stays the release's business. The runner is
+      # throwaway, so node_modules is the right place for "latest".
+      - name: Move the protocol deps to latest
+        run: npm install --no-save hyperdht@latest @holesail/hyper-cmd-lib-net@latest
+
+      - name: Record which versions are under test
+        run: |
+          # The run has to say what it tested, or a green result means nothing
+          # six months from now.
+          {
+            echo "### Upstream canary versions"
+            node -e "console.log('- hyperdht', require('hyperdht/package.json').version)"
+            node -e "console.log('- @holesail/hyper-cmd-lib-net', require('@holesail/hyper-cmd-lib-net/package.json').version)"
+            echo "- pinned (package.json): $(node -p "Object.entries(require('./package.json').dependencies).map(([k,v])=>k+'@'+v).join(', ')")"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The payload is rebuilt because the bare bundle is where a broken upstream
+      # shows up first — it is the runtime the shipped app actually uses.
+      - name: Rebuild the payload against the new upstreams
+        run: node scripts/prepare-resources.mjs --bare
+
+      - name: Protocol E2E (node runtime)
+        run: npm test
+
+      - name: Protocol E2E (bare runtime)
+        run: npm run test:bare
+
+  report:
+    name: Report a red canary
+    needs: canary
+    if: failure()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Open or update the canary issue
+        # GitHub-provided values only: schedule/dispatch triggers carry no
+        # event payload, and each value is passed through env rather than
+        # interpolated into the script.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Search by title rather than by label: a label that does not exist yet
+          # would make this step fail, and then the failure would be lost.
+          TITLE='Upstream protocol canary failed'
+          body=$(printf 'The weekly canary failed against the latest upstreams.\n\nRun: %s\n\nThis is informational — it gates nothing. Decide: pin, fix, or adopt.\n' "$RUN_URL")
+          existing=$(gh issue list --repo "$REPO" --state open \
+            --search "in:title \"$TITLE\"" --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$body"
+          fi
