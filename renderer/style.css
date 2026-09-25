@@ -559,8 +559,59 @@ main {
   outline-offset: 1px;
 }
 
-/* mobile: stack the two-column grid so port/host etc never cram */
+/* Narrow viewports — the Android phone is ~390 CSS px wide, and at the
+   accessibility font sizes it reports, nothing here may assume one row fits.
+   Measured before this block: a 390px viewport produced 454px of scrollWidth,
+   so the status cluster (and the worker-restart button inside it) sat 67px past
+   the right edge — off screen and unreachable — and the tab row overflowed at
+   320px. These rows now wrap instead of spilling, labels stop breaking
+   mid-phrase, and the form's controls may shrink below their intrinsic width
+   (the tunnel-type select's longest option was forcing the whole panel wider
+   than the screen). */
+.topbar {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.brand {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.brand .logo {
+  flex-shrink: 0;
+}
+.status {
+  margin-left: auto;
+}
+.tabs {
+  flex-wrap: wrap;
+  overflow-x: auto;
+}
+.tab {
+  white-space: nowrap;
+}
+/* A closed <select> is as wide as its longest option, and this form's tunnel
+   type is 49 characters ("Permanent — fixed key, auto-restarts with the app").
+   At 320px that alone pushed the document to 357px of scrollWidth, because the
+   form and panel do not clip. Let the control ellipsize instead — the full
+   option text still shows in the open dropdown and is what a screen reader
+   reads — and make sure no future widget can ever scroll the page sideways. */
+.grid-form select {
+  width: 100%;
+  text-overflow: ellipsis;
+}
+html,
+body {
+  overflow-x: clip;
+}
+.grid-form > *,
+.grid-form label,
+.grid-form select,
+.grid-form input {
+  min-width: 0;
+}
+
 @media (max-width: 560px) {
+  /* mobile: stack the two-column grid so port/host etc never cram */
   .grid-form {
     grid-template-columns: 1fr;
   }

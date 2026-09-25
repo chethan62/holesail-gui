@@ -484,7 +484,40 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.1" open>
+<details id="v0.15.2" open>
+<summary><b>v0.15.2</b> — the phone layout stops falling off the screen</summary>
+
+- **On Android the page scrolled sideways and the status cluster fell off it.**
+  Reproduced in the shipped engine at a 390px viewport (a OnePlus 13R): the
+  document measured **454px of scrollWidth in a 390px window**, so the worker
+  status — and the restart button inside it — sat **67px past the right edge, off
+  screen and unreachable**, and the tab row overflowed at 320px. The header and
+  the tab row are single flex rows that could not wrap, so every item in them was
+  squeezed instead: "peer-to-peer tunnels" broke across three lines and "Share a
+  folder" across three, next to a version tag that refuses to shrink.
+- **The rows wrap now instead of spilling.** Topbar and brand wrap, the status
+  cluster keeps its right alignment on whichever row it lands on, tab labels no
+  longer break mid-phrase, and form controls may shrink below their intrinsic
+  width. That last one mattered more than it sounds: a closed `<select>` is as
+  wide as its longest option, and this form's tunnel type is 49 characters
+  ("Permanent — fixed key, auto-restarts with the app") — by itself it pushed the
+  document to 357px at a 320px viewport. It ellipsizes now, the open dropdown
+  still shows the full text, and `overflow-x: clip` on the page means no future
+  widget can scroll the window sideways — checked that `clip`, unlike `hidden`,
+  leaves the sticky header working.
+- **Measured after, in the same engine:** no sideways scroll, nothing past the
+  right edge, single-line tab labels at **320, 390, 560 and 1200px** — plus 200px
+  as the brutal case for the accessibility font sizes a phone can report. The
+  status cluster ends at 368px inside a 390px window.
+- The invariant is a check: `scripts/mobile-layout-check.py` renders the real
+  `index.html` offscreen in WebKit2 at those four widths and fails on a sideways
+  scroll, an element past the right edge, or tab labels of differing heights. Its
+  `--self-test` re-injects the pre-fix CSS and requires a failure (448px inside
+  320px), because a guard that cannot fail is not a guard.
+
+</details>
+
+<details id="v0.15.1">
 <summary><b>v0.15.1</b> — dependencies moved, and the guards that say when they matter</summary>
 
 - **No behaviour change on purpose.** Tauri and all three plugins (`tauri`,
