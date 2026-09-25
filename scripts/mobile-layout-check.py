@@ -4,8 +4,11 @@
     scripts/mobile-layout-check.py [--self-test]
 
 Renders renderer/index.html in an offscreen WebKit2 view at several widths and
-fails if the page scrolls sideways, if anything sits past the right edge, or if a
-tab label wraps onto a second line. This is the regression guard for the Android
+fails if the page scrolls sideways, if anything sits past the right edge, if a tab
+label wraps onto a second line, or — below the 560px breakpoint, i.e. on a phone —
+if a control you tap is shorter than 44px (39px tabs were the "not polish" part of
+that report). A 39px tab is fine under a mouse on the desktop layout, which is why
+the tap-target rule only applies to the narrow widths. This is the regression guard for the Android
 report that the app "is not polish": at a 390px viewport the page had 454px of
 scrollWidth, so the status cluster — with the worker-restart button inside it —
 sat 67px off the right edge, and the tab row overflowed at 320px. The causes were
@@ -52,6 +55,7 @@ PROBE_JS = """
     const r = e.getBoundingClientRect();
     if (!r.width && !r.height) return;
     els.push({cls: (typeof e.className === 'string' ? e.className : e.tagName),
+              tag: e.tagName.toLowerCase(),
               h: Math.round(r.height), right: Math.round(r.right),
               offRight: Math.round(r.right) > window.innerWidth + 1});
   });
@@ -134,7 +138,45 @@ def check(width, data):
     tabs = sorted({e["h"] for e in data.get("els", []) if e["cls"] == "tab"})
     if len(tabs) > 1:
         bad.append(f"{width}px: tab labels wrap to different heights {tabs} (should be one line each)")
+    if width <= BREAKPOINT:
+        small = [
+            f"{(e.get('cls') or e['tag'])}.{e['tag']}({e['h']}px)"
+            for e in data.get("els", [])
+            if is_tap_target(e) and e["h"] < TAP_MIN
+        ]
+        if small:
+            bad.append(
+                f"{width}px: {len(small)} tap target(s) under {TAP_MIN}px: {', '.join(sorted(set(small))[:4])}"
+            )
     return bad
+
+
+def is_tap_target(e):
+    """Controls you tap to act. Text fields and checkboxes are reported, not failed:
+    a 39px field is comfortable, and their box grows with the font on a phone."""
+    cls = e.get("cls") or ""
+    if e.get("tag") in ("button", "select"):
+        return True
+    return "tab" in cls.split() or "log-action" in cls.split()
+
+
+TAP_MIN = 44          # the tap-target floor this guard holds the phone layout to
+BREAKPOINT = 560      # below this the layout is the phone one (see style.css)
+
+
+def report_targets(width, data):
+    """One line of measured heights per narrow width, so every run shows its work."""
+    if width > BREAKPOINT:
+        return None
+    rows = [
+        (f"{(e.get('cls') or e['tag'])}.{e['tag']}", e["h"])
+        for e in data.get("els", [])
+        if is_tap_target(e)
+    ]
+    if not rows:
+        return None
+    lowest = min(h for _, h in rows)
+    return f"{width}px: smallest tap target {lowest}px ({min(rows, key=lambda r: r[1])[0]})"
 
 
 def main():
@@ -164,6 +206,9 @@ def main():
             print(f"SKIP: no result at {w}px (timeout)")
             return 0
         ran += 1
+        line = report_targets(w, data)
+        if line:
+            print(line)
         failures += check(w, data)
 
     if self_test:

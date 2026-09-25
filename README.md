@@ -484,7 +484,28 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.3" open>
+<details id="v0.15.4" open>
+<summary><b>v0.15.4</b> — thumb-sized taps and a square tab row on a phone</summary>
+
+- v0.15.2 stopped the page scrolling sideways; this is the other half of "not
+  polish". Measured in the shipped engine at 320 / 390 / 560px, **nothing you tap
+  reached 44px**: the icon buttons (theme toggle, worker restart) were **32px**,
+  "Start sharing" 39px, the tab row 39px, the tunnel-type select 40px — every one
+  of them a thumb target on the device this was reported from. They are 44px on a
+  phone now. Log actions opt out at the 24px WCAG 2.5.8 floor, because a 44px
+  button inside a log line would wreck the panel.
+- **The tab row wrapped 3 + 1**, stranding "Saved" on a row of its own — the
+  raggedness in the Android screenshot. Two even columns on a phone, every label
+  still on one line, active underline still under the active tab.
+- The guard grew the rule instead of a promise:
+  `scripts/mobile-layout-check.py` now fails when any tap target is under **44px
+  below the 560px breakpoint**, and prints the smallest one on every run so the
+  number is visible rather than implied. `--self-test` still fails on the pre-fix
+  CSS, so it can still fail.
+
+</details>
+
+<details id="v0.15.3">
 <summary><b>v0.15.3</b> — the update offer stops appearing twice</summary>
 
 - **Every check logged its own offer, and the offer line carries a live "Download

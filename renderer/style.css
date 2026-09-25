@@ -583,7 +583,12 @@ main {
   margin-left: auto;
 }
 .tabs {
-  flex-wrap: wrap;
+  /* Four tabs wrapped 3 + 1 here — "Saved" stranded on its own row, which reads
+     as a mistake and was the raggedness in the Android screenshot. Two even
+     columns keep every label on one line and look deliberate. overflow-x stays
+     as the escape hatch if a future tab outgrows half the screen. */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow-x: auto;
 }
 .tab {
@@ -620,6 +625,22 @@ body {
   }
   .grid-form label.check .check-text {
     font-size: 13px;
+  }
+  /* Thumb-sized taps. Measured in this engine before the rule: the smallest
+     target was the 32px icon button (theme toggle, worker restart), "Start
+     sharing" 39px, the tab row 39px, the tunnel-type select 40px — all under the
+     44px floor, all thumb-sized text on a phone. Log actions opt out: a 44px
+     button inside a log line would wreck the panel, so they take the 24px WCAG
+     2.5.8 floor instead. */
+  .topbar .icon-btn,
+  button,
+  .tabs .tab,
+  .grid-form input,
+  .grid-form select {
+    min-height: 44px;
+  }
+  #log .log-action {
+    min-height: 28px;
   }
 }
 
