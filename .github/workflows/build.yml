@@ -5,6 +5,10 @@ on:
   push:
     branches: [master]
     tags: ['v*']
+  # PRs get the fast checks only (E2E, Rust on both runners, UI smoke). The five
+  # bundle jobs are skipped on pull_request, so a Dependabot bump cannot burn
+  # 15 minutes of Windows/macOS/Android/Flatpak packaging for a lockfile change.
+  pull_request:
 
 jobs:
   test:
@@ -133,6 +137,7 @@ jobs:
   linux:
     name: Linux (deb / rpm / AppImage)
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -318,6 +323,7 @@ jobs:
   windows:
     name: Windows (msi / exe)
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -384,6 +390,7 @@ jobs:
   macos:
     name: macOS (app / dmg)
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -478,6 +485,7 @@ jobs:
   android:
     name: Android (APK)
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -644,6 +652,7 @@ jobs:
   flatpak:
     name: Flatpak (io.holesail.gui)
     needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
