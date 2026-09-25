@@ -474,7 +474,40 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.14.1" open>
+<details id="v0.15.0" open>
+<summary><b>v0.15.0</b> — light mode is readable, and the colors can't drift again</summary>
+
+- **Every color in `style.css` is now a token, and light mode was the reason to
+  care.** 23 hardcoded sites in component rules became tokens; the other 6 were
+  dead `var()` fallbacks (`var(--bg, #0f172a)`) that the token layer already
+  supplied. Six of them were unreachable from light mode, which is why it read as
+  broken rather than plain: log errors measured **1.30–1.75:1** contrast and the
+  toast's own text **1.10:1** — invisible on a light surface. Light values are now
+  picked against the _composited_ surface (the rgba tint over the panel), all
+  clearing 4.5:1: log successes 1.30 → 4.63, log errors 1.75 → 5.98, the banner's
+  strong 1.67 → 8.48, the badges 2.0/2.7/1.6 → 5.46/6.26/6.29.
+- Two traps worth naming. An **alias does not follow the theme**:
+  `--badge-relay: var(--yellow)` declared on `:root` resolves `--yellow` at
+  `:root`, so light mode still rendered the dark yellow — the alias has to be
+  re-declared in the light block. And an 11px bold badge is **not** WCAG large
+  text, so `--accent` (4.21:1) and `--yellow` (4.45:1) both miss on their own
+  tinted chip; the three badge values are picked against the tint instead.
+- The invariant is a check, not a habit: `scripts/css-token-check.py --self-test`
+  fails on a literal outside the two theme blocks, on a `var()` nothing defines,
+  and on a light override for a token `:root` never declares — and its self-test
+  injects each one, because a checker that cannot fail proves nothing. It runs in
+  CI next to the licence step. Dark mode is provably unchanged: 19/19 computed
+  values identical before and after.
+- **A worker that dies mid-test now says so.** Killing the worker inside the
+  harness's capped-transfer section used to print nothing for four minutes and
+  then report only `FATAL: overall test timeout`, naming no section. It now
+  reports `nothing happened for 120s while in: 13d) bandwidth cap throttles a
+session`. The wait that never settled was a socket read against a dead tunnel
+  whose own safety check sat after the await.
+
+</details>
+
+<details id="v0.14.1">
 <summary><b>v0.14.1</b> — the update offer installs once, not once per click</summary>
 
 - **A second click on "Download & install" forked a second full download.**
