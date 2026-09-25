@@ -15,8 +15,8 @@ jobs:
     name: Protocol E2E (real DHT tunnel)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -55,7 +55,7 @@ jobs:
     # expression carries no untrusted input.)
     continue-on-error: ${{ matrix.os == 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Tauri Linux dependencies
         run: |
@@ -63,7 +63,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -94,7 +94,7 @@ jobs:
     needs: test
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install deps (webkit, Xvfb, AT-SPI)
         run: |
@@ -103,7 +103,7 @@ jobs:
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
             xvfb dbus at-spi2-core python3-pyatspi
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -140,7 +140,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Tauri Linux dependencies
         run: |
@@ -149,7 +149,7 @@ jobs:
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
             desktop-file-utils
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -158,7 +158,7 @@ jobs:
       - run: npm ci
 
       - name: Cache linuxdeploy/appimagetool downloads (~/.cache/tauri)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/tauri
@@ -312,7 +312,7 @@ jobs:
             echo "no AppImage built (bundler flake) — installer smoke skipped"
           fi
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-linux
           path: |
@@ -326,9 +326,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -337,7 +337,7 @@ jobs:
       - run: npm ci
 
       - name: Cache WiX tools (MSI bundling downloads ~150MB; flaky on GH runners)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~\AppData\Local\tauri
@@ -380,7 +380,7 @@ jobs:
           grep -q '"result":"pong"' /tmp/ping.json
           echo "OK: $RT booted the worker"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-windows
           path: |
@@ -393,9 +393,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -475,7 +475,7 @@ jobs:
           fi
           echo "OK: $RT booted the worker"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-macos
           path: |
@@ -488,9 +488,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -500,13 +500,13 @@ jobs:
           rustup target add aarch64-linux-android armv7-linux-androideabi \
             i686-linux-android x86_64-linux-android
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Install Android SDK + NDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           cmdline-tools-version: latest
           # The action's default packages are `tools platform-tools`, and
@@ -538,7 +538,7 @@ jobs:
         run: node scripts/android-glue.mjs
 
       - name: Restore the Android debug keystore (stable signature across runs)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           # Without this, every run generates a fresh ~/.android/debug.keystore
           # on its ephemeral runner. Each APK then carries a DIFFERENT signing
@@ -643,7 +643,7 @@ jobs:
           APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
           python3 scripts/apk-icon-check.py "$APK" src-tauri/icons/android
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-android
           path: |
@@ -655,9 +655,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -733,7 +733,7 @@ jobs:
           flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
             /tmp/hg-repo holesail-gui.flatpak io.holesail.gui
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-flatpak
           path: packaging/flatpak/holesail-gui.flatpak
@@ -746,18 +746,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # --generate-notes diffs commits between tags
           fetch-depth: 0
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       # update-manifest.mjs shells out to `npx tauri signer sign` — the CLI
       # must exist. Without npm ci this fails with "could not determine
       # executable to run" (the Aug-10 release never hit it: no signing
       # secrets then, so the manifest step was skipped).
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
