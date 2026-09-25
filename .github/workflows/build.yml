@@ -36,7 +36,20 @@ jobs:
 
   clippy:
     name: Rust checks (fmt, clippy, test)
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    # Pre-validation, not a release input: the bundles keep building on 22.04
+    # (glibc breadth, and it is the runner whose WebKitGTK the AppImage bundles).
+    # The 24.04 leg answers one question only — does the newer runner still build
+    # and test it — so a failure there is recorded and never blocks.
+    # ponytail: bundling (linuxdeploy/appimagetool) is NOT exercised on 24.04;
+    # add a leg to the bundle job if 24.04 ever becomes the release runner.
+    # (matrix.os is a literal list defined right here, never event data — the
+    # expression carries no untrusted input.)
+    continue-on-error: ${{ matrix.os == 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v5
 

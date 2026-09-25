@@ -1,0 +1,65 @@
+# Weekly, grouped, and deliberately narrow on the protocol-bearing packages.
+#
+# The three ecosystems exist because each has already cost a session:
+#   npm    — one `npm install --save` once moved bare-dgram 1.0.1 -> 1.1.1 and
+#            broke the Node runtime (package.json `overrides` still pins it back)
+#   cargo  — the Tauri backend
+#   actions — the workflow that builds all of the above
+#
+# hyperdht / @holesail/hyper-cmd-lib-net / bare-* carry the wire protocol. A bot
+# bumping those turns a build into a debugging session, and Track D's weekly
+# canary workflow is the thing that is supposed to notice upstream drift — with a
+# human reading it, not a merge button. Majors there are ignored; minors and
+# patches still arrive.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: hyperdht
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@holesail/hyper-cmd-lib-net"
+        update-types:
+          - version-update:semver-major
+      # bare-dgram is listed explicitly as well as by wildcard: the wildcard is
+      # documented for `allow` and matches the same way here, but the explicit
+      # name costs one line and cannot silently stop matching.
+      - dependency-name: bare-dgram
+        update-types:
+          - version-update:semver-major
+      - dependency-name: bare-*
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
