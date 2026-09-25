@@ -45,20 +45,23 @@ jobs:
       # --no-save: the lockfile stays the release's business. The runner is
       # throwaway, so node_modules is the right place for "latest".
       # A dispatch input is untrusted by construction, so it is validated before
-      # it reaches a command line — and passed through env rather than
-      # interpolated, so a quote in the value cannot become shell syntax.
+      # it reaches a command line — passed through env rather than interpolated,
+      # so a quote in the value cannot become shell syntax, and matched against a
+      # single-quoted allowlist. NOT a `case` pattern: `<` and `>` in a bracket
+      # expression there are tokenised as redirections (syntax error), and
+      # quoting the pattern instead makes it a literal comparison that matches
+      # nothing — a guard that cannot fail. Measure it: dispatch this workflow
+      # with hyperdht=$(id) and it must exit 2 with "refusing".
       - name: Move the protocol deps to latest
         env:
           HYPERDHT_SPEC: ${{ inputs.hyperdht }}
         run: |
           set -euo pipefail
           spec="${HYPERDHT_SPEC:-latest}"   # schedule runs have no inputs, so empty means latest
-          case "$spec" in
-            *[!A-Za-z0-9.@^~><=*+-]*)
-              echo "refusing hyperdht spec: $spec" >&2
-              exit 2
-              ;;
-          esac
+          if ! printf '%s' "$spec" | grep -qE '^[A-Za-z0-9.@^~*+=<>| -]+$'; then
+            echo "refusing hyperdht spec: $spec" >&2
+            exit 2
+          fi
           npm install --no-save "hyperdht@$spec" @holesail/hyper-cmd-lib-net@latest
 
       - name: Record which versions are under test
