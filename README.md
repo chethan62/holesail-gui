@@ -484,7 +484,47 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.0" open>
+<details id="v0.15.1" open>
+<summary><b>v0.15.1</b> — dependencies moved, and the guards that say when they matter</summary>
+
+- **No behaviour change on purpose.** Tauri and all three plugins (`tauri`,
+  `tauri-plugin-deep-link`, `-single-instance`, `-updater`) moved a minor/patch
+  step, 7 GitHub Actions moved, and the dev toolchain followed (prettier 3.9.8,
+  eslint 10.11). Dependabot opened all of it as three grouped PRs and none was
+  merged on faith: the new PR trigger ran Protocol E2E, both Rust legs and the UI
+  smoke job **on each PR** first, and `master` was re-verified at 9/9 including
+  bundles afterwards.
+- **CI grew the two guards a project like this actually needs.** `pull_request:`
+  now runs the fast half on every PR — E2E 2m57, Rust 22.04 4m05, Rust 24.04
+  4m21, UI smoke 3m11, ≈4.5 minutes — while the five bundle jobs stay gated to
+  `master`, so a PR cannot fill the artifact store. A weekly **canary** re-runs
+  the real protocol E2E against the newest release _inside the supported line_
+  and opens an issue when it goes red. It found the thing it exists for on its
+  first run: `@holesail/hyper-cmd-lib-net` 2.x takes the remote-tunnel factory as
+  `pipeTcpServer`'s leading argument and threads no stats object, so bumping it
+  would break capped tunnels and local ports **silently** — `worker/engine/hs.js:64`
+  refuses that arity on purpose. Adopting 2.x is a decision, not an upgrade, so
+  the canary tracks `hyperdht@^6` / `hyper-cmd-lib-net@^1` and goes red only on
+  drift _within_ the line.
+- **Two docs, each answering a question the repo could not.** `docs/ui-support.md`
+  measures what the webview supports instead of inferring it from a browser
+  support table: the Linux build does not use the system engine at all — it
+  carries WebKitGTK **2.50.4** inside the AppImage payload (asked its own version
+  through ctypes; confirmed live by the running app's process maps) — and 24 of
+  31 modern CSS/JS features work there. `scrollbar-color`, `field-sizing` and
+  `button.commandForElement` work on a newer system engine but **not** on the one
+  users get; `popover=hint`, `dialog.closedBy`, `calc-size()`/`interpolate-size`
+  and `appearance: base-select` work nowhere yet. `docs/architecture.md` carries
+  the layer map and the invariants, each row naming the file it lives in **and the
+  test that enforces it** — an invariant with no enforcement is a comment.
+- Smaller things in the same release: the packaged payload is checked against a
+  92 MB budget in CI, the vendored QRCode is pinned by sha256 (verified in CI on
+  every run), and the dependency manifest stays deliberately narrow (`bare-dgram`
+  pinned by hand) so a routine bump cannot move the wire by accident.
+
+</details>
+
+<details id="v0.15.0">
 <summary><b>v0.15.0</b> — light mode is readable, and the colors can't drift again</summary>
 
 - **Every color in `style.css` is now a token, and light mode was the reason to
