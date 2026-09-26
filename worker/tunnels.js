@@ -24,7 +24,7 @@ const {
   stopLimitTicker
 } = require('./limiter.js')
 
-const { Engine } = require('./engine/index.js')
+const { Engine } = require('./engine/hs.js')
 const FileServer = require('./fileserver.js')
 
 // A fresh Basic-Auth password for each folder share. The file server's own

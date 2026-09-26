@@ -678,7 +678,13 @@ session`. The wait that never settled was a socket read against a dead tunnel
 - **The payload size is tracked and budgeted in CI.** The Linux job prints
   `dist-resources` / `bare` / AppImage sizes into the run summary and fails past
   92,000,000 B (measured today: 78,627,452 B). This is what keeps "would an
-  all-Rust worker be smaller?" answerable with data.
+  all-Rust worker be smaller?" answerable with data — and it is now answered:
+  **13–16 MB off a ~106 MB download (12–15%), in exchange for rewriting the whole
+  worker in Rust, not just its engine.** The ~18.4 MB the worker costs the
+  download is the `bare` runtime — one 65 MB binary — executing ~110 KB of our
+  JavaScript, so the saving exists only if the worker goes to Rust _everywhere_,
+  Android included. Retired on that evidence rather than quoted; the engine-level
+  spike is in the `holesail-gui` skill (`references/rust-engine-port-spike.md`).
 - **The vendored QR library is pinned by hash.** `renderer/vendor/qrcode.js`
   (MIT, Kazuhiko Arase) shipped with no recorded origin; its sha256 is recorded
   in `renderer/vendor/README.md` and enforced by `licence-check.py --vendored`,

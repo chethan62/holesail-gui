@@ -606,7 +606,7 @@ jobs:
           echo "apk: $APK ($(stat -c%s "$APK") bytes)"
           unzip -l "$APK" | grep -q 'assets/bare/service-worker.js' \
             || { echo "FAIL: worker entry not in the APK"; exit 1; }
-          unzip -l "$APK" | grep -q 'assets/bare/worker/engine/index.js' \
+          unzip -l "$APK" | grep -q 'assets/bare/worker/engine/hs.js' \
             || { echo "FAIL: worker modules not in the APK"; exit 1; }
           unzip -o -q "$APK" 'lib/arm64-v8a/libholesail_bare.so' -d /tmp/apkx
           nm -D --defined-only /tmp/apkx/lib/arm64-v8a/libholesail_bare.so \

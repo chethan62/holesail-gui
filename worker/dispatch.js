@@ -19,7 +19,7 @@ const {
   getSessionStats
 } = require('./tunnels.js')
 
-const { lookup } = require('./engine/index.js')
+const { lookup } = require('./engine/hs.js')
 const { setGlobalLimit } = require('./limiter.js')
 
 async function dispatch(method, params) {
