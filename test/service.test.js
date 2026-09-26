@@ -1244,6 +1244,94 @@ async function main() {
     await rpc('session:stop', { id: deadClient.id })
     await closeServer(deadEcho, [deadSock])
 
+    section('22) a peer holding the wrong key cannot connect')
+    // Access control in 'secure' mode is the shared key and nothing else: both
+    // ends derive their keyPair from it, and the server's firewall
+    // (engine/hs.js) drops any peer whose public key is not that keyPair's. A
+    // peer holding a DIFFERENT well-formed 64-hex key dials a public key
+    // nobody announced, so the tunnel never comes up. MEASURED on node:
+    // client:connect itself still succeeds (~60ms — it only binds the local
+    // proxy and touches no DHT), and the app socket opened against that proxy
+    // is CLOSED ~2.5s later having carried no byte. It never errors, which is
+    // why the negative half asserts on the absence of a byte rather than on an
+    // error, and accepts 'refused' as well in case an engine rejects earlier.
+    // Deliberately NOT 'a'.repeat(64): that is section 14's canonical
+    // "unannounced" key, and announcing a real record under it makes that
+    // section's offline lookup fail for the record's ~20 min TTL.
+    const keyRight = 'c'.repeat(64)
+    const keyWrong = 'f'.repeat(64)
+    // Bounded probe: open the client's local port, send a token, report the
+    // FIRST thing that happens — echoed / closed / errored / silent. Never
+    // waits past `ms`, so a wrong-key hop cannot hang the suite.
+    const keyProbe = (port, ms) =>
+      new Promise((resolve) => {
+        const started = Date.now()
+        const sock = net.connect({ host: '127.0.0.1', port })
+        const done = (what) => {
+          clearTimeout(timer)
+          try {
+            sock.destroy()
+          } catch {}
+          resolve(`${what} after ${Date.now() - started}ms`)
+        }
+        const timer = setTimeout(() => done('silent'), ms)
+        sock.on('connect', () => sock.write('wrong-key-probe'))
+        sock.on('data', () => done('echoed'))
+        sock.on('error', (e) => done(`errored (${e.code})`))
+        sock.on('close', () => done('closed'))
+      })
+    const keyEcho = net.createServer((s) => {
+      s.on('error', () => {})
+      s.pipe(s)
+    })
+    await new Promise((res) => keyEcho.listen(0, '127.0.0.1', res))
+    const keyServer = await rpc(
+      'server:start',
+      { port: keyEcho.address().port, secure: true, key: keyRight },
+      90000
+    )
+    assert(
+      keyServer.url === URL_PREFIX + keyRight,
+      'secure server is up on the fixed key'
+    )
+    // (a) NEGATIVE — a different valid 64-hex key must not reach the tunnel.
+    let wrongClient = null
+    let wrongErr = null
+    try {
+      wrongClient = await rpc(
+        'client:connect',
+        { key: URL_PREFIX + keyWrong },
+        30000
+      )
+    } catch (e) {
+      wrongErr = e
+    }
+    const howWrong = wrongClient
+      ? await keyProbe(wrongClient.port, 10000)
+      : 'refused'
+    assert(
+      !howWrong.startsWith('echoed'),
+      wrongErr
+        ? `client:connect with the wrong key was refused (${wrongErr.message})`
+        : `the wrong-key peer never carried a byte (${howWrong})`
+    )
+    // (b) POSITIVE CONTROL — same server, same probe, correct key. Without
+    // this, (a) would pass on nothing more than a broken test.
+    const keyedClient = await rpc(
+      'client:connect',
+      { key: keyServer.url },
+      90000
+    )
+    const howKeyed = await keyProbe(keyedClient.port, 20000)
+    assert(
+      howKeyed.startsWith('echoed'),
+      `the correct key DOES connect (${howKeyed})`
+    )
+    if (wrongClient) await rpc('session:stop', { id: wrongClient.id })
+    await rpc('session:stop', { id: keyedClient.id })
+    await rpc('session:stop', { id: keyServer.id })
+    await closeServer(keyEcho)
+
     // 23) the worker's dispatch table and the Rust allowlist must agree. They
     // are maintained by hand in two languages, and a drift is SILENT in both
     // directions: a method missing from ALLOWED is unreachable from the UI

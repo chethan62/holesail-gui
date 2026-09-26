@@ -330,7 +330,9 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
 
   windows:
-    name: Windows (msi / exe)
+    # "installed + launched" is in the name on purpose: the install-and-launch
+    # step below runs the artifact on Windows, which no job did before.
+    name: Windows (msi / exe — installed + launched)
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
@@ -389,6 +391,76 @@ jobs:
           grep -q '"result":"pong"' /tmp/ping.json
           echo "OK: $RT booted the worker"
 
+      # Install-and-launch. Until now the Windows artifact was only ever BUILT on
+      # this runner, and a build-only CI cannot see a bundle that refuses to run
+      # — that is exactly how two releases shipped broken (a Mach-O stripped of
+      # the symbols its .bare addons bind against, and an unsigned macOS bundle;
+      # both were green here). What this step PROVES: the MSI installs, the
+      # installed holesail-gui.exe starts on Windows, its webview boots the
+      # renderer, and the payload's worker comes up and answers an RPC — the
+      # renderer's log() (renderer/ui.js) persists to <app_config_dir>/
+      # event-log.txt through the Rust `log_append` command, and app.js only
+      # writes `Connected to holesail service worker` AFTER the worker's ready
+      # handshake and a successful syncWorker(), so that persisted line IS the
+      # assertion. What it does NOT prove: that the window is visible on a
+      # desktop (the runner has one, but nothing here looks at a screen).
+      - name: Install the MSI + launch the installed app (must reach 'Connected to holesail service worker')
+        shell: bash
+        run: |
+          MSI=$(ls src-tauri/target/release/bundle/msi/*.msi | head -1)
+          echo "msi: $MSI"
+          # quiet, no reboot: what a user's installer run does. MSYS2 rewrites
+          # args that look like paths, so opt out of that for this one call.
+          MSYS2_ARG_CONV_EXCL='*' msiexec /i "$(cygpath -w "$MSI")" /qn /norestart
+          echo "msiexec exit=$? (0, or 3010 when a reboot is merely pending)"
+          # The exit code is not the assertion (3010 encodes as 194 through
+          # MSYS2 anyway); the INSTALLED exe is. Per-machine WiX installs into
+          # Program Files, the NSIS fallback per-user into LOCALAPPDATA.
+          EXE=$(ls "/c/Program Files/holesail-gui/holesail-gui.exe" \
+                 "$LOCALAPPDATA/holesail-gui/holesail-gui.exe" 2>/dev/null | head -1)
+          if [ -z "$EXE" ]; then
+            echo "FAIL: the MSI installed no holesail-gui.exe"
+            exit 1
+          fi
+          echo "installed: $EXE"
+
+          # event-log.txt is where the renderer's log lines land, so the check
+          # works without a desktop or an a11y bridge — it is about the app
+          # actually RUNNING, not about pixels.
+          LOG="$APPDATA/io.holesail.gui/event-log.txt"
+          rm -f "$LOG"
+          "$EXE" > /tmp/app-out.txt 2>&1 &
+          APP_PID=$!
+          ok=0
+          # Bounded at 45 x 1s: webview cold start + worker spawn + the
+          # renderer's own 10s handshake deadline + margin. A process that dies
+          # is noticed on the next poll, so a crash-at-startup fails in ~1s.
+          for i in $(seq 1 45); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "FAIL: the app exited ${i}s after launch"
+              break
+            fi
+            if [ -f "$LOG" ] && grep -q 'Connected to holesail service worker' "$LOG"; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          # (a) still alive once it has settled: the renderer gives the worker
+          # 10s to hand over, so 20s past launch is beyond the point where a
+          # late crash (a worker that dies after the handshake) would show.
+          if [ "$ok" = 1 ]; then sleep 20; fi
+          if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "FAIL: the installed app cannot run on Windows"
+            echo "--- process ---"; tasklist //FI "IMAGENAME eq holesail-gui.exe" || true
+            echo "--- event-log tail ---"; tail -30 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- what is in APPDATA (the config dir is guessed, not asserted) ---"; ls "$APPDATA" 2>/dev/null | head -10
+            echo "--- app stdout/stderr tail ---"; tail -30 /tmp/app-out.txt 2>/dev/null || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+          echo "OK: the MSI-installed app launched, connected to its worker, and is alive 20s later"
+          kill "$APP_PID" 2>/dev/null || true
+
       - uses: actions/upload-artifact@v7
         with:
           name: holesail-gui-windows
@@ -397,7 +469,9 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
 
   macos:
-    name: macOS (app / dmg)
+    # "installed + launched" is in the name on purpose: the install-and-launch
+    # step below runs the artifact on macOS, which no job did before.
+    name: macOS (app / dmg — installed + launched)
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
@@ -483,6 +557,89 @@ jobs:
             exit 1
           fi
           echo "OK: $RT booted the worker"
+
+      # Install-and-launch. Until now the macOS artifact was only ever BUILT on
+      # this runner; the step below it boots the STAGING payload (dist-resources),
+      # which is not the same as the artifact a user gets. What this step PROVES:
+      # the dmg mounts, the .app installs, the installed app starts on macOS, its
+      # webview boots the renderer, and the payload's worker comes up and answers
+      # an RPC — the renderer's log() (renderer/ui.js) persists to
+      # <app_config_dir>/event-log.txt through the Rust `log_append` command, and
+      # app.js only writes `Connected to holesail service worker` AFTER the
+      # worker's ready handshake and a successful syncWorker(), so that persisted
+      # line IS the assertion.
+      # What it does NOT prove: that the window renders pixels, and NOT the
+      # Gatekeeper first-run experience — a locally built dmg carries no
+      # quarantine xattr, so Gatekeeper is never consulted here (that is what the
+      # ad-hoc signature assertion above is for).
+      # A GUI app needs a session to launch into: GitHub-hosted macOS runners run
+      # in a logged-in WindowServer session (managed runners that don't are
+      # documented to leave a launched app stuck in the background), so the
+      # launch is expected to work. If that ever stops being true this step FAILS
+      # — it never skips, because a check that can only report success is worse
+      # than no check.
+      - name: Install the dmg + launch the installed .app (must reach 'Connected to holesail service worker')
+        run: |
+          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
+          APPNAME=$(basename "$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)")
+          MNT=/tmp/holesail-dmg
+          mkdir -p "$MNT"
+          # install the way a user does: mount the dmg, copy the .app out of it
+          if ! hdiutil attach "$DMG" -nobrowse -mountpoint "$MNT" >/dev/null; then
+            echo "FAIL: could not mount $DMG"
+            exit 1
+          fi
+          # ditto, not cp: it keeps the bundle metadata intact, so the ad-hoc
+          # signature survives the copy
+          if ! sudo ditto "$MNT/$APPNAME" "/Applications/$APPNAME"; then
+            echo "FAIL: could not install $APPNAME into /Applications"
+            hdiutil detach "$MNT" -quiet || true
+            exit 1
+          fi
+          hdiutil detach "$MNT" -quiet || true
+          APP="/Applications/$APPNAME"
+          BIN=$(ls "$APP/Contents/MacOS" | head -1)
+          echo "installed: $APP (binary $BIN)"
+
+          # The renderer's log lines land in this file, so the check works
+          # without an a11y bridge (macOS has no AT-SPI) and asserts that the app
+          # actually RAN, not that a window was drawn.
+          LOG="$HOME/Library/Application Support/io.holesail.gui/event-log.txt"
+          rm -f "$LOG"
+          "$APP/Contents/MacOS/$BIN" > /tmp/app-out.txt 2>&1 &
+          APP_PID=$!
+          ok=0
+          # Bounded at 45 x 1s: webview cold start + worker spawn + the
+          # renderer's own 10s handshake deadline + margin. A process that dies
+          # is noticed on the next poll, so a crash-at-startup fails in ~1s.
+          for i in $(seq 1 45); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "FAIL: the app exited ${i}s after launch"
+              break
+            fi
+            if [ -f "$LOG" ] && grep -q 'Connected to holesail service worker' "$LOG"; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          # (a) still alive once it has settled: the renderer gives the worker
+          # 10s to hand over, so 20s past launch is beyond the point where a
+          # late crash (a worker that dies after the handshake) would show.
+          if [ "$ok" = 1 ]; then sleep 20; fi
+          if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "FAIL: the installed .app cannot run on macOS"
+            echo "--- process ---"; ps -p "$APP_PID" -o pid,stat,etime,command 2>/dev/null || echo "(not running)"
+            echo "--- event-log tail ---"; tail -30 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- where any event log landed (the path is guessed, not asserted) ---"; find "$HOME/Library/Application Support" -maxdepth 2 -name event-log.txt 2>/dev/null | head -3
+            # environment or app? console user + WindowServer answer that in one line
+            echo "--- GUI session ---"; echo "console user: $(stat -f '%Su' /dev/console 2>/dev/null)"
+            pgrep -x WindowServer >/dev/null && echo "WindowServer: up" || echo "WindowServer: absent"
+            echo "--- app stdout/stderr tail ---"; tail -30 /tmp/app-out.txt 2>/dev/null || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+          echo "OK: the installed .app launched, connected to its worker, and is alive 20s later"
+          kill "$APP_PID" 2>/dev/null || true
 
       - uses: actions/upload-artifact@v7
         with:
