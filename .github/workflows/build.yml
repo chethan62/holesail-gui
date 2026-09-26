@@ -385,10 +385,20 @@ jobs:
           # bare.exe; no `timeout` wrapper because the shell here is git-bash and
           # the worker exits when its stdin closes.
           cd dist-resources
-          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
+          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1 || true)
+          # `status=0` first, then `|| status=$?`: a worker that dies by SIGNAL
+          # (bare aborts on a require it cannot resolve) makes the pipeline 139,
+          # and -e would kill the step on this line - before the check below
+          # could say which line of the worker's own output preceded it.
+          status=0
           printf '{"id":1,"method":"ping","params":{}}\n' \
-            | ./"$RT" service-worker.js | tee /tmp/ping.json
-          grep -q '"result":"pong"' /tmp/ping.json
+            | ./"$RT" service-worker.js > /tmp/ping.json 2>/tmp/ping-err.txt || status=$?
+          if [ "$status" -ne 0 ] || ! grep -q '"result":"pong"' /tmp/ping.json; then
+            echo "FAIL: $RT did not boot the worker (exit=$status)"
+            echo "--- stdout ---"; cat /tmp/ping.json
+            echo "--- stderr ---"; tail -60 /tmp/ping-err.txt
+            exit 1
+          fi
           echo "OK: $RT booted the worker"
 
       # Install-and-launch. Until now the Windows artifact was only ever BUILT on
@@ -407,7 +417,11 @@ jobs:
       - name: Install the MSI + launch the installed app (must reach 'Connected to holesail service worker')
         shell: bash
         run: |
-          MSI=$(ls src-tauri/target/release/bundle/msi/*.msi | head -1)
+          # `|| true`: with -e -o pipefail, a non-zero `ls`/`grep` here
+          # kills the step with no message, before this step's own FAIL
+          # branch can say what is missing. That is the whole job of the
+          # check below, so the empty result has to reach it.
+          MSI=$(ls src-tauri/target/release/bundle/msi/*.msi | head -1 || true)
           echo "msi: $MSI"
           # quiet, no reboot: what a user's installer run does. MSYS2 rewrites
           # args that look like paths, so opt out of that for this one call.
@@ -461,9 +475,9 @@ jobs:
           if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
             echo "FAIL: the installed app cannot run on Windows"
             echo "--- process ---"; tasklist //FI "IMAGENAME eq holesail-gui.exe" || true
-            echo "--- event-log tail ---"; tail -30 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- event-log tail ---"; tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
             echo "--- what is in APPDATA (the config dir is guessed, not asserted) ---"; ls "$APPDATA" 2>/dev/null | head -10
-            echo "--- app stdout/stderr tail ---"; tail -30 /tmp/app-out.txt 2>/dev/null || true
+            echo "--- app stdout/stderr tail ---"; tail -60 /tmp/app-out.txt 2>/dev/null || true
             kill "$APP_PID" 2>/dev/null || true
             exit 1
           fi
@@ -517,7 +531,7 @@ jobs:
 
       - name: Verify the .app is signed (ad-hoc counts, unsigned does not)
         run: |
-          APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
+          APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1 || true)
           echo "app: $APP"
           if [ ! -e "$APP/Contents/_CodeSignature/CodeResources" ]; then
             echo "FAIL: the bundle has no signature — macOS will call this 'damaged'"
@@ -548,11 +562,11 @@ jobs:
           echo "arch: $(uname -m) — $(./bare --version 2>&1)"
           echo "runtime: $(file -b ./bare 2>/dev/null || echo 'file unavailable')"
           printf 'console.log("hello from bare")\n' > /tmp/hello.js
-          ./bare /tmp/hello.js
-          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1)
+          ./bare /tmp/hello.js || echo "hello-probe: exit=$? (the ping below still runs)"
+          RT=$(ls | grep -xE 'bare(\.exe)?' | head -1 || true)
+          status=0
           printf '{"id":1,"method":"ping","params":{}}\n' \
-            | ./"$RT" service-worker.js > /tmp/ping.json 2>/tmp/worker-err.txt
-          status=$?
+            | ./"$RT" service-worker.js > /tmp/ping.json 2>/tmp/worker-err.txt || status=$?
           echo "worker exit=$status"
           # Explicit, not `set -e`: the ping IS the assertion. An earlier
           # revision ran the diagnostic probes under `set +e` and then let a
@@ -562,7 +576,7 @@ jobs:
           if [ "$status" -ne 0 ] || ! grep -q '"result":"pong"' /tmp/ping.json; then
             echo "FAIL: the bundled runtime did not boot the worker"
             echo "--- stdout ---"; cat /tmp/ping.json
-            echo "--- stderr ---"; tail -30 /tmp/worker-err.txt
+            echo "--- stderr ---"; tail -60 /tmp/worker-err.txt
             exit 1
           fi
           echo "OK: $RT booted the worker"
@@ -589,8 +603,8 @@ jobs:
       # than no check.
       - name: Install the dmg + launch the installed .app (must reach 'Connected to holesail service worker')
         run: |
-          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
-          APPNAME=$(basename "$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)")
+          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1 || true)
+          APPNAME=$(basename "$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1 || true)")
           MNT=/tmp/holesail-dmg
           mkdir -p "$MNT"
           # install the way a user does: mount the dmg, copy the .app out of it
@@ -607,7 +621,7 @@ jobs:
           fi
           hdiutil detach "$MNT" -quiet || true
           APP="/Applications/$APPNAME"
-          BIN=$(ls "$APP/Contents/MacOS" | head -1)
+          BIN=$(ls "$APP/Contents/MacOS" | head -1 || true)
           echo "installed: $APP (binary $BIN)"
 
           # The renderer's log lines land in this file, so the check works
@@ -638,12 +652,12 @@ jobs:
           if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
             echo "FAIL: the installed .app cannot run on macOS"
             echo "--- process ---"; ps -p "$APP_PID" -o pid,stat,etime,command 2>/dev/null || echo "(not running)"
-            echo "--- event-log tail ---"; tail -30 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- event-log tail ---"; tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
             echo "--- where any event log landed (the path is guessed, not asserted) ---"; find "$HOME/Library/Application Support" -maxdepth 2 -name event-log.txt 2>/dev/null | head -3
             # environment or app? console user + WindowServer answer that in one line
             echo "--- GUI session ---"; echo "console user: $(stat -f '%Su' /dev/console 2>/dev/null)"
             pgrep -x WindowServer >/dev/null && echo "WindowServer: up" || echo "WindowServer: absent"
-            echo "--- app stdout/stderr tail ---"; tail -30 /tmp/app-out.txt 2>/dev/null || true
+            echo "--- app stdout/stderr tail ---"; tail -60 /tmp/app-out.txt 2>/dev/null || true
             kill "$APP_PID" 2>/dev/null || true
             exit 1
           fi
