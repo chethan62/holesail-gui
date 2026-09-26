@@ -484,7 +484,26 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.4" open>
+<details id="v0.15.5" open>
+<summary><b>v0.15.5</b> — the second-engine path is retired, and the seam goes with it</summary>
+
+- **No behaviour change: the engine is unchanged and single.** The app has shipped
+  exactly one engine (ours, `worker/engine/hs.js`) since v0.10.0, so the 27-line
+  facade that existed to _swap_ engines — `worker/engine/index.js`, one
+  implementation, its `name` field referenced nowhere — is gone, and its two
+  importers require `hs.js` directly. The Android build's assertion that the worker
+  modules reached the APK moved with it.
+- **"Would an all-Rust worker be smaller?" is answered rather than re-quoted.** The
+  payload-size budget in CI kept that question _askable_; the README now records the
+  measured answer: the worker costs the download ~18.4 MB, and that is not its
+  ~110 KB of JavaScript but the `bare` runtime — one 65 MB binary — running it, so a
+  Rust worker saves 13–16 MB (12–15 %) and only if the _whole_ worker goes to Rust,
+  Android included. Retired on that evidence; the engine-level spike lives in the
+  `holesail-gui` skill.
+
+</details>
+
+<details id="v0.15.4">
 <summary><b>v0.15.4</b> — thumb-sized taps and a square tab row on a phone</summary>
 
 - v0.15.2 stopped the page scrolling sideways; this is the other half of "not
