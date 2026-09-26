@@ -288,7 +288,7 @@ class Client {
       this.node.connect(this.publicKey, { reusableSocket: true })
     if (this.udp) {
       // returns { proxySocket, clients }; it binds itself
-      const { proxySocket } = libNet.createUdpFramedProxy(
+      const { proxySocket, clients } = libNet.createUdpFramedProxy(
         { port: this.port, host: this.host },
         connectRemote,
         silent,
@@ -300,6 +300,11 @@ class Client {
       // stats.js looks for `proxySocket`, else a `proxy` with send() and no
       // listen() - a dgram socket. Both are set for the UDP client.
       this.dht.proxySocket = proxySocket
+      // stats.js watches each dial's stream for a dead-peer error, and this
+      // map is how it finds them: libNet creates the stream lazily, on the
+      // first local datagram, and drops the entry on failure without ever
+      // telling the app (its only channel is the silent engine logger).
+      this.dht.clients = clients
     } else {
       // 1.x signature: (listenOpts, connectRemote, piperOpts, stats, onListen)
       this.proxy = libNet.createTcpProxy(

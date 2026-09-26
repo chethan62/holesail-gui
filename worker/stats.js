@@ -28,6 +28,39 @@ const {
 } = require('./limiter.js')
 
 const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
+// The dial failures hyperdht destroys the tunnel socket with when it cannot
+// come up at all (lib/connect.js -> maybeDestroyEncryptedSocket). Every code
+// here is TERMINAL for that dial: the socket is already dead by the time it
+// reaches us, so nothing live is killed by treating it as fatal.
+//
+// The HOLEPUNCH_*/REMOTE_* families belong here, and the "it can still relay"
+// argument for leaving them out is backwards: connect.js returns early while
+// `c.relaySocket` is set, so a holepunch failure reaches these sockets ONLY
+// when no relay exists - and this engine never sets relayThrough (hs.js passes
+// none). Excluding them kept a dead tunnel reporting "running" forever on
+// exactly the double-NAT and firewalled networks those codes cover.
+//
+// Known gap, NOT fixable by membership: the noise/header/decrypt failures in
+// @hyperswarm/secret-stream arrive with no `code` at all.
+//
+// These strings are copied from hyperdht/lib/errors.js and the destroy sites
+// in lib/connect.js. hyperdht floats (package.json "^6.34"), so re-derive this
+// list - and the piper's forwarding in @holesail/hyper-cmd-lib-net 1.1.2,
+// which is pinned - whenever either moves.
+const DIAL_FAILED = new Set([
+  'PEER_NOT_FOUND',
+  'PEER_CONNECTION_FAILED',
+  'CANNOT_HOLEPUNCH',
+  'HOLEPUNCH_ABORTED',
+  'HOLEPUNCH_PROBE_TIMEOUT',
+  'HOLEPUNCH_DOUBLE_RANDOMIZED_NATS',
+  'HOLEPUNCH_INVALID',
+  'REMOTE_ABORTED',
+  'REMOTE_NOT_HOLEPUNCHING',
+  'REMOTE_NOT_HOLEPUNCHABLE',
+  'HANDSHAKE_INVALID',
+  'SERVER_ERROR'
+])
 // rate-limits the HG_TRACE_CAP write log (module scope: the wrapper closes over it)
 let traceCapAt = 0
 
@@ -190,9 +223,26 @@ function wireDataCounters(entry) {
   // upDir on write, hence the swapped argument order — passing
   // ('bytesUp','bytesDown') here reported the client's up/down reversed.
   if (dht.proxy && typeof dht.proxy.on === 'function') {
-    dht.proxy.on('connection', (sock) =>
+    dht.proxy.on('connection', (sock) => {
       wrapStream(sock, 'bytesDown', 'bytesUp')
-    )
+      // A client tunnel dials the DHT only when something connects to its
+      // local port, and when that dial finds no peer the piper destroys THIS
+      // socket carrying the reason (measured: PEER_NOT_FOUND ~2.5s in, zero
+      // bytes, and no other surface at all). Nothing reported it, so the card
+      // stayed "running" forever while the tunnel could never carry traffic.
+      // Same containment as the cap overflow above.
+      sock.on('error', (err) => {
+        if (!DIAL_FAILED.has(err && err.code)) return
+        // Latch: once the containment has taken the session (errors.js deletes
+        // it), a second failing dial has no session to blame and errors.js
+        // treats it as UNATTRIBUTABLE -> worker:error + process.exit(1), i.e.
+        // every other tunnel dies. A browser opens 2 connections at once
+        // (page + favicon); measured: without this line the worker exits 1.
+        if (!sessions.has(entry.id)) return
+        err.sessionId = entry.id
+        throw err
+      })
+    })
   }
   // CLIENT UDP: the dgram socket. Both directions consume the session's and
   // the shared budget, so a UDP-heavy tunnel cannot starve a capped TCP one.
@@ -217,10 +267,29 @@ function wireDataCounters(entry) {
       : null)
   if (udpSocket && typeof udpSocket.on === 'function') {
     const ps = udpSocket
-    ps.on('message', (m) => {
+    ps.on('message', (m, rinfo) => {
       const n = m ? m.length : 0
       bump('bytesUp', n)
       if (n) limitConsume(entry, n)
+      // A UDP client dials the DHT only on the first local datagram, and that
+      // dial lives on libNet's own clients map (hs.js hands it over as
+      // dht.clients). When it finds no peer, the failure is reported ONLY to
+      // the silent engine logger and the entry is dropped - nothing reached
+      // the app, so the card stayed "running" over a dead tunnel (measured:
+      // PEER_NOT_FOUND ~3.3s after the datagram, zero replies, no event).
+      // Same containment as the TCP case above; libNet registers its own
+      // 'message' handler when it creates the socket, so its entry is there.
+      const client =
+        dht.clients && dht.clients.get(`${rinfo.address}:${rinfo.port}`)
+      const stream = client && client.remoteStream
+      if (!stream || stream.__hgDialWatched) return
+      stream.__hgDialWatched = true
+      stream.on('error', (err) => {
+        if (!DIAL_FAILED.has(err && err.code)) return
+        if (!sessions.has(entry.id)) return
+        err.sessionId = entry.id
+        throw err
+      })
     })
     if (typeof ps.send === 'function') {
       const osend = ps.send.bind(ps)

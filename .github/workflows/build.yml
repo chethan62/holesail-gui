@@ -416,10 +416,19 @@ jobs:
           # The exit code is not the assertion (3010 encodes as 194 through
           # MSYS2 anyway); the INSTALLED exe is. Per-machine WiX installs into
           # Program Files, the NSIS fallback per-user into LOCALAPPDATA.
-          EXE=$(ls "/c/Program Files/holesail-gui/holesail-gui.exe" \
-                 "$LOCALAPPDATA/holesail-gui/holesail-gui.exe" 2>/dev/null | head -1)
+          # SEARCH rather than assume, and never let a failed lookup kill the
+          # step. `ls` on a missing path exits 2, and with -e -o pipefail that
+          # aborted the script BEFORE the check below could say what happened:
+          # the first CI run of this step died that way, immediately after a
+          # successful `msiexec exit=0`, reporting nothing. `|| true` wraps the
+          # pipeline so an empty result reaches the check instead.
+          EXE=$(find "/c/Program Files" "$LOCALAPPDATA" -maxdepth 3 \
+                   -iname 'holesail-gui.exe' 2>/dev/null | head -1 || true)
           if [ -z "$EXE" ]; then
             echo "FAIL: the MSI installed no holesail-gui.exe"
+            echo "--- what IS under the two install roots ---"
+            ls -d "/c/Program Files"/*holesail* 2>/dev/null || true
+            ls -d "$LOCALAPPDATA"/*holesail* 2>/dev/null || true
             exit 1
           fi
           echo "installed: $EXE"

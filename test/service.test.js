@@ -1315,6 +1315,71 @@ async function main() {
         ? `client:connect with the wrong key was refused (${wrongErr.message})`
         : `the wrong-key peer never carried a byte (${howWrong})`
     )
+    // ...and the app must be TOLD. Until the failed dial was surfaced, that
+    // session sat at state "running" with live stats forever: a card that
+    // looked healthy and could never carry a byte. The dial failure now
+    // reaches the same containment as a capped overflow, which deletes the
+    // session and emits error -> stopped, so the card goes and the log names
+    // the reason.
+    if (wrongClient) {
+      for (let i = 0; i < 20; i++) {
+        const live = await rpc('sessions:list', {})
+        if (!live.some((s) => s.id === wrongClient.id)) break
+        await sleep(500)
+      }
+      const stillLive = await rpc('sessions:list', {})
+      assert(
+        !stillLive.some((s) => s.id === wrongClient.id),
+        'the app was told the tunnel never came up (a dead card is gone, not "running")'
+      )
+    }
+    // (a2) THE SAME CLAIM OVER UDP. A UDP client dials only when a datagram
+    // arrives, and until the fix that dial's failure reached nobody: the card
+    // stayed "running" over a tunnel that could not carry a byte. The engine's
+    // own clients map is what the watcher has to find, so this also guards the
+    // plumping that hands it over (hs.js) - it was silently dropped once.
+    const wkUdpEcho = dgram.createSocket('udp4')
+    wkUdpEcho.on('message', (msg, rinfo) =>
+      wkUdpEcho.send(msg, rinfo.port, rinfo.address)
+    )
+    await new Promise((res) => wkUdpEcho.bind(0, '127.0.0.1', res))
+    // Its OWN key, deliberately not keyRight: two servers announcing one key
+    // race its DHT record, so the correct-key control below can reach the UDP
+    // server instead of the TCP one and sit silent — which is exactly how this
+    // section failed the first time it ran under bare. keyWrong stays the
+    // unannounced key, so it is reused for the UDP client.
+    const keyUdp = 'd'.repeat(64)
+    const wkUdpServer = await rpc(
+      'server:start',
+      {
+        port: wkUdpEcho.address().port,
+        secure: true,
+        udp: true,
+        key: keyUdp
+      },
+      90000
+    )
+    const wkUdpClient = await rpc(
+      'client:connect',
+      { key: URL_PREFIX + keyWrong, udp: true },
+      30000
+    )
+    assert(
+      wkUdpClient.protocol === 'udp',
+      'the UDP client session is up on the wrong key'
+    )
+    const wkUdpProbe = dgram.createSocket('udp4')
+    wkUdpProbe.send(Buffer.from('udp-wrong-key'), wkUdpClient.port, '127.0.0.1')
+    // bounded: the datagram triggers the dial, which fails a few seconds later
+    let wkStillUp = true
+    for (let i = 0; i < 20 && wkStillUp; i++) {
+      await sleep(500)
+      wkStillUp = (await rpc('sessions:list', {})).some(
+        (s) => s.id === wkUdpClient.id
+      )
+    }
+    assert(!wkStillUp, 'a UDP tunnel that never came up is gone, not "running"')
+    wkUdpProbe.close()
     // (b) POSITIVE CONTROL — same server, same probe, correct key. Without
     // this, (a) would pass on nothing more than a broken test.
     const keyedClient = await rpc(
@@ -1327,9 +1392,16 @@ async function main() {
       howKeyed.startsWith('echoed'),
       `the correct key DOES connect (${howKeyed})`
     )
-    if (wrongClient) await rpc('session:stop', { id: wrongClient.id })
+    // the wrong-key session is already gone (asserted above), so stopping it
+    // would throw "No session with id" — which is the fix working correctly.
+    if (wrongClient)
+      await rpc('session:stop', { id: wrongClient.id }).catch(() => {})
     await rpc('session:stop', { id: keyedClient.id })
     await rpc('session:stop', { id: keyServer.id })
+    // the UDP pair above: the wrong-key client is gone (asserted), the server
+    // is live, and the echo socket must be closed or the run never exits.
+    await rpc('session:stop', { id: wkUdpServer.id })
+    wkUdpEcho.close()
     await closeServer(keyEcho)
 
     // 23) the worker's dispatch table and the Rust allowlist must agree. They

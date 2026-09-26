@@ -13,7 +13,18 @@
 // is minimal ON PURPOSE so a renderer path needing a real DOM fails loudly here.
 const nodes = new Map()
 const stubNode = () => ({
-  innerHTML: '',
+  _html: '',
+  get innerHTML() {
+    return this._html
+  },
+  // Real DOM semantics: assigning innerHTML REPLACES the children. Without
+  // this, renderSessions()'s `container.innerHTML = ''` would leave the
+  // previously-rendered cards in `children`, and the "the card is gone"
+  // assertion below could not tell an emptied list from a card left behind.
+  set innerHTML(v) {
+    this._html = String(v)
+    this.children.length = 0
+  },
   textContent: '',
   className: '',
   scrollTop: 0,
@@ -28,9 +39,25 @@ const stubNode = () => ({
   append(child) {
     this.children.push(child)
   },
-  addEventListener() {},
+  handlers: {},
+  addEventListener(ev, fn) {
+    ;(this.handlers[ev] ||= []).push(fn)
+  },
   setAttribute() {},
-  querySelector: () => null
+  querySelector: () => null,
+  // renderSession draws the traffic sparkline on the card's <canvas>. Without
+  // getContext the stub throws and takes the whole run with it — so the stub
+  // gets extended, never the assertion deleted. No-op 2d context on purpose:
+  // these assertions are about which nodes are on screen, not about pixels.
+  getContext: () => ({
+    clearRect() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
+    strokeStyle: '',
+    lineWidth: 1
+  })
 })
 const node = (sel) => {
   if (!nodes.has(sel)) nodes.set(sel, stubNode())
@@ -100,6 +127,101 @@ const check = (cond, msg, fail) => {
   check(
     node('#sessions').innerHTML.includes('No active tunnels yet'),
     'a stopped session leaves the screen (empty state re-rendered)',
+    fail
+  )
+
+  /* A client tunnel whose DHT dial fails is removed by the worker's
+     session-error containment, which emits {state:'error', error:'…'} and then
+     {state:'stopped'} back to back (worker/errors.js:55-60). What the user saw
+     was previously INFERRED by reading sessions.js; drive the two real events
+     here instead. Three claims, asserted rather than described: the card leaves
+     the list, the REASON is in the log, and the Reconnect offer is on screen
+     and wired while its replay params exist.
+
+     The last check is the one that matters: the replay params live in the same
+     map the stopped branch drops (dropSession), so an offer that survives on
+     screen can have nothing left to replay — clicking it does nothing at all
+     (no rpc, no log, no toast). Both orderings are asserted. */
+  state.sessions.clear()
+  state.replay.clear()
+  state.meta.clear()
+  state.sessions.set('e1', {
+    id: 'e1',
+    type: 'client',
+    state: 'running',
+    port: 51000,
+    host: '127.0.0.1'
+  })
+  rememberSession('e1', 'client', { key: 'hs://0000wrongkeywrongkey' })
+  upsertSession({
+    id: 'e1',
+    state: 'error',
+    error: 'PEER_NOT_FOUND: Peer not found'
+  })
+  const errLine = node('#log').children.find((c) =>
+    /Session errored:/.test(c.textContent)
+  )
+  check(
+    !!errLine && /PEER_NOT_FOUND: Peer not found/.test(errLine.textContent),
+    'a failed dial puts the REASON in the log, verbatim',
+    fail
+  )
+  const offer = node('#log').children.find((c) =>
+    /Tunnel dropped/.test(c.textContent)
+  )
+  const reconnect =
+    offer && offer.children.find((c) => /Reconnect/.test(c.textContent))
+  check(
+    !!reconnect && /Reconnect/.test(reconnect.textContent),
+    'a dropped tunnel offers a Reconnect button on screen',
+    fail
+  )
+  // clicking it while the params are still in memory really reconnects
+  let connects = 0
+  globalThis.window = {
+    __TAURI__: {
+      core: {
+        invoke: (cmd, args) => {
+          if (cmd === 'rpc' && args.method === 'client:connect') connects++
+          return Promise.resolve({
+            id: 'e2',
+            host: '127.0.0.1',
+            port: 51,
+            url: 'hs://x'
+          })
+        }
+      }
+    }
+  }
+  reconnect.handlers.click[0]()
+  await new Promise((r) => setImmediate(r))
+  check(connects === 1, 'the Reconnect offer is wired to client:connect', fail)
+
+  // the ordering the worker actually uses: stopped lands right after error.
+  // Re-seed the params first: the click above consumed them (reconnectSession
+  // deletes the entry on success), and the point here is what the STOPPED
+  // branch drops on its own.
+  rememberSession('e1', 'client', { key: 'hs://0000wrongkeywrongkey' })
+  upsertSession({ id: 'e1', state: 'stopped' })
+  check(state.sessions.size === 0, 'a failed dial leaves state', fail)
+  check(
+    node('#sessions').children.length === 0 &&
+      node('#sessions').innerHTML.includes('No active tunnels yet'),
+    'a failed dial leaves the SCREEN (card gone, empty state back)',
+    fail
+  )
+  const offer2 = node('#log')
+    .children.filter((c) => /Tunnel dropped/.test(c.textContent))
+    .pop()
+  const reconnect2 = offer2.children.find((c) =>
+    /Reconnect/.test(c.textContent)
+  )
+  const connectsBefore = connects
+  reconnect2.handlers.click[0]()
+  await new Promise((r) => setImmediate(r))
+  check(
+    !state.replay.has('e1') && connects === connectsBefore,
+    'the surviving Reconnect offer is dead once the params are dropped',
     fail
   )
 
