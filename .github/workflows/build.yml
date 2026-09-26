@@ -475,7 +475,13 @@ jobs:
           if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
             echo "FAIL: the installed app cannot run on Windows"
             echo "--- process ---"; tasklist //FI "IMAGENAME eq holesail-gui.exe" || true
-            echo "--- event-log tail ---"; tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            # The FIRST MODULE_NOT_FOUND, not a tail: the app retries five times
+            # and dumps ~30 lines per attempt, so no tail window reaches the
+            # first failure - and bare's own dump names the module (`specifier:`)
+            # and its parent (`referrer:`) a few lines further in. The head of
+            # the dump, which the tail was cutting off, is the whole point.
+            echo "--- the first failure in the event log ---"; grep -m1 -B3 -A12 'MODULE_NOT_FOUND' "$LOG" 2>/dev/null || tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- event-log size ---"; wc -l < "$LOG" 2>/dev/null || true
             echo "--- what is in APPDATA (the config dir is guessed, not asserted) ---"; ls "$APPDATA" 2>/dev/null | head -10
             echo "--- app stdout/stderr tail ---"; tail -60 /tmp/app-out.txt 2>/dev/null || true
             kill "$APP_PID" 2>/dev/null || true
@@ -652,7 +658,13 @@ jobs:
           if [ "$ok" != 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
             echo "FAIL: the installed .app cannot run on macOS"
             echo "--- process ---"; ps -p "$APP_PID" -o pid,stat,etime,command 2>/dev/null || echo "(not running)"
-            echo "--- event-log tail ---"; tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            # The FIRST MODULE_NOT_FOUND, not a tail: the app retries five times
+            # and dumps ~30 lines per attempt, so no tail window reaches the
+            # first failure - and bare's own dump names the module (`specifier:`)
+            # and its parent (`referrer:`) a few lines further in. The head of
+            # the dump, which the tail was cutting off, is the whole point.
+            echo "--- the first failure in the event log ---"; grep -m1 -B3 -A12 'MODULE_NOT_FOUND' "$LOG" 2>/dev/null || tail -60 "$LOG" 2>/dev/null || echo "(no event-log written)"
+            echo "--- event-log size ---"; wc -l < "$LOG" 2>/dev/null || true
             echo "--- where any event log landed (the path is guessed, not asserted) ---"; find "$HOME/Library/Application Support" -maxdepth 2 -name event-log.txt 2>/dev/null | head -3
             # environment or app? console user + WindowServer answer that in one line
             echo "--- GUI session ---"; echo "console user: $(stat -f '%Su' /dev/console 2>/dev/null)"
