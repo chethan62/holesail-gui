@@ -41,7 +41,14 @@ const STATS_EMIT_MS = 500 // throttle: ~2 stats events/sec/session at most
 // exactly the double-NAT and firewalled networks those codes cover.
 //
 // Known gap, NOT fixable by membership: the noise/header/decrypt failures in
-// @hyperswarm/secret-stream arrive with no `code` at all.
+// @hyperswarm/secret-stream arrive with no `code` at all. Measured: four of the
+// five such sites really can land on the socket this watches (invalid header,
+// invalid message, decrypt failure) and arrive codeless, so the handler above
+// returns early and the card sits at "running". They ARE separable from dial
+// errors without reading a message - hyperdht's dial errors are DHTError with a
+// `.code`, these are plain Errors - but that is declined deliberately:
+// connect.js forwards raw transport errors through the same destroy, so the
+// same test would also kill sessions that can still recover.
 //
 // These strings are copied from hyperdht/lib/errors.js and the destroy sites
 // in lib/connect.js. hyperdht floats (package.json "^6.34"), so re-derive this

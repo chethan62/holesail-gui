@@ -9,6 +9,7 @@
 'use strict'
 
 const { spawn } = require('child_process')
+const crypto = require('crypto')
 const readline = require('readline')
 const path = require('path')
 
@@ -708,8 +709,14 @@ async function main() {
     assert(online.protocol === 'tcp', 'lookup record carries the protocol')
     assert(online.secure === true, 'lookup record marks the tunnel secure')
     // offline is a STATE, not an error: holesail normalizes the bare
-    // {secure:true} shell of an unannounced key to null
-    const deadKey = 'hs://s000' + 'a'.repeat(64)
+    // {secure:true} shell of an unannounced key to null.
+    // RANDOM, not a fixed 'a'.repeat(64): any announcement of a fixed key —
+    // another agent's probe, a stray run — leaves a DHT record that outlives
+    // the announcer (~20 min), and lookup of that key then returns non-null.
+    // Nothing can name this value ahead of time, so "unannounced" holds by
+    // construction instead of by luck. The claim is unchanged: a key with no
+    // record returns null, whatever the key's value.
+    const deadKey = 'hs://s000' + crypto.randomBytes(32).toString('hex')
     const offline = await rpc('lookup', { key: deadKey }, 60000)
     assert(
       offline === null,
@@ -1255,9 +1262,10 @@ async function main() {
     // is CLOSED ~2.5s later having carried no byte. It never errors, which is
     // why the negative half asserts on the absence of a byte rather than on an
     // error, and accepts 'refused' as well in case an engine rejects earlier.
-    // Deliberately NOT 'a'.repeat(64): that is section 14's canonical
-    // "unannounced" key, and announcing a real record under it makes that
-    // section's offline lookup fail for the record's ~20 min TTL.
+    // Deliberately NOT a key another assertion calls "unannounced": announcing
+    // a real record under one makes that assertion's offline lookup fail for
+    // the record's ~20 min TTL. (Section 14 now draws its key per run, which is
+    // why the rule is about that property and not about 'a'.repeat(64).)
     const keyRight = 'c'.repeat(64)
     const keyWrong = 'f'.repeat(64)
     // Bounded probe: open the client's local port, send a token, report the
