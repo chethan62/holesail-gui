@@ -23,6 +23,8 @@ jobs:
       - run: npm ci
       - name: Lint (ESLint, renderer + worker + test + scripts)
         run: npm run lint
+      - name: Workflow shell traps (unguarded command substitution)
+        run: python3 scripts/workflow-shell-check.py .github/workflows/build.yml
       - name: Format check (Prettier)
         run: npm run format:check
       - name: Renderer tokens (no colour literal outside the theme blocks)
@@ -212,7 +214,7 @@ jobs:
 
           # Same class as the flatpak job's icon assertion: an Icon= name that
           # resolves to no installed file is a silently generic icon.
-          DEB_DESK=$(ls /tmp/deb/usr/share/applications/*.desktop | head -1)
+          DEB_DESK=$(ls /tmp/deb/usr/share/applications/*.desktop | head -1 || true)
           DEB_ICON=$(grep -h '^Icon=' "$DEB_DESK" | cut -d= -f2)
           if ! find /tmp/deb/usr/share/icons -name "$DEB_ICON.*" | grep -q .; then
             echo "FAIL: $DEB_DESK sets Icon=$DEB_ICON but the payload installs no such icon"
@@ -228,7 +230,7 @@ jobs:
             root=$1; label=$2; ok=1
             for pair in "32x32:32x32.png" "128x128:128x128.png" "256x256@2:128x128@2x.png"; do
               size=${pair%%:*}; ref=src-tauri/icons/${pair##*:}
-              png=$(find "$root/usr/share/icons/hicolor/$size" -name '*.png' 2>/dev/null | head -1)
+              png=$(find "$root/usr/share/icons/hicolor/$size" -name '*.png' 2>/dev/null | head -1 || true)
               if [ -z "$png" ]; then
                 echo "FAIL: $label installs no $size icon"; ok=0; continue
               fi
@@ -244,7 +246,7 @@ jobs:
 
           # The AppImage is what the Linux updater installs, so check its payload
           # too (its worker must boot under the bare runtime it carries).
-          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1 || true)
           if [ -n "$APP" ]; then
             rm -rf /tmp/squashfs-root
             # --appimage-extract needs no FUSE, so a bare runner can do this
@@ -289,7 +291,7 @@ jobs:
           # No untrusted input here (flagged once by the workflow scanner): the
           # only values are the runner's own $PWD, du/stat output and a path we
           # globbed ourselves — nothing comes from an event payload.
-          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          APP=$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1 || true)
           {
             echo "### Payload size"
             echo '```'
@@ -794,7 +796,7 @@ jobs:
           # bundled runtime still EXPORTS the addon ABI symbols. Stripping those
           # is fatal on Mach-O and harmless on ELF — a property to assert, never
           # to assume (this is the same test that failed for darwin).
-          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1 || true)
           echo "apk: $APK ($(stat -c%s "$APK") bytes)"
           unzip -l "$APK" | grep -q 'assets/bare/service-worker.js' \
             || { echo "FAIL: worker entry not in the APK"; exit 1; }
@@ -813,7 +815,7 @@ jobs:
           # checker understands an .apk (zip) directly and is stdlib-only, so it
           # runs here without the Pillow dance the icon step needs. Self-test
           # first: an audit that cannot fail proves nothing.
-          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1 || true)
           echo "apk: $APK"
           python3 scripts/licence-check.py --self-test
           python3 scripts/licence-check.py "$APK"
@@ -841,7 +843,7 @@ jobs:
           python3 -c "import PIL" \
             || { echo "FAIL: no Pillow on the runner — the icon check cannot run"; exit 1; }
           python3 scripts/apk-icon-check.py --self-test
-          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+          APK=$(find src-tauri/gen/android -name '*.apk' | head -1 || true)
           python3 scripts/apk-icon-check.py "$APK" src-tauri/icons/android
 
       - uses: actions/upload-artifact@v7
@@ -917,7 +919,7 @@ jobs:
           # invisible: the entry points at nothing and menus fall back to a
           # generic icon. The manifest installs the icon under the app id, so
           # the bundled entry must ask for that same name.
-          DESK=$(ls packaging/flatpak/build-dir/files/share/applications/*.desktop | head -1)
+          DESK=$(ls packaging/flatpak/build-dir/files/share/applications/*.desktop | head -1 || true)
           NAME=$(grep -h '^Icon=' "$DESK" | cut -d= -f2)
           if ! find packaging/flatpak/build-dir/files/share/icons -name "$NAME.*" | grep -q .; then
             echo "FAIL: $DESK sets Icon=$NAME but no such icon is installed"
