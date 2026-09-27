@@ -279,8 +279,18 @@ pub(crate) fn spawn_worker(app: &AppHandle) -> Result<(), String> {
             cwd.display()
         ),
     );
+    // A RELATIVE entry path, deliberately. The app used to pass worker_path as
+    // built, which on a real Windows install is the `\\?\C:\Program Files\...`
+    // verbatim form Windows uses for long paths - and bare resolves a specifier
+    // that does not start with `./`, `/` or a drive letter as a BARE specifier,
+    // i.e. against the filesystem root. It died with MODULE_NOT_FOUND before the
+    // worker ever started: five restarts, 0xC0000409, no tunnel, on every
+    // release since the Windows bundle existed. The CI only caught it the first
+    // time this app was ever launched on Windows. A relative name cannot be
+    // mangled this way, cwd is already the worker's own directory, and the file
+    // name is fixed by find_worker.
     let mut child = child
-        .arg(&worker_path)
+        .arg("service-worker.js")
         .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
