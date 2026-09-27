@@ -135,13 +135,15 @@ const check = (cond, msg, fail) => {
      {state:'stopped'} back to back (worker/errors.js:55-60). What the user saw
      was previously INFERRED by reading sessions.js; drive the two real events
      here instead. Three claims, asserted rather than described: the card leaves
-     the list, the REASON is in the log, and the Reconnect offer is on screen
-     and wired while its replay params exist.
+     the list, the REASON is in the log, and the Reconnect offer keeps working
+     through the 'stopped' that follows it.
 
-     The last check is the one that matters: the replay params live in the same
-     map the stopped branch drops (dropSession), so an offer that survives on
-     screen can have nothing left to replay — clicking it does nothing at all
-     (no rpc, no log, no toast). Both orderings are asserted. */
+     That last claim was a real defect until the error mark existed: 'stopped' is
+     what drops the replay params (dropSession), so the offer was drawn and
+     neutralised within the same millisecond — clicking it did nothing at all (no
+     rpc, no log, no toast), and it had never once worked. The stopped branch now
+     keeps them for a session that ERRORED, which is what this asserts. A plain
+     Stop still forgets them (asserted above). */
   state.sessions.clear()
   state.replay.clear()
   state.meta.clear()
@@ -219,9 +221,14 @@ const check = (cond, msg, fail) => {
   const connectsBefore = connects
   reconnect2.handlers.click[0]()
   await new Promise((r) => setImmediate(r))
+  /* What proves the fix is the counter moving. NOT asserted: that e1 is still in
+     state.replay — a SUCCESSFUL reconnect deletes its own entry (the new session
+     has its own id), so an assertion on the map is false on working code. On the
+     pre-fix code the params were already gone by now, reconnectSession returned
+     early, and this stays at connectsBefore. */
   check(
-    !state.replay.has('e1') && connects === connectsBefore,
-    'the surviving Reconnect offer is dead once the params are dropped',
+    connects === connectsBefore + 1,
+    'the Reconnect offer still works after the stopped that follows a failed dial',
     fail
   )
 

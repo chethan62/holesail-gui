@@ -25,7 +25,13 @@ export const flags = {
   lastPeerToast: 0, // timestamp of the last peer-connected toast (rate limit)
   nodeRetryInFlight: false, // retryNode() guard
   autostartRunning: false, // autostartSaved() re-entrancy guard
-  relaySessions: new Set() // session ids that have seen a relayed peer
+  relaySessions: new Set(), // session ids that have seen a relayed peer
+  // Session ids whose last event was an ERROR. The worker follows that with
+  // 'stopped' immediately (errors.js:55-60), and the Reconnect offer it has
+  // just put on screen needs the replay params that 'stopped' sweeps away — so
+  // the stopped branch reads this BEFORE dropping and keeps them. Being a Set
+  // in flags, the shape-based sweep in dropSession clears it for free.
+  errored: new Set()
 }
 
 /// Remember the params that started a session so a dropped temporary

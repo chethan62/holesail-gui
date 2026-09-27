@@ -37,11 +37,25 @@ export function upsertSession(data) {
             : `Tunnel on port ${gone.port}`
       log(`${what} stopped`)
     }
+    // Read the error mark BEFORE the sweep below, which clears every bag it
+    // finds — including this flag. A 'stopped' that follows an 'error' is not
+    // the user's own Stop: the tunnel died under them, and that is the one case
+    // the Reconnect offer exists for. Its params are what make the button work
+    // instead of silently doing nothing — they used to be dropped here
+    // microseconds after the offer was drawn, so the button never once worked.
+    // A real Stop is unaffected and still forgets the key and credentials.
+    const failed = flags.errored.has(data.id)
+    const replay = failed ? state.replay.get(data.id) : null
     // Everything else the renderer remembers about this session — including the
     // replay params that hold its key, and its share credentials. See
     // dropSession for why this must not be a hand-written list of maps:
     // `replay` was the one it forgot, so it grew without bound.
     dropSession(data.id)
+    // Put a FAILED session's params back for the offer still on screen. Bounded:
+    // one entry per failed dial, memory only (never persisted, unlike the
+    // keychain), and reconnectSession deletes it on the first successful
+    // reconnect.
+    if (replay) state.replay.set(data.id, replay)
     // Re-render: the card is gone from state, so it must leave the screen too.
     // Without this the stopped session lingers until some unrelated event
     // happens to rebuild the list — which reads as "Stop did nothing".
@@ -50,6 +64,10 @@ export function upsertSession(data) {
     if (data.state === 'error') {
       // the worker killed just this session after an async error — show
       // why, then the follow-up 'stopped' event removes the card
+      // Mark it first: the 'stopped' that follows is the worker cleaning up a
+      // DEATH, not a user stop, and the stopped branch uses this to know it must
+      // not throw the Reconnect params away (see there).
+      flags.errored.add(data.id)
       log(`Session errored: ${data.error || 'unknown error'}`, 'err')
       // temporary tunnels don't auto-restore (only saved permanents do);
       // offer a one-click reconnect while the params are still in memory
