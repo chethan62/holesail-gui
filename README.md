@@ -484,7 +484,37 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.5" open>
+<details id="v0.15.6" open>
+<summary><b>v0.15.6</b> — the app starts on Windows, and Reconnect works</summary>
+
+- **The Windows app never ran, and now it does.** Every Windows build ever
+  published shipped a worker that died at startup: the app handed it a
+  `\\?\C:\Program Files\…` path, which the worker's runtime read as a module
+  _name_ rather than a path, so it aborted before any tunnel code loaded — five
+  restart attempts, no connection, every release. Nothing could have found it by
+  reading the code: no Windows machine had ever launched the installed app, and CI
+  now does, on every build.
+- **Reconnect works, for the first time.** The button shown when a tunnel drops
+  had never once done anything — the error that drew it was followed a
+  millisecond later by the event that threw away the parameters it needed, so
+  clicking it was silent. A mistyped key now has a working retry.
+- **A dead tunnel stops pretending.** A client whose dial failed stayed on screen
+  as `running` with live counters, because nothing watched the connection for
+  failure. It now reports the error and leaves the screen — which is also what
+  made the wrong-key refusal visible.
+- **Folder sharing is harder to break.** A second folder share no longer risks
+  taking the worker down with it, and the shared folder's containment was
+  tightened so a symlink inside it cannot reach outside it.
+- **The install on every platform is launched before a release can ship.** Steps
+  that used to fail with an unexplained exit code now say what they were looking
+  for — which is exactly how the Windows failure above was finally named.
+- **Licences are audited on every build** — 564 linked Rust crates and 75 bundled
+  packages, with attribution for both travelling inside the app. Measured clean of
+  copyleft; a copyleft crate now fails the build.
+
+</details>
+
+<details id="v0.15.5">
 <summary><b>v0.15.5</b> — the second-engine path is retired, and the seam goes with it</summary>
 
 - **No behaviour change: the engine is unchanged and single.** The app has shipped
