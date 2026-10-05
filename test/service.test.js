@@ -13,6 +13,13 @@ const crypto = require('crypto')
 const readline = require('readline')
 const path = require('path')
 
+// A key nothing can name ahead of time. Fixed keys are a flake class this suite
+// keeps re-learning: a mutable DHT record means the LAST announcer wins, so two
+// runs announcing 'c'.repeat(64) — concurrent CI jobs, or a tag run alongside
+// them — race for one record and the loser dials a dead value. §14 already drew
+// its key per run for exactly this reason; the remaining fixed keys now do too.
+const randKey = () => crypto.randomBytes(32).toString('hex')
+
 const WORKER =
   process.env.WORKER_PATH || path.join(__dirname, '..', 'service-worker.js')
 const WORKER_CMD = process.env.WORKER_CMD || 'node' // e.g. a bare runtime binary
@@ -733,7 +740,7 @@ async function main() {
     await rpc('session:stop', { id: lkServer.id })
 
     section('15) filemanager accepts a fixed key (permanent folder shares)')
-    const fmKey = 'b'.repeat(64)
+    const fmKey = randKey()
     const fmDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'holesail-fm-key-'))
     fs.writeFileSync(path.join(fmDir2, 'f.txt'), 'x')
     const fmKeyed = await rpc(
@@ -1264,10 +1271,10 @@ async function main() {
     // error, and accepts 'refused' as well in case an engine rejects earlier.
     // Deliberately NOT a key another assertion calls "unannounced": announcing
     // a real record under one makes that assertion's offline lookup fail for
-    // the record's ~20 min TTL. (Section 14 now draws its key per run, which is
-    // why the rule is about that property and not about 'a'.repeat(64).)
-    const keyRight = 'c'.repeat(64)
-    const keyWrong = 'f'.repeat(64)
+    // the record's ~20 min TTL. (Sections 14 and 22 now draw their keys per
+    // run, which is why the rule is about that property and not a spelling.)
+    const keyRight = randKey()
+    const keyWrong = randKey()
     // Bounded probe: open the client's local port, send a token, report the
     // FIRST thing that happens — echoed / closed / errored / silent. Never
     // waits past `ms`, so a wrong-key hop cannot hang the suite.
@@ -1351,12 +1358,13 @@ async function main() {
       wkUdpEcho.send(msg, rinfo.port, rinfo.address)
     )
     await new Promise((res) => wkUdpEcho.bind(0, '127.0.0.1', res))
-    // Its OWN key, deliberately not keyRight: two servers announcing one key
-    // race its DHT record, so the correct-key control below can reach the UDP
-    // server instead of the TCP one and sit silent — which is exactly how this
-    // section failed the first time it ran under bare. keyWrong stays the
-    // unannounced key, so it is reused for the UDP client.
-    const keyUdp = 'd'.repeat(64)
+    // Its OWN key: two servers announcing one key race its DHT record, so the
+    // correct-key control below could reach the UDP server instead of the TCP
+    // one and sit silent — which is exactly how this section failed the first
+    // time it ran under bare. Every key in this section is now drawn per run
+    // (randKey), so being distinct AND being unannounced both hold by
+    // construction rather than by picking letters nobody announced.
+    const keyUdp = randKey()
     const wkUdpServer = await rpc(
       'server:start',
       {
