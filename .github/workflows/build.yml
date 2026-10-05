@@ -78,6 +78,14 @@ jobs:
       - name: Prepare resources (required by tauri build.rs)
         run: node scripts/prepare-resources.mjs --bare
 
+      # The npm half of the payload is audited by licence-check.py; the Rust half
+      # is LINKED into the binary, so it can only be audited from the dependency
+      # graph. Same class of blind spot as the Rust tests that no CI step ran:
+      # nothing looked at these 500-odd crates until 2026-09-27, when the whole
+      # graph measured clean. This step is what keeps it that way.
+      - name: Licence audit (linked Rust crates)
+        run: python3 scripts/rust-licence-check.py
+
       - name: Format (rustfmt --check)
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 

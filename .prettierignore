@@ -9,3 +9,7 @@ src-tauri/gen/
 renderer/vendor/
 packaging/
 package-lock.json
+# agent working notes (plans, scratch copies). Not source, nothing reviews them,
+# and `prettier --check .` walks the repo — so a plan written during a session
+# failed the gate's first leg before anyone had a chance to read it.
+.hermes/

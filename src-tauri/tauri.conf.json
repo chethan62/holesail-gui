@@ -57,7 +57,8 @@
     "resources": {
       "../dist-resources/service-worker.js": "service-worker.js",
       "../dist-resources/worker": "worker",
-      "../dist-resources/node_modules": "node_modules"
+      "../dist-resources/node_modules": "node_modules",
+      "../dist-resources/THIRD-PARTY-RUST.md": "THIRD-PARTY-RUST.md"
     }
   }
 }

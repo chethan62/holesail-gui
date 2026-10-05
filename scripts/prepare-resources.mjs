@@ -20,7 +20,7 @@
  *                  so end users don't need Node.js installed.
  */
 
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import {
   chmodSync,
   cpSync,
@@ -281,11 +281,43 @@ if (!opt.bare && !existsSync(path.join(out, 'bare')))
     `  warning: no bare runtime in ${out} - cargo build/test needs it; re-run with --bare`
   )
 
+// The Rust crates are statically LINKED into the binary, so they cannot be listed
+// from the payload the way the npm packages can — and nothing audited them until
+// 2026-09-27, when the whole graph measured clean (564 crates, zero strong
+// copyleft, five MPL-2.0 consumed unmodified). Generate the attribution file here
+// so every platform's bundle carries it, and let a non-zero exit from the checker
+// fail the build on a copyleft crate: the same invariant licence-check.py holds
+// on the npm half. A tool gap (no python3, no cargo) only warns — CI runs the
+// checker as its own step, where a gap is a failure rather than a shrug.
+let rustLicence = ''
+try {
+  // execFileSync, not execSync: no shell, so a path with spaces (or any --out
+  // value) is passed as one argument instead of being re-parsed by sh.
+  execFileSync(
+    'python3',
+    [
+      'scripts/rust-licence-check.py',
+      '--write',
+      path.join(out, 'THIRD-PARTY-RUST.md')
+    ],
+    { stdio: 'inherit' }
+  )
+  rustLicence = ' + rust licence notices'
+} catch (err) {
+  if (err.status === 1) throw err // a real finding: copyleft or an unknown licence
+  console.warn(
+    '  warning: rust licence audit skipped (' +
+      String(err.message).split('\n')[0] +
+      ')'
+  )
+}
+
 const bytes = dirSize(out)
 const mb = (bytes / (1024 * 1024)).toFixed(1)
 console.log(
   'prepared',
   out,
   mb + ' MB',
-  opt.bare ? '(bare mode, target ' + opt.target + ')' : ''
+  opt.bare ? '(bare mode, target ' + opt.target + ')' : '',
+  rustLicence
 )
