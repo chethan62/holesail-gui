@@ -287,30 +287,39 @@ if (!opt.bare && !existsSync(path.join(out, 'bare')))
 // copyleft, five MPL-2.0 consumed unmodified). Generate the attribution file here
 // so every platform's bundle carries it, and let a non-zero exit from the checker
 // fail the build on a copyleft crate: the same invariant licence-check.py holds
-// on the npm half. A tool gap (no python3, no cargo) only warns — CI runs the
-// checker as its own step, where a gap is a failure rather than a shrug.
-let rustLicence = ''
-try {
-  // execFileSync, not execSync: no shell, so a path with spaces (or any --out
-  // value) is passed as one argument instead of being re-parsed by sh.
-  execFileSync(
-    'python3',
-    [
-      'scripts/rust-licence-check.py',
-      '--write',
-      path.join(out, 'THIRD-PARTY-RUST.md')
-    ],
-    { stdio: 'inherit' }
+// on the npm half.
+// The audit is part of the build CONTRACT, not an optional extra: the tauri
+// confs list ../dist-resources/THIRD-PARTY-RUST.md as a resource, so a bundle
+// without that file dies in cargo with "resource path ... doesn't exist". That
+// is exactly what happened on the Windows runner, where the interpreter is
+// `python` and not `python3`: the run warned and carried on, and cargo then
+// failed pointing at the resource instead of the reason. Any failure here is
+// fatal now, and the interpreter is whichever one exists.
+const py = ['python3', 'python'].find((bin) => {
+  try {
+    execFileSync(bin, ['--version'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})
+if (!py)
+  throw new Error(
+    'no python3 or python on PATH: cannot generate THIRD-PARTY-RUST.md, which ' +
+      'the tauri resource maps require'
   )
-  rustLicence = ' + rust licence notices'
-} catch (err) {
-  if (err.status === 1) throw err // a real finding: copyleft or an unknown licence
-  console.warn(
-    '  warning: rust licence audit skipped (' +
-      String(err.message).split('\n')[0] +
-      ')'
-  )
-}
+// execFileSync, not execSync: no shell, so a path with spaces (or any --out
+// value) is passed as one argument instead of being re-parsed by sh.
+execFileSync(
+  py,
+  [
+    'scripts/rust-licence-check.py',
+    '--write',
+    path.join(out, 'THIRD-PARTY-RUST.md')
+  ],
+  { stdio: 'inherit' }
+)
+const rustLicence = ' + rust licence notices'
 
 const bytes = dirSize(out)
 const mb = (bytes / (1024 * 1024)).toFixed(1)
