@@ -484,7 +484,28 @@ arrives on the device — in both directions.
 
 ## Changelog
 
-<details id="v0.15.6" open>
+<details id="v0.15.7" open>
+<summary><b>v0.15.7</b> — the Windows build ships (v0.15.6's bundle failed to assemble)</summary>
+
+- **v0.15.6 was tagged but never released.** Its Windows bundle failed to
+  assemble: the licence notices added to the payload are listed as a build
+  resource, and the step generating them assumed `python3`, which the Windows
+  runner does not have — so the file was missing exactly where the resource map
+  demanded it. Nothing reached users under that tag, because the updater reads
+  the published release and there was none. **This release carries it**: the
+  Windows app starts, `Reconnect` works for the first time, and a dead tunnel
+  reports instead of sitting on screen as `running`. Full detail in the v0.15.6
+  entry below.
+- **The test suite no longer races its own DHT keys.** A fixed key announced by
+  every run meant concurrent CI jobs competed for one DHT record; the loser
+  dialled a dead value, and a healthy tunnel read as broken. Every key the suite
+  announces is now drawn per run, so both the "unannounced key" claim and
+  per-server distinctness hold by construction rather than by picking unused
+  letters.
+
+</details>
+
+<details id="v0.15.6">
 <summary><b>v0.15.6</b> — the app starts on Windows, and Reconnect works</summary>
 
 - **The Windows app never ran, and now it does.** Every Windows build ever
