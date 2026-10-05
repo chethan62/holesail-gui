@@ -26,3 +26,8 @@ __pycache__/
 .env*
 *secret*
 *credential*
+
+# agent working notes (plans, scratch). Same reasoning as .prettierignore: not
+# source, nothing reviews them — and an untracked directory here makes the
+# release script's dirty-tree check abort before it bumps anything.
+.hermes/
